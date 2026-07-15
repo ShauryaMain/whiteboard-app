@@ -6,7 +6,7 @@ import Toolbar from "./Toolbar";
 const COLORS = ["#000000", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA"];
 const WIDTHS = { thin: 2, medium: 5, thick: 10 };
 
-export default function Whiteboard() {
+export default function Whiteboard({ boardId }) {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
   const isDrawing = useRef(false);
