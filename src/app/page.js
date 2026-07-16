@@ -2,34 +2,39 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, Share2, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
 import NewBoardModal from "@/components/NewBoardModal";
 
 export default function Home() {
   const router = useRouter();
-  const [boards, setBoards] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user, signOut } = useAuth();
+  const [myBoards, setMyBoards] = useState([]);
+  const [sharedBoards, setSharedBoards] = useState([]);
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    loadBoards();
-  }, []);
+    if (user) loadBoards();
+  }, [user]);
 
   async function loadBoards() {
-    setLoading(true);
     const { data, error } = await supabase
       .from("boards")
-      .select("id, name, created_at")
+      .select("id, name, created_at, owner_id, shared_with")
+      .or(`owner_id.eq.${user.id},shared_with.cs.{${user.email}}`)
       .order("created_at", { ascending: false });
-    if (!error && data) setBoards(data);
-    setLoading(false);
+
+    if (!error && data) {
+      setMyBoards(data.filter((b) => b.owner_id === user.id));
+      setSharedBoards(data.filter((b) => b.owner_id !== user.id));
+    }
   }
 
   async function handleCreate(name) {
     const { data, error } = await supabase
       .from("boards")
-      .insert({ name: name || "Untitled board" })
+      .insert({ name: name || "Untitled board", owner_id: user.id })
       .select()
       .single();
 
@@ -37,50 +42,80 @@ export default function Home() {
       alert("Couldn't create board: " + error.message);
       return;
     }
-    router.push(`/board/${data.id}?owner=true`);
+    router.push(`/board/${data.id}`);
+  }
+
+  async function handleShare(board, e) {
+    e.stopPropagation();
+    const email = window.prompt("Share this board with (their Google email):");
+    if (!email) return;
+    const updated = Array.from(new Set([...(board.shared_with || []), email.trim().toLowerCase()]));
+    const { error } = await supabase.from("boards").update({ shared_with: updated }).eq("id", board.id);
+    if (error) {
+      alert("Couldn't share: " + error.message);
+      return;
+    }
+    loadBoards();
   }
 
   return (
     <div style={{ minHeight: "100vh", background: "#F5F6F8", padding: "48px 24px" }}>
       <div style={{ maxWidth: 960, margin: "0 auto" }}>
-        <h1 style={{ fontSize: 26, fontWeight: 600, marginBottom: 28, color: "#1a1a1a" }}>
-          Boards
-        </h1>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 600, color: "#1a1a1a", margin: 0 }}>Boards</h1>
+          <button
+            onClick={signOut}
+            style={{
+              display: "flex", alignItems: "center", gap: 6, border: "none",
+              background: "#fff", padding: "8px 14px", borderRadius: 999,
+              fontSize: 13, color: "#666", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+            }}
+          >
+            <LogOut size={14} /> Sign out
+          </button>
+        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-            gap: 20,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 20 }}>
           <button onClick={() => setShowModal(true)} style={cardStyle(true)}>
             <Plus size={32} strokeWidth={1.5} color="#1E88E5" />
-            <span style={{ marginTop: 10, fontSize: 15, color: "#1E88E5", fontWeight: 500 }}>
-              New board
-            </span>
+            <span style={{ marginTop: 10, fontSize: 15, color: "#1E88E5", fontWeight: 500 }}>New board</span>
           </button>
 
-          {boards.map((b) => (
-            <button
-              key={b.id}
-              onClick={() => router.push(`/board/${b.id}?owner=true`)}
-              style={cardStyle(false)}
-            >
+          {myBoards.map((b) => (
+            <div key={b.id} onClick={() => router.push(`/board/${b.id}`)} style={{ ...cardStyle(false), position: "relative" }}>
+              <button
+                onClick={(e) => handleShare(b, e)}
+                title="Share"
+                style={{
+                  position: "absolute", top: 10, right: 10, border: "none",
+                  background: "transparent", cursor: "pointer", padding: 4, color: "#999",
+                }}
+              >
+                <Share2 size={15} />
+              </button>
               <span style={{ fontSize: 16, fontWeight: 500, color: "#1a1a1a", textAlign: "center" }}>
                 {b.name || "Untitled board"}
               </span>
               <span style={{ marginTop: 8, fontSize: 12, color: "#999" }}>
                 {new Date(b.created_at).toLocaleDateString()}
               </span>
-            </button>
+            </div>
           ))}
         </div>
 
-        {!loading && boards.length === 0 && (
-          <p style={{ marginTop: 24, color: "#999", fontSize: 14 }}>
-            No boards yet — create one to get started.
-          </p>
+        {sharedBoards.length > 0 && (
+          <>
+            <h2 style={{ fontSize: 18, fontWeight: 600, color: "#1a1a1a", margin: "36px 0 16px" }}>Shared with me</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 20 }}>
+              {sharedBoards.map((b) => (
+                <div key={b.id} onClick={() => router.push(`/board/${b.id}`)} style={cardStyle(false)}>
+                  <span style={{ fontSize: 16, fontWeight: 500, color: "#1a1a1a", textAlign: "center" }}>
+                    {b.name || "Untitled board"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
@@ -99,16 +134,9 @@ export default function Home() {
 
 function cardStyle(isCreate) {
   return {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    height: 140,
-    borderRadius: 14,
-    border: isCreate ? "2px dashed #C7D8EE" : "1px solid #E4E4E7",
-    background: "#ffffff",
-    cursor: "pointer",
-    padding: 16,
+    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+    height: 140, borderRadius: 14, border: isCreate ? "2px dashed #C7D8EE" : "1px solid #E4E4E7",
+    background: "#ffffff", cursor: "pointer", padding: 16,
     boxShadow: isCreate ? "none" : "0 1px 3px rgba(0,0,0,0.05)",
   };
 }

@@ -35,7 +35,7 @@ export default function NewBoardModal({ onClose, onCreate }) {
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>New board</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 600, margin: 0, color: "#1a1a1a" }}>New board</h2>
           <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}>
             <X size={18} color="#666" />
           </button>
@@ -52,6 +52,8 @@ export default function NewBoardModal({ onClose, onCreate }) {
               borderRadius: 8,
               border: "1px solid #ddd",
               fontSize: 14,
+              color: "#1a1a1a",
+              background: "#ffffff",
               boxSizing: "border-box",
               marginBottom: 16,
             }}

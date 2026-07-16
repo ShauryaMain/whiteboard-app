@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Toolbar from "./Toolbar";
 import { supabase } from "@/lib/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
+import { ArrowLeft } from "lucide-react";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -17,7 +19,9 @@ function widthForTool(t, baseWidth) {
   return baseWidth;
 }
 
-export default function Whiteboard({ boardId, isOwner }) {
+export default function Whiteboard({ boardId }) {
+  const { user } = useAuth();
+  const [isOwner, setIsOwner] = useState(false);
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
   const isDrawing = useRef(false);
@@ -110,19 +114,20 @@ export default function Whiteboard({ boardId, isOwner }) {
   }
 
   useEffect(() => {
-    if (!boardId) return;
+    if (!boardId || !user) return;
     async function loadBoard() {
       const { data, error } = await supabase
         .from("boards")
-        .select("stroke_data")
+        .select("stroke_data, owner_id")
         .eq("id", boardId)
         .single();
-      if (!error && data && Array.isArray(data.stroke_data)) {
-        setStrokes(data.stroke_data);
+      if (!error && data) {
+        if (Array.isArray(data.stroke_data)) setStrokes(data.stroke_data);
+        setIsOwner(user.id == data.owner_id);
       }
     }
     loadBoard();
-  }, [boardId]);
+  }, [boardId, user]);
 
   async function saveBoard() {
     if (!boardId) return;
@@ -176,8 +181,7 @@ export default function Whiteboard({ boardId, isOwner }) {
   }
 
   function handleCopyLink() {
-    const cleanUrl = window.location.href.replace(/[?&]owner=true/, "");
-    navigator.clipboard.writeText(cleanUrl);
+    navigator.clipboard.writeText(window.location.href);
     setSaveStatus("Link copied");
     setTimeout(() => setSaveStatus(""), 2000);
   }
@@ -369,6 +373,18 @@ export default function Whiteboard({ boardId, isOwner }) {
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
+      <a 
+        href="/"
+        style={{
+          position: "fixed", top: 16, left: 16, zIndex: 10,
+          width: 36, height: 36, borderRadius: "50%", background:"#fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: "0 1px 6px rgba(0,0,0,0.15)", color: "#333",
+        }}
+      >
+        <ArrowLeft size={18} />
+      </a>
+      
       <canvas
         ref={canvasRef}
         style={{ display: "block", touchAction: "none", background: "#ffffff" }}
