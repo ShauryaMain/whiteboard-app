@@ -14,8 +14,6 @@ export default function Whiteboard({ boardId }) {
   const currentStroke = useRef(null);
   const currentStrokeId = useRef(null);
 
-  // A unique ID for this browser tab, so we can tell our own strokes
-  // apart from everyone else's on the same board.
   const clientId = useRef(
     typeof crypto !== "undefined" && crypto.randomUUID
       ? crypto.randomUUID()
@@ -23,7 +21,6 @@ export default function Whiteboard({ boardId }) {
   );
 
   const channelRef = useRef(null);
-  // Strokes currently being drawn by OTHER people, keyed by a unique stroke key.
   const remoteStrokes = useRef({});
 
   const strokesRef = useRef([]);
@@ -47,7 +44,6 @@ export default function Whiteboard({ boardId }) {
     const ctx = ctxRef.current;
     const ratio = window.devicePixelRatio || 1;
     ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
-
     for (const stroke of strokesRef.current) {
       drawStroke(ctx, stroke);
     }
@@ -76,12 +72,39 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
   }
 
-  // ---- Realtime channel: connect to this board's live broadcast ----
+  // ---- Board-wide actions (undo/redo/clear) ----
+  // Written with updater functions so they're always safe to call from
+  // anywhere — a button click OR an incoming broadcast — without relying
+  // on a possibly-stale snapshot of state.
+  function performUndo() {
+    setStrokes((prevStrokes) => {
+      if (prevStrokes.length === 0) return prevStrokes;
+      const last = prevStrokes[prevStrokes.length - 1];
+      setRedoStack((prevRedo) => [...prevRedo, last]);
+      return prevStrokes.slice(0, -1);
+    });
+  }
+
+  function performRedo() {
+    setRedoStack((prevRedo) => {
+      if (prevRedo.length === 0) return prevRedo;
+      const next = prevRedo[prevRedo.length - 1];
+      setStrokes((prevStrokes) => [...prevStrokes, next]);
+      return prevRedo.slice(0, -1);
+    });
+  }
+
+  function performClear() {
+    setStrokes([]);
+    setRedoStack([]);
+  }
+
+  // ---- Realtime channel ----
   useEffect(() => {
     if (!boardId) return;
 
     const channel = supabase.channel(`board-${boardId}`, {
-      config: { broadcast: { self: false } }, // don't echo our own messages back to us
+      config: { broadcast: { self: false } },
     });
 
     channel.on("broadcast", { event: "stroke-start" }, ({ payload }) => {
@@ -95,7 +118,7 @@ export default function Whiteboard({ boardId }) {
 
     channel.on("broadcast", { event: "stroke-point" }, ({ payload }) => {
       const s = remoteStrokes.current[payload.strokeKey];
-      if (!s) return; // stroke-start message may have been missed, e.g. joined mid-stroke
+      if (!s) return;
       s.points.push(payload.point);
       if (ctxRef.current) drawSegmentLive(ctxRef.current, s);
     });
@@ -109,6 +132,11 @@ export default function Whiteboard({ boardId }) {
       }
     });
 
+    // New: board-wide action sync
+    channel.on("broadcast", { event: "undo" }, () => performUndo());
+    channel.on("broadcast", { event: "redo" }, () => performRedo());
+    channel.on("broadcast", { event: "clear" }, () => performClear());
+
     channel.subscribe();
     channelRef.current = channel;
 
@@ -118,7 +146,7 @@ export default function Whiteboard({ boardId }) {
     };
   }, [boardId]);
 
-  // ---- Canvas + pointer input setup ----
+  // ---- Canvas + pointer input ----
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -216,9 +244,7 @@ export default function Whiteboard({ boardId }) {
       if (e && e.pointerId !== undefined) {
         try {
           canvas.releasePointerCapture(e.pointerId);
-        } catch (err) {
-          // capture may already be released — safe to ignore
-        }
+        } catch (err) {}
       }
     }
 
@@ -240,25 +266,22 @@ export default function Whiteboard({ boardId }) {
     if (ctxRef.current) redrawAll();
   }, [strokes]);
 
+  // ---- Button handlers: perform locally, then tell everyone else ----
   function handleUndo() {
-    if (strokes.length === 0) return;
-    const last = strokes[strokes.length - 1];
-    setStrokes(strokes.slice(0, -1));
-    setRedoStack((prev) => [...prev, last]);
+    performUndo();
+    channelRef.current?.send({ type: "broadcast", event: "undo", payload: {} });
   }
 
   function handleRedo() {
-    if (redoStack.length === 0) return;
-    const next = redoStack[redoStack.length - 1];
-    setRedoStack(redoStack.slice(0, -1));
-    setStrokes((prev) => [...prev, next]);
+    performRedo();
+    channelRef.current?.send({ type: "broadcast", event: "redo", payload: {} });
   }
 
   function handleClear() {
     if (strokes.length === 0) return;
-    if (window.confirm("Clear the whole board? This can't be undone.")) {
-      setStrokes([]);
-      setRedoStack([]);
+    if (window.confirm("Clear the whole board for everyone? This can't be undone.")) {
+      performClear();
+      channelRef.current?.send({ type: "broadcast", event: "clear", payload: {} });
     }
   }
 
