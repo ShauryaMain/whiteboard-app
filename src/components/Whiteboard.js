@@ -4,10 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import Toolbar from "./Toolbar";
 import { supabase } from "@/lib/supabaseClient";
 
-const COLORS = ["#000000", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA"];
-const WIDTHS = { thin: 2, medium: 5, thick: 10 };
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export default function Whiteboard({ boardId }) {
+function opacityForTool(t) {
+  return t === "highlighter" ? 0.35 : 1;
+}
+
+function widthForTool(t, baseWidth) {
+  if (t === "eraser") return baseWidth * 3;
+  if (t === "highlighter") return baseWidth * 2.5;
+  return baseWidth;
+}
+
+export default function Whiteboard({ boardId, isOwner }) {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
   const isDrawing = useRef(false);
@@ -22,17 +32,17 @@ export default function Whiteboard({ boardId }) {
 
   const channelRef = useRef(null);
   const remoteStrokes = useRef({});
-
   const strokesRef = useRef([]);
   const toolRef = useRef("pen");
-  const colorRef = useRef(COLORS[0]);
-  const widthRef = useRef(WIDTHS.medium);
+  const colorRef = useRef("#1a1a1a");
+  const widthRef = useRef(4);
 
   const [strokes, setStrokes] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [tool, setTool] = useState("pen");
-  const [color, setColor] = useState(COLORS[0]);
-  const [strokeWidth, setStrokeWidth] = useState(WIDTHS.medium);
+  const [color, setColor] = useState("#1a1a1a");
+  const [strokeWidth, setStrokeWidth] = useState(4);
+  const [saveStatus, setSaveStatus] = useState("");
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -47,10 +57,12 @@ export default function Whiteboard({ boardId }) {
     for (const stroke of strokesRef.current) {
       drawStroke(ctx, stroke);
     }
+    ctx.globalAlpha = 1;
   }
 
   function drawStroke(ctx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
+    ctx.globalAlpha = stroke.opacity ?? 1;
     ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
     ctx.lineWidth = stroke.width;
     ctx.beginPath();
@@ -64,18 +76,16 @@ export default function Whiteboard({ boardId }) {
   function drawSegmentLive(ctx, styleStroke) {
     const pts = styleStroke.points;
     if (pts.length < 2) return;
+    ctx.globalAlpha = styleStroke.opacity ?? 1;
     ctx.strokeStyle = styleStroke.tool === "eraser" ? "#ffffff" : styleStroke.color;
     ctx.lineWidth = styleStroke.width;
     ctx.beginPath();
     ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
     ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
     ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
-  // ---- Board-wide actions (undo/redo/clear) ----
-  // Written with updater functions so they're always safe to call from
-  // anywhere — a button click OR an incoming broadcast — without relying
-  // on a possibly-stale snapshot of state.
   function performUndo() {
     setStrokes((prevStrokes) => {
       if (prevStrokes.length === 0) return prevStrokes;
@@ -99,10 +109,81 @@ export default function Whiteboard({ boardId }) {
     setRedoStack([]);
   }
 
-  // ---- Realtime channel ----
   useEffect(() => {
     if (!boardId) return;
+    async function loadBoard() {
+      const { data, error } = await supabase
+        .from("boards")
+        .select("stroke_data")
+        .eq("id", boardId)
+        .single();
+      if (!error && data && Array.isArray(data.stroke_data)) {
+        setStrokes(data.stroke_data);
+      }
+    }
+    loadBoard();
+  }, [boardId]);
 
+  async function saveBoard() {
+    if (!boardId) return;
+    const { error } = await supabase
+      .from("boards")
+      .update({ stroke_data: strokesRef.current })
+      .eq("id", boardId);
+    return !error;
+  }
+
+  useEffect(() => {
+    if (!isOwner || !boardId) return;
+    const interval = setInterval(async () => {
+      const ok = await saveBoard();
+      setSaveStatus(ok ? "Autosaved" : "Save failed");
+      setTimeout(() => setSaveStatus(""), 2000);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isOwner, boardId]);
+
+  useEffect(() => {
+    if (!isOwner || !boardId) return;
+    function saveOnClose() {
+      try {
+        fetch(`${SUPABASE_URL}/rest/v1/boards?id=eq.${boardId}`, {
+          method: "PATCH",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify({ stroke_data: strokesRef.current }),
+        });
+      } catch (err) {}
+    }
+    window.addEventListener("pagehide", saveOnClose);
+    window.addEventListener("beforeunload", saveOnClose);
+    return () => {
+      window.removeEventListener("pagehide", saveOnClose);
+      window.removeEventListener("beforeunload", saveOnClose);
+    };
+  }, [isOwner, boardId]);
+
+  async function handleEndSession() {
+    setSaveStatus("Saving…");
+    const ok = await saveBoard();
+    setSaveStatus(ok ? "Saved" : "Save failed");
+    setTimeout(() => setSaveStatus(""), 3000);
+  }
+
+  function handleCopyLink() {
+    const cleanUrl = window.location.href.replace(/[?&]owner=true/, "");
+    navigator.clipboard.writeText(cleanUrl);
+    setSaveStatus("Link copied");
+    setTimeout(() => setSaveStatus(""), 2000);
+  }
+
+  useEffect(() => {
+    if (!boardId) return;
     const channel = supabase.channel(`board-${boardId}`, {
       config: { broadcast: { self: false } },
     });
@@ -112,6 +193,7 @@ export default function Whiteboard({ boardId }) {
         tool: payload.tool,
         color: payload.color,
         width: payload.width,
+        opacity: payload.opacity,
         points: [payload.point],
       };
     });
@@ -132,7 +214,6 @@ export default function Whiteboard({ boardId }) {
       }
     });
 
-    // New: board-wide action sync
     channel.on("broadcast", { event: "undo" }, () => performUndo());
     channel.on("broadcast", { event: "redo" }, () => performRedo());
     channel.on("broadcast", { event: "clear" }, () => performClear());
@@ -146,7 +227,6 @@ export default function Whiteboard({ boardId }) {
     };
   }, [boardId]);
 
-  // ---- Canvas + pointer input ----
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -182,10 +262,12 @@ export default function Whiteboard({ boardId }) {
           : Math.random().toString(36).slice(2);
       currentStrokeId.current = strokeId;
 
+      const t = toolRef.current;
       currentStroke.current = {
-        tool: toolRef.current,
+        tool: t,
         color: colorRef.current,
-        width: toolRef.current === "eraser" ? widthRef.current * 3 : widthRef.current,
+        width: widthForTool(t, widthRef.current),
+        opacity: opacityForTool(t),
         points: [pos],
       };
       canvas.setPointerCapture(e.pointerId);
@@ -198,6 +280,7 @@ export default function Whiteboard({ boardId }) {
           tool: currentStroke.current.tool,
           color: currentStroke.current.color,
           width: currentStroke.current.width,
+          opacity: currentStroke.current.opacity,
           point: pos,
         },
       });
@@ -266,7 +349,6 @@ export default function Whiteboard({ boardId }) {
     if (ctxRef.current) redrawAll();
   }, [strokes]);
 
-  // ---- Button handlers: perform locally, then tell everyone else ----
   function handleUndo() {
     performUndo();
     channelRef.current?.send({ type: "broadcast", event: "undo", payload: {} });
@@ -292,8 +374,6 @@ export default function Whiteboard({ boardId }) {
         style={{ display: "block", touchAction: "none", background: "#ffffff" }}
       />
       <Toolbar
-        colors={COLORS}
-        widths={WIDTHS}
         tool={tool}
         setTool={setTool}
         color={color}
@@ -305,6 +385,10 @@ export default function Whiteboard({ boardId }) {
         onClear={handleClear}
         canUndo={strokes.length > 0}
         canRedo={redoStack.length > 0}
+        isOwner={isOwner}
+        onCopyLink={handleCopyLink}
+        onEndSession={handleEndSession}
+        saveStatus={saveStatus}
       />
     </div>
   );
