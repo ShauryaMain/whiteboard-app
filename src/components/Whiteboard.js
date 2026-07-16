@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Toolbar from "./Toolbar";
+import { supabase } from "@/lib/supabaseClient";
 
 const COLORS = ["#000000", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA"];
 const WIDTHS = { thin: 2, medium: 5, thick: 10 };
@@ -11,9 +12,20 @@ export default function Whiteboard({ boardId }) {
   const ctxRef = useRef(null);
   const isDrawing = useRef(false);
   const currentStroke = useRef(null);
+  const currentStrokeId = useRef(null);
 
-  // Keep refs in sync with state so our event listeners (set up once)
-  // always see the latest tool/color/width without re-attaching.
+  // A unique ID for this browser tab, so we can tell our own strokes
+  // apart from everyone else's on the same board.
+  const clientId = useRef(
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2)
+  );
+
+  const channelRef = useRef(null);
+  // Strokes currently being drawn by OTHER people, keyed by a unique stroke key.
+  const remoteStrokes = useRef({});
+
   const strokesRef = useRef([]);
   const toolRef = useRef("pen");
   const colorRef = useRef(COLORS[0]);
@@ -53,6 +65,60 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
   }
 
+  function drawSegmentLive(ctx, styleStroke) {
+    const pts = styleStroke.points;
+    if (pts.length < 2) return;
+    ctx.strokeStyle = styleStroke.tool === "eraser" ? "#ffffff" : styleStroke.color;
+    ctx.lineWidth = styleStroke.width;
+    ctx.beginPath();
+    ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    ctx.stroke();
+  }
+
+  // ---- Realtime channel: connect to this board's live broadcast ----
+  useEffect(() => {
+    if (!boardId) return;
+
+    const channel = supabase.channel(`board-${boardId}`, {
+      config: { broadcast: { self: false } }, // don't echo our own messages back to us
+    });
+
+    channel.on("broadcast", { event: "stroke-start" }, ({ payload }) => {
+      remoteStrokes.current[payload.strokeKey] = {
+        tool: payload.tool,
+        color: payload.color,
+        width: payload.width,
+        points: [payload.point],
+      };
+    });
+
+    channel.on("broadcast", { event: "stroke-point" }, ({ payload }) => {
+      const s = remoteStrokes.current[payload.strokeKey];
+      if (!s) return; // stroke-start message may have been missed, e.g. joined mid-stroke
+      s.points.push(payload.point);
+      if (ctxRef.current) drawSegmentLive(ctxRef.current, s);
+    });
+
+    channel.on("broadcast", { event: "stroke-end" }, ({ payload }) => {
+      const s = remoteStrokes.current[payload.strokeKey];
+      if (!s) return;
+      delete remoteStrokes.current[payload.strokeKey];
+      if (s.points.length > 1) {
+        setStrokes((prev) => [...prev, s]);
+      }
+    });
+
+    channel.subscribe();
+    channelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+      channelRef.current = null;
+    };
+  }, [boardId]);
+
+  // ---- Canvas + pointer input setup ----
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -82,6 +148,12 @@ export default function Whiteboard({ boardId }) {
     function handlePointerDown(e) {
       isDrawing.current = true;
       const pos = getPos(e);
+      const strokeId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+      currentStrokeId.current = strokeId;
+
       currentStroke.current = {
         tool: toolRef.current,
         color: colorRef.current,
@@ -89,22 +161,34 @@ export default function Whiteboard({ boardId }) {
         points: [pos],
       };
       canvas.setPointerCapture(e.pointerId);
+
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "stroke-start",
+        payload: {
+          strokeKey: `${clientId.current}-${strokeId}`,
+          tool: currentStroke.current.tool,
+          color: currentStroke.current.color,
+          width: currentStroke.current.width,
+          point: pos,
+        },
+      });
     }
 
     function handlePointerMove(e) {
       if (!isDrawing.current || !currentStroke.current) return;
       const pos = getPos(e);
       currentStroke.current.points.push(pos);
+      drawSegmentLive(ctxRef.current, currentStroke.current);
 
-      // Draw just the newest segment live, for responsiveness
-      const pts = currentStroke.current.points;
-      const ctx2 = ctxRef.current;
-      ctx2.strokeStyle = currentStroke.current.tool === "eraser" ? "#ffffff" : currentStroke.current.color;
-      ctx2.lineWidth = currentStroke.current.width;
-      ctx2.beginPath();
-      ctx2.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
-      ctx2.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-      ctx2.stroke();
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "stroke-point",
+        payload: {
+          strokeKey: `${clientId.current}-${currentStrokeId.current}`,
+          point: pos,
+        },
+      });
     }
 
     function handlePointerUp(e) {
@@ -112,11 +196,21 @@ export default function Whiteboard({ boardId }) {
       isDrawing.current = false;
 
       const finished = currentStroke.current;
+      const strokeId = currentStrokeId.current;
       currentStroke.current = null;
+      currentStrokeId.current = null;
 
       if (finished && finished.points.length > 1) {
         setStrokes((prev) => [...prev, finished]);
-        setRedoStack([]); // new stroke clears redo history
+        setRedoStack([]);
+      }
+
+      if (strokeId) {
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "stroke-end",
+          payload: { strokeKey: `${clientId.current}-${strokeId}` },
+        });
       }
 
       if (e && e.pointerId !== undefined) {
@@ -142,7 +236,6 @@ export default function Whiteboard({ boardId }) {
     };
   }, []);
 
-  // Redraw whenever strokes change (covers undo/redo/clear too)
   useEffect(() => {
     if (ctxRef.current) redrawAll();
   }, [strokes]);
