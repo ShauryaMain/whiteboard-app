@@ -6,6 +6,8 @@ import { Plus, Share2, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import NewBoardModal from "@/components/NewBoardModal";
+import ShareModal from "@/components/ShareModal";
+
 
 export default function Home() {
   const router = useRouter();
@@ -13,22 +15,30 @@ export default function Home() {
   const [myBoards, setMyBoards] = useState([]);
   const [sharedBoards, setSharedBoards] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [shareTarget, setShareTarget] = useState(null);
 
   useEffect(() => {
     if (user) loadBoards();
   }, [user]);
 
   async function loadBoards() {
-    const { data, error } = await supabase
+    const { data: owned, error: ownedError } = await supabase
       .from("boards")
       .select("id, name, created_at, owner_id, shared_with")
-      .or(`owner_id.eq.${user.id},shared_with.cs.{${user.email}}`)
+      .eq("owner_id", user.id)
       .order("created_at", { ascending: false });
 
-    if (!error && data) {
-      setMyBoards(data.filter((b) => b.owner_id === user.id));
-      setSharedBoards(data.filter((b) => b.owner_id !== user.id));
-    }
+    const { data: shared, error: sharedError } = await supabase
+      .from("boards")
+      .select("id, name, created_at, owner_id, shared_with")
+      .contains("shared_with", [user.email.toLowerCase()])
+      .order("created_at", { ascending: false });
+
+    if (ownedError) console.error("Error loading owned boards:", ownedError);
+    if (sharedError) console.error("Error loading shared boards:", sharedError);
+
+    if (!ownedError && owned) setMyBoards(owned);
+    if (!sharedError && shared) setSharedBoards(shared);
   }
 
   async function handleCreate(name) {
@@ -45,11 +55,15 @@ export default function Home() {
     router.push(`/board/${data.id}`);
   }
 
-  async function handleShare(board, e) {
+  function openShareModal(board, e) {
     e.stopPropagation();
-    const email = window.prompt("Share this board with (their Google email):");
-    if (!email) return;
-    const updated = Array.from(new Set([...(board.shared_with || []), email.trim().toLowerCase()]));
+    setShareTarget(board);
+  }
+
+  async function handleShareSubmit(email) {
+    const board = shareTarget;
+    setShareTarget(null);
+    const updated = Array.from(new Set([...(board.shared_with || []), email.toLowerCase()]));
     const { error } = await supabase.from("boards").update({ shared_with: updated }).eq("id", board.id);
     if (error) {
       alert("Couldn't share: " + error.message);
@@ -84,7 +98,7 @@ export default function Home() {
           {myBoards.map((b) => (
             <div key={b.id} onClick={() => router.push(`/board/${b.id}`)} style={{ ...cardStyle(false), position: "relative" }}>
               <button
-                onClick={(e) => handleShare(b, e)}
+                onClick={(e) => openShareModal(b, e)}
                 title="Share"
                 style={{
                   position: "absolute", top: 10, right: 10, border: "none",
@@ -126,6 +140,13 @@ export default function Home() {
             setShowModal(false);
             handleCreate(name);
           }}
+        />
+      )}
+
+      {shareTarget && (
+        <ShareModal
+          onClose={() => setShareTarget(null)}
+          onShare={handleShareSubmit}
         />
       )}
     </div>
