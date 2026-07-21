@@ -11,7 +11,7 @@ export default function Toolbar({
 }) {
   return (
     <>
-      <div className="toolbar-scroll" style={barStyle}>
+      <div className="toolbar-scroll" onContextMenu={(e) => e.preventDefault()} style={barStyle}>
         <div style={groupStyle}>
           <IconButton active={tool === "pen"} onClick={() => setTool("pen")} label="Pen">
             <Pencil size={19} strokeWidth={2} />
@@ -131,6 +131,7 @@ function IconButton({ children, active, disabled, onClick, label, pill, primary 
         WebkitUserSelect: "none",
         userSelect: "none",
         WebkitTapHighlightColor: "transparent",
+        touchAction: "manipulation",
       }}
     >
       {children}
@@ -161,6 +162,9 @@ const barStyle = {
   maxWidth: "94vw",
   overflowX: "auto",
   WebkitOverflowScrolling: "touch",
+  WebkitUserSelect: "none",
+  userSelect: "none",
+  touchAction: "manipulation",
 };
 
 const ownerBarStyle = {

@@ -28,6 +28,8 @@ export default function Whiteboard({ boardId }) {
   const isDrawing = useRef(false);
   const currentStroke = useRef(null);
   const currentStrokeId = useRef(null);
+  const activePointerId = useRef(null);
+  const stylusActive = useRef(false);
 
   // Points waiting to be sent over the network, flushed in small
   // batches (via requestAnimationFrame) instead of one message per point.
@@ -293,7 +295,18 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handlePointerDown(e) {
+      // Basic palm rejection: once we've seen a real pencil touch this
+      // session, ignore plain "touch" pointers (a resting palm) — and
+      // never accept a second pointer while one stroke is already active.
+      if (e.pointerType === "pen") {
+        stylusActive.current = true;
+      } else if (e.pointerType === "touch" && stylusActive.current) {
+        return;
+      }
+      if (isDrawing.current) return;
+
       isDrawing.current = true;
+      activePointerId.current = e.pointerId;
       const pos = getPos(e);
       const strokeId =
         typeof crypto !== "undefined" && crypto.randomUUID
@@ -326,8 +339,8 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handlePointerMove(e) {
+      if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current || !currentStroke.current) return;
-
       // Apple Pencil and similar devices can sample far faster than the
       // browser dispatches events — getCoalescedEvents recovers all the
       // in-between points so fast strokes stay smooth instead of choppy.
@@ -347,8 +360,10 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handlePointerUp(e) {
+      if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current) return;
       isDrawing.current = false;
+      activePointerId.current = null;
 
       const finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
@@ -452,6 +467,7 @@ export default function Whiteboard({ boardId }) {
       </a>
       <canvas
         ref={canvasRef}
+        onContextMenu={(e) => e.preventDefault()}
         style={{
           display: "block",
           touchAction: "none",

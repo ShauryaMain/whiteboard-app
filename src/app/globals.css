@@ -31,3 +31,9 @@ body {
 .toolbar-scroll::-webkit-scrollbar {
   display: none;
 }
+
+button {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
