@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Toolbar from "./Toolbar";
+import RulerOverlay from "./RulerOverlay";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 
@@ -19,6 +20,18 @@ function widthForTool(t, baseWidth) {
   return baseWidth;
 }
 
+// Projects `pos` onto the infinite line passing through `start` at `angle`,
+// so the resulting point is always exactly along that direction —
+// this is what makes ruler-mode strokes perfectly straight at a fixed angle.
+function projectOntoAngle(start, pos, angle) {
+  const dx = pos.x - start.x;
+  const dy = pos.y - start.y;
+  const dirX = Math.cos(angle);
+  const dirY = Math.sin(angle);
+  const t = dx * dirX + dy * dirY;
+  return { x: start.x + t * dirX, y: start.y + t * dirY };
+}
+
 export default function Whiteboard({ boardId }) {
   const { user } = useAuth();
   const [isOwner, setIsOwner] = useState(false);
@@ -31,9 +44,8 @@ export default function Whiteboard({ boardId }) {
   const activePointerId = useRef(null);
   const stylusActive = useRef(false);
 
-  // Points waiting to be sent over the network, flushed in small
-  // batches (via requestAnimationFrame) instead of one message per point.
   const pendingBroadcastPoints = useRef([]);
+  const pendingStraightUpdate = useRef(null);
   const rafId = useRef(null);
 
   const clientId = useRef(
@@ -48,6 +60,8 @@ export default function Whiteboard({ boardId }) {
   const toolRef = useRef("pen");
   const colorRef = useRef("#1a1a1a");
   const widthRef = useRef(4);
+  const rulerActiveRef = useRef(false);
+  const rulerAngleRef = useRef(0);
 
   const [strokes, setStrokes] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
@@ -55,22 +69,16 @@ export default function Whiteboard({ boardId }) {
   const [color, setColor] = useState("#1a1a1a");
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [saveStatus, setSaveStatus] = useState("");
+  const [rulerActive, setRulerActive] = useState(false);
+  const [rulerAngle, setRulerAngle] = useState(0);
+  const [rulerPos, setRulerPos] = useState({ x: 300, y: 300 });
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
   useEffect(() => { colorRef.current = color; }, [color]);
   useEffect(() => { widthRef.current = strokeWidth; }, [strokeWidth]);
-
-  function redrawAll() {
-    const canvas = canvasRef.current;
-    const ctx = ctxRef.current;
-    const ratio = window.devicePixelRatio || 1;
-    ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
-    for (const stroke of strokesRef.current) {
-      drawStroke(ctx, stroke);
-    }
-    ctx.globalAlpha = 1;
-  }
+  useEffect(() => { rulerActiveRef.current = rulerActive; }, [rulerActive]);
+  useEffect(() => { rulerAngleRef.current = rulerAngle; }, [rulerAngle]);
 
   function drawStroke(ctx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
@@ -85,8 +93,25 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
   }
 
-  // Draws only the newest points added to a stroke, connected as one
-  // polyline — used for both local live drawing and remote strokes.
+  // Full reconstruction from current data — committed strokes, any
+  // strokes other people currently have in progress, and our own
+  // in-progress stroke. Used whenever something needs to visually
+  // "replace" rather than just grow (straight-line previews, undo,
+  // resize, loading a board).
+  function fullRedraw() {
+    const canvas = canvasRef.current;
+    const ctx = ctxRef.current;
+    if (!canvas || !ctx) return;
+    const ratio = window.devicePixelRatio || 1;
+    ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
+    for (const stroke of strokesRef.current) drawStroke(ctx, stroke);
+    for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
+    if (currentStroke.current) drawStroke(ctx, currentStroke.current);
+    ctx.globalAlpha = 1;
+  }
+
+  // Draws only newly-added points as one polyline — fast, additive,
+  // used for ordinary freehand drawing (local and remote).
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
     if (pts.length < 2 || newPointsCount < 1) return;
@@ -204,6 +229,16 @@ export default function Whiteboard({ boardId }) {
     setTimeout(() => setSaveStatus(""), 2000);
   }
 
+  function handleToggleRuler() {
+    setRulerActive((prev) => {
+      const next = !prev;
+      if (next) {
+        setRulerPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+      }
+      return next;
+    });
+  }
+
   useEffect(() => {
     if (!boardId) return;
     const channel = supabase.channel(`board-${boardId}`, {
@@ -226,6 +261,13 @@ export default function Whiteboard({ boardId }) {
       const newCount = payload.points.length;
       s.points.push(...payload.points);
       if (ctxRef.current) drawNewSegment(ctxRef.current, s, newCount);
+    });
+
+    channel.on("broadcast", { event: "stroke-straight" }, ({ payload }) => {
+      const s = remoteStrokes.current[payload.strokeKey];
+      if (!s) return;
+      s.points = [payload.start, payload.end];
+      fullRedraw();
     });
 
     channel.on("broadcast", { event: "stroke-end" }, ({ payload }) => {
@@ -265,7 +307,7 @@ export default function Whiteboard({ boardId }) {
       ctx.scale(ratio, ratio);
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-      redrawAll();
+      fullRedraw();
     }
 
     resizeCanvas();
@@ -294,10 +336,27 @@ export default function Whiteboard({ boardId }) {
       });
     }
 
+    function scheduleStraightBroadcast(start, end) {
+      pendingStraightUpdate.current = { start, end };
+      if (rafId.current) return;
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        if (!pendingStraightUpdate.current) return;
+        const { start, end } = pendingStraightUpdate.current;
+        pendingStraightUpdate.current = null;
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "stroke-straight",
+          payload: {
+            strokeKey: `${clientId.current}-${currentStrokeId.current}`,
+            start,
+            end,
+          },
+        });
+      });
+    }
+
     function handlePointerDown(e) {
-      // Basic palm rejection: once we've seen a real pencil touch this
-      // session, ignore plain "touch" pointers (a resting palm) — and
-      // never accept a second pointer while one stroke is already active.
       if (e.pointerType === "pen") {
         stylusActive.current = true;
       } else if (e.pointerType === "touch" && stylusActive.current) {
@@ -341,17 +400,36 @@ export default function Whiteboard({ boardId }) {
     function handlePointerMove(e) {
       if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current || !currentStroke.current) return;
-      // Apple Pencil and similar devices can sample far faster than the
-      // browser dispatches events — getCoalescedEvents recovers all the
-      // in-between points so fast strokes stay smooth instead of choppy.
+
+      const pos = getPos(e);
+      const start = currentStroke.current.points[0];
+
+      // Ruler active: constrain to the ruler's fixed angle, wherever we touch.
+      if (rulerActiveRef.current) {
+        const projected = projectOntoAngle(start, pos, rulerAngleRef.current);
+        currentStroke.current.points = [start, projected];
+        fullRedraw();
+        scheduleStraightBroadcast(start, projected);
+        return;
+      }
+
+      // Shift held: free straight line, angle follows the drag itself.
+      if (e.shiftKey) {
+        currentStroke.current.points = [start, pos];
+        fullRedraw();
+        scheduleStraightBroadcast(start, pos);
+        return;
+      }
+
+      // Ordinary freehand — fast incremental drawing.
       const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
       const eventsToProcess = coalesced.length > 0 ? coalesced : [e];
 
       const before = currentStroke.current.points.length;
       for (const ev of eventsToProcess) {
-        const pos = getPos(ev);
-        currentStroke.current.points.push(pos);
-        pendingBroadcastPoints.current.push(pos);
+        const p = getPos(ev);
+        currentStroke.current.points.push(p);
+        pendingBroadcastPoints.current.push(p);
       }
       const newCount = currentStroke.current.points.length - before;
 
@@ -369,8 +447,6 @@ export default function Whiteboard({ boardId }) {
       const strokeId = currentStrokeId.current;
       currentStroke.current = null;
 
-      // Flush any queued points immediately rather than waiting for the
-      // next animation frame, so the final bit of the stroke isn't delayed.
       if (rafId.current) {
         cancelAnimationFrame(rafId.current);
         rafId.current = null;
@@ -382,6 +458,15 @@ export default function Whiteboard({ boardId }) {
           type: "broadcast",
           event: "stroke-points",
           payload: { strokeKey: `${clientId.current}-${strokeId}`, points: pointsToSend },
+        });
+      }
+      if (pendingStraightUpdate.current && strokeId) {
+        const { start, end } = pendingStraightUpdate.current;
+        pendingStraightUpdate.current = null;
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "stroke-straight",
+          payload: { strokeKey: `${clientId.current}-${strokeId}`, start, end },
         });
       }
 
@@ -422,7 +507,7 @@ export default function Whiteboard({ boardId }) {
   }, []);
 
   useEffect(() => {
-    if (ctxRef.current) redrawAll();
+    if (ctxRef.current) fullRedraw();
   }, [strokes]);
 
   function handleUndo() {
@@ -478,6 +563,14 @@ export default function Whiteboard({ boardId }) {
           WebkitTapHighlightColor: "transparent",
         }}
       />
+      {rulerActive && (
+        <RulerOverlay
+          angle={rulerAngle}
+          setAngle={setRulerAngle}
+          position={rulerPos}
+          setPosition={setRulerPos}
+        />
+      )}
       <Toolbar
         tool={tool}
         setTool={setTool}
@@ -494,6 +587,8 @@ export default function Whiteboard({ boardId }) {
         onCopyLink={handleCopyLink}
         onEndSession={handleEndSession}
         saveStatus={saveStatus}
+        rulerActive={rulerActive}
+        onToggleRuler={handleToggleRuler}
       />
     </div>
   );

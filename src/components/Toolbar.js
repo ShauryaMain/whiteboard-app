@@ -1,13 +1,13 @@
 "use client";
 
-import { Pencil, Highlighter, Eraser, Undo2, Redo2, Trash2, Link2, CheckCircle2 } from "lucide-react";
-
+import { Pencil, Highlighter, Eraser, Ruler, Undo2, Redo2, Trash2, Link2, CheckCircle2 } from "lucide-react";
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
 
 export default function Toolbar({
   tool, setTool, color, setColor, strokeWidth, setStrokeWidth,
   onUndo, onRedo, onClear, canUndo, canRedo,
   isOwner, onCopyLink, onEndSession, saveStatus,
+  rulerActive, onToggleRuler,
 }) {
   return (
     <>
@@ -21,6 +21,9 @@ export default function Toolbar({
           </IconButton>
           <IconButton active={tool === "eraser"} onClick={() => setTool("eraser")} label="Eraser">
             <Eraser size={19} strokeWidth={2} />
+          </IconButton>
+          <IconButton active={rulerActive} onClick={onToggleRuler} label="Ruler">
+            <Ruler size={19} strokeWidth={2} />
           </IconButton>
         </div>
 
