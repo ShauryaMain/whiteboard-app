@@ -11,35 +11,42 @@ export default function Toolbar({
 }) {
   return (
     <>
-      <div style={barStyle}>
+      <div className="toolbar-scroll" style={barStyle}>
         <div style={groupStyle}>
           <IconButton active={tool === "pen"} onClick={() => setTool("pen")} label="Pen">
-            <Pencil size={18} strokeWidth={2} />
+            <Pencil size={19} strokeWidth={2} />
           </IconButton>
           <IconButton active={tool === "highlighter"} onClick={() => setTool("highlighter")} label="Highlighter">
-            <Highlighter size={18} strokeWidth={2} />
+            <Highlighter size={19} strokeWidth={2} />
           </IconButton>
           <IconButton active={tool === "eraser"} onClick={() => setTool("eraser")} label="Eraser">
-            <Eraser size={18} strokeWidth={2} />
+            <Eraser size={19} strokeWidth={2} />
           </IconButton>
         </div>
 
         <Divider />
 
-        <div style={{ ...groupStyle, gap: 6 }}>
+        <div style={{ ...groupStyle, gap: 8 }}>
           {PRESET_COLORS.map((c) => (
             <button
               key={c}
               onClick={() => { setColor(c); if (tool === "eraser") setTool("pen"); }}
               aria-label={`Color ${c}`}
               style={{
-                width: 22, height: 22, borderRadius: "50%", background: c,
-                border: color === c ? "2px solid #1a1a1a" : "2px solid transparent",
+                width: 28, height: 28, borderRadius: "50%", background: c,
+                border: color === c ? "3px solid #1a1a1a" : "2px solid transparent",
                 boxShadow: "0 0 0 1px #ddd", cursor: "pointer", padding: 0,
+                flexShrink: 0, WebkitTouchCallout: "none", WebkitUserSelect: "none",
               }}
             />
           ))}
-          <label style={{ width: 22, height: 22, borderRadius: "50%", overflow: "hidden", border: "2px solid #ddd", cursor: "pointer", display: "block", position: "relative" }}>
+          <label
+            style={{
+              width: 28, height: 28, borderRadius: "50%", overflow: "hidden",
+              border: "2px solid #ddd", cursor: "pointer", display: "block",
+              position: "relative", flexShrink: 0,
+            }}
+          >
             <input
               type="color"
               value={color}
@@ -52,7 +59,7 @@ export default function Toolbar({
 
         <Divider />
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 6px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 6px", flexShrink: 0 }}>
           <span
             style={{
               width: Math.max(6, Math.min(strokeWidth, 22)),
@@ -68,7 +75,7 @@ export default function Toolbar({
             max={40}
             value={strokeWidth}
             onChange={(e) => setStrokeWidth(Number(e.target.value))}
-            style={{ width: 80 }}
+            style={{ width: 90, height: 36 }}
           />
         </div>
 
@@ -76,13 +83,13 @@ export default function Toolbar({
 
         <div style={groupStyle}>
           <IconButton onClick={onUndo} disabled={!canUndo} label="Undo">
-            <Undo2 size={18} strokeWidth={2} />
+            <Undo2 size={19} strokeWidth={2} />
           </IconButton>
           <IconButton onClick={onRedo} disabled={!canRedo} label="Redo">
-            <Redo2 size={18} strokeWidth={2} />
+            <Redo2 size={19} strokeWidth={2} />
           </IconButton>
           <IconButton onClick={onClear} label="Clear">
-            <Trash2 size={18} strokeWidth={2} />
+            <Trash2 size={19} strokeWidth={2} />
           </IconButton>
         </div>
       </div>
@@ -110,12 +117,20 @@ function IconButton({ children, active, disabled, onClick, label, pill, primary 
       title={label}
       aria-label={label}
       style={{
-        display: "flex", alignItems: "center", gap: 6, border: "none",
-        borderRadius: pill ? 999 : 8, padding: pill ? "8px 12px" : "8px",
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        border: "none", borderRadius: pill ? 999 : 10,
+        padding: pill ? "11px 16px" : "11px",
+        minWidth: pill ? "auto" : 44,
+        minHeight: 44,
         background: primary ? "#1E88E5" : active ? "#E3F2FD" : "transparent",
         color: primary ? "#fff" : disabled ? "#c4c4c4" : "#333",
         cursor: disabled ? "default" : "pointer", fontSize: 13,
         boxShadow: pill ? "0 1px 6px rgba(0,0,0,0.12)" : "none",
+        flexShrink: 0,
+        WebkitTouchCallout: "none",
+        WebkitUserSelect: "none",
+        userSelect: "none",
+        WebkitTapHighlightColor: "transparent",
       }}
     >
       {children}
@@ -125,21 +140,37 @@ function IconButton({ children, active, disabled, onClick, label, pill, primary 
 }
 
 function Divider() {
-  return <div style={{ width: 1, height: 24, background: "#e5e5e5" }} />;
+  return <div style={{ width: 1, height: 24, background: "#e5e5e5", flexShrink: 0 }} />;
 }
 
-const groupStyle = { display: "flex", alignItems: "center", gap: 2 };
+const groupStyle = { display: "flex", alignItems: "center", gap: 2, flexShrink: 0 };
 
 const barStyle = {
-  position: "fixed", bottom: 16, left: "50%", transform: "translateX(-50%)",
-  display: "flex", alignItems: "center", gap: 10, background: "#ffffff",
-  padding: "8px 14px", borderRadius: 999, boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-  zIndex: 10, flexWrap: "wrap", justifyContent: "center", maxWidth: "94vw",
+  position: "fixed",
+  bottom: "max(16px, env(safe-area-inset-bottom))",
+  left: "50%",
+  transform: "translateX(-50%)",
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  background: "#ffffff",
+  padding: "8px 14px",
+  borderRadius: 999,
+  boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
+  zIndex: 10,
+  maxWidth: "94vw",
+  overflowX: "auto",
+  WebkitOverflowScrolling: "touch",
 };
 
 const ownerBarStyle = {
-  position: "fixed", top: 16, right: 16, display: "flex",
-  alignItems: "center", gap: 8, zIndex: 10,
+  position: "fixed",
+  top: "max(16px, env(safe-area-inset-top))",
+  right: 16,
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  zIndex: 10,
 };
 
 const statusStyle = {

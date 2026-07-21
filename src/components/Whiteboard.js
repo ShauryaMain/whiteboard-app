@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
 import Toolbar from "./Toolbar";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-import { ArrowLeft } from "lucide-react";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -22,11 +22,17 @@ function widthForTool(t, baseWidth) {
 export default function Whiteboard({ boardId }) {
   const { user } = useAuth();
   const [isOwner, setIsOwner] = useState(false);
+
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
   const isDrawing = useRef(false);
   const currentStroke = useRef(null);
   const currentStrokeId = useRef(null);
+
+  // Points waiting to be sent over the network, flushed in small
+  // batches (via requestAnimationFrame) instead of one message per point.
+  const pendingBroadcastPoints = useRef([]);
+  const rafId = useRef(null);
 
   const clientId = useRef(
     typeof crypto !== "undefined" && crypto.randomUUID
@@ -77,15 +83,20 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
   }
 
-  function drawSegmentLive(ctx, styleStroke) {
+  // Draws only the newest points added to a stroke, connected as one
+  // polyline — used for both local live drawing and remote strokes.
+  function drawNewSegment(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
-    if (pts.length < 2) return;
+    if (pts.length < 2 || newPointsCount < 1) return;
+    const startIdx = Math.max(0, pts.length - newPointsCount - 1);
     ctx.globalAlpha = styleStroke.opacity ?? 1;
     ctx.strokeStyle = styleStroke.tool === "eraser" ? "#ffffff" : styleStroke.color;
     ctx.lineWidth = styleStroke.width;
     ctx.beginPath();
-    ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    ctx.moveTo(pts[startIdx].x, pts[startIdx].y);
+    for (let i = startIdx + 1; i < pts.length; i++) {
+      ctx.lineTo(pts[i].x, pts[i].y);
+    }
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
@@ -116,8 +127,6 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => {
     if (!boardId || !user) return;
     async function loadBoard() {
-      // Opening a board link grants access — this is a safe no-op if
-      // we're already shared, or if we happen to be the owner.
       const { error: joinError } = await supabase.rpc("join_board_via_link", { board_id: boardId });
       if (joinError) console.error("Error joining board:", joinError);
 
@@ -209,11 +218,12 @@ export default function Whiteboard({ boardId }) {
       };
     });
 
-    channel.on("broadcast", { event: "stroke-point" }, ({ payload }) => {
+    channel.on("broadcast", { event: "stroke-points" }, ({ payload }) => {
       const s = remoteStrokes.current[payload.strokeKey];
       if (!s) return;
-      s.points.push(payload.point);
-      if (ctxRef.current) drawSegmentLive(ctxRef.current, s);
+      const newCount = payload.points.length;
+      s.points.push(...payload.points);
+      if (ctxRef.current) drawNewSegment(ctxRef.current, s, newCount);
     });
 
     channel.on("broadcast", { event: "stroke-end" }, ({ payload }) => {
@@ -264,6 +274,24 @@ export default function Whiteboard({ boardId }) {
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
 
+    function scheduleBroadcastFlush() {
+      if (rafId.current) return;
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        if (pendingBroadcastPoints.current.length === 0) return;
+        const pointsToSend = pendingBroadcastPoints.current;
+        pendingBroadcastPoints.current = [];
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "stroke-points",
+          payload: {
+            strokeKey: `${clientId.current}-${currentStrokeId.current}`,
+            points: pointsToSend,
+          },
+        });
+      });
+    }
+
     function handlePointerDown(e) {
       isDrawing.current = true;
       const pos = getPos(e);
@@ -299,18 +327,23 @@ export default function Whiteboard({ boardId }) {
 
     function handlePointerMove(e) {
       if (!isDrawing.current || !currentStroke.current) return;
-      const pos = getPos(e);
-      currentStroke.current.points.push(pos);
-      drawSegmentLive(ctxRef.current, currentStroke.current);
 
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "stroke-point",
-        payload: {
-          strokeKey: `${clientId.current}-${currentStrokeId.current}`,
-          point: pos,
-        },
-      });
+      // Apple Pencil and similar devices can sample far faster than the
+      // browser dispatches events — getCoalescedEvents recovers all the
+      // in-between points so fast strokes stay smooth instead of choppy.
+      const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+      const eventsToProcess = coalesced.length > 0 ? coalesced : [e];
+
+      const before = currentStroke.current.points.length;
+      for (const ev of eventsToProcess) {
+        const pos = getPos(ev);
+        currentStroke.current.points.push(pos);
+        pendingBroadcastPoints.current.push(pos);
+      }
+      const newCount = currentStroke.current.points.length - before;
+
+      drawNewSegment(ctxRef.current, currentStroke.current, newCount);
+      scheduleBroadcastFlush();
     }
 
     function handlePointerUp(e) {
@@ -320,6 +353,23 @@ export default function Whiteboard({ boardId }) {
       const finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
       currentStroke.current = null;
+
+      // Flush any queued points immediately rather than waiting for the
+      // next animation frame, so the final bit of the stroke isn't delayed.
+      if (rafId.current) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+      }
+      if (pendingBroadcastPoints.current.length > 0 && strokeId) {
+        const pointsToSend = pendingBroadcastPoints.current;
+        pendingBroadcastPoints.current = [];
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "stroke-points",
+          payload: { strokeKey: `${clientId.current}-${strokeId}`, points: pointsToSend },
+        });
+      }
+
       currentStrokeId.current = null;
 
       if (finished && finished.points.length > 1) {
@@ -380,21 +430,37 @@ export default function Whiteboard({ boardId }) {
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      <a 
+      <a
         href="/"
         style={{
-          position: "fixed", top: 16, left: 16, zIndex: 10,
-          width: 36, height: 36, borderRadius: "50%", background:"#fff",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          boxShadow: "0 1px 6px rgba(0,0,0,0.15)", color: "#333",
+          position: "fixed",
+          top: "max(16px, env(safe-area-inset-top))",
+          left: 16,
+          zIndex: 10,
+          width: 40,
+          height: 40,
+          borderRadius: "50%",
+          background: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
+          color: "#333",
         }}
       >
         <ArrowLeft size={18} />
       </a>
-      
       <canvas
         ref={canvasRef}
-        style={{ display: "block", touchAction: "none", background: "#ffffff" }}
+        style={{
+          display: "block",
+          touchAction: "none",
+          background: "#ffffff",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+          WebkitTouchCallout: "none",
+          WebkitTapHighlightColor: "transparent",
+        }}
       />
       <Toolbar
         tool={tool}
