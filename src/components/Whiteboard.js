@@ -116,6 +116,11 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => {
     if (!boardId || !user) return;
     async function loadBoard() {
+      // Opening a board link grants access — this is a safe no-op if
+      // we're already shared, or if we happen to be the owner.
+      const { error: joinError } = await supabase.rpc("join_board_via_link", { board_id: boardId });
+      if (joinError) console.error("Error joining board:", joinError);
+
       const { data, error } = await supabase
         .from("boards")
         .select("stroke_data, owner_id")
@@ -123,7 +128,9 @@ export default function Whiteboard({ boardId }) {
         .single();
       if (!error && data) {
         if (Array.isArray(data.stroke_data)) setStrokes(data.stroke_data);
-        setIsOwner(user.id == data.owner_id);
+        setIsOwner(user.id === data.owner_id);
+      } else if (error) {
+        console.error("Error loading board:", error);
       }
     }
     loadBoard();
