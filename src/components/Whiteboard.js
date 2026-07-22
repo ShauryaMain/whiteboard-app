@@ -22,9 +22,6 @@ function widthForTool(t, baseWidth) {
   return baseWidth;
 }
 
-// Projects `pos` onto the infinite line through `start` at `angle` —
-// this is what makes ruler-mode strokes perfectly straight at a fixed
-// angle. Operates in screen space (the ruler is a screen-anchored aid).
 function projectOntoAngle(start, pos, angle) {
   const dx = pos.x - start.x;
   const dy = pos.y - start.y;
@@ -52,17 +49,16 @@ export default function Whiteboard({ boardId }) {
   const currentStroke = useRef(null);
   const currentStrokeId = useRef(null);
   const activePointerId = useRef(null);
-  const stylusActive = useRef(false);
+  const activePointerType = useRef(null);
   const strokeScreenStart = useRef(null);
 
-  // World-space camera: where we're panned to, and how zoomed in we are.
-  // Each person has their own — it's never synced between users.
   const panRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
 
-  // Tracks every currently-touching pointer (for detecting a 2-finger
-  // pinch/pan gesture vs. ordinary single-pointer drawing).
-  const activePointers = useRef(new Map());
+  // Only ever populated by pointerType === "touch" — a mouse or pencil,
+  // however many stray/duplicate events it produces, never counts toward
+  // "two fingers," so it can never spuriously trigger or interrupt a pinch.
+  const touchPoints = useRef(new Map());
   const panZoomState = useRef(null);
 
   const pendingBroadcastPoints = useRef([]);
@@ -121,10 +117,6 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
   }
 
-  // Full reconstruction: sets the world<->screen transform based on the
-  // current pan/zoom, clears exactly the visible area, and redraws
-  // committed strokes + anyone's in-progress strokes. Used for pan/zoom,
-  // undo/redo/clear, resize, and straight-line previews.
   function fullRedraw() {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
@@ -142,9 +134,6 @@ export default function Whiteboard({ boardId }) {
     ctx.globalAlpha = 1;
   }
 
-  // Fast incremental draw for ordinary freehand strokes — draws only the
-  // newly-added points, relying on the transform already set by the last
-  // fullRedraw (valid since pan/zoom is disabled while a stroke is active).
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
     if (pts.length < 2 || newPointsCount < 1) return;
@@ -425,8 +414,6 @@ export default function Whiteboard({ boardId }) {
       }
     }
 
-    // Interrupts an in-progress single-finger stroke — used the instant a
-    // second finger touches down and turns this into a pinch/pan gesture.
     function cancelActiveDrawing() {
       if (!isDrawing.current) return;
       isDrawing.current = false;
@@ -435,6 +422,7 @@ export default function Whiteboard({ boardId }) {
       currentStroke.current = null;
       currentStrokeId.current = null;
       activePointerId.current = null;
+      activePointerType.current = null;
 
       finalizeStroke(strokeId);
 
@@ -445,7 +433,7 @@ export default function Whiteboard({ boardId }) {
     }
 
     function beginPanZoom() {
-      const pts = Array.from(activePointers.current.values());
+      const pts = Array.from(touchPoints.current.values());
       if (pts.length < 2) return;
       const [p1, p2] = pts;
       const c = centroid(p1, p2);
@@ -459,7 +447,7 @@ export default function Whiteboard({ boardId }) {
     function updatePanZoom() {
       const pz = panZoomState.current;
       if (!pz) return;
-      const pts = Array.from(activePointers.current.values());
+      const pts = Array.from(touchPoints.current.values());
       if (pts.length < 2) return;
       const [p1, p2] = pts;
       const c = centroid(p1, p2);
@@ -479,8 +467,6 @@ export default function Whiteboard({ boardId }) {
       const screenPos = getPos(e);
 
       if (e.ctrlKey) {
-        // Trackpad pinch is reported by browsers as ctrl+wheel; this also
-        // covers an explicit Ctrl+scroll zoom on a plain mouse.
         const zoomFactor = Math.exp(-e.deltaY * 0.01);
         const worldPos = screenToWorld(screenPos);
         const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scaleRef.current * zoomFactor));
@@ -500,25 +486,32 @@ export default function Whiteboard({ boardId }) {
 
     function handlePointerDown(e) {
       const pos = getPos(e);
-      activePointers.current.set(e.pointerId, pos);
 
-      if (activePointers.current.size >= 2) {
+      if (e.pointerType === "touch") {
+        touchPoints.current.set(e.pointerId, pos);
+      }
+
+      // Two simultaneous touches is always a pinch/pan gesture, no matter
+      // what a pen or mouse happens to be doing at the same moment.
+      if (touchPoints.current.size >= 2) {
         cancelActiveDrawing();
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         beginPanZoom();
         return;
       }
 
-      if (e.pointerType === "pen") {
-        stylusActive.current = true;
-      } else if (e.pointerType === "touch" && stylusActive.current) {
-        activePointers.current.delete(e.pointerId);
+      // Anything else arriving while a stroke is already in progress —
+      // most commonly a resting palm during an active pencil stroke —
+      // is simply ignored. It doesn't start its own stroke, and since
+      // it's not (yet) a second touch, it isn't a pinch either.
+      if (isDrawing.current) {
+        if (e.pointerType === "touch") touchPoints.current.delete(e.pointerId);
         return;
       }
-      if (isDrawing.current) return;
 
       isDrawing.current = true;
       activePointerId.current = e.pointerId;
+      activePointerType.current = e.pointerType;
       strokeScreenStart.current = pos;
       const worldPos = screenToWorld(pos);
 
@@ -553,11 +546,11 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handlePointerMove(e) {
-      if (activePointers.current.has(e.pointerId)) {
-        activePointers.current.set(e.pointerId, getPos(e));
+      if (e.pointerType === "touch" && touchPoints.current.has(e.pointerId)) {
+        touchPoints.current.set(e.pointerId, getPos(e));
       }
 
-      if (panZoomState.current && activePointers.current.size >= 2) {
+      if (panZoomState.current && touchPoints.current.size >= 2) {
         updatePanZoom();
         return;
       }
@@ -603,13 +596,13 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handlePointerUp(e) {
-      if (activePointers.current.has(e.pointerId)) {
-        activePointers.current.delete(e.pointerId);
+      if (e.pointerType === "touch") {
+        touchPoints.current.delete(e.pointerId);
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
       }
 
       if (panZoomState.current) {
-        if (activePointers.current.size < 2) {
+        if (touchPoints.current.size < 2) {
           panZoomState.current = null;
         }
         return;
@@ -619,6 +612,7 @@ export default function Whiteboard({ boardId }) {
       if (!isDrawing.current) return;
       isDrawing.current = false;
       activePointerId.current = null;
+      activePointerType.current = null;
 
       const finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
@@ -673,6 +667,7 @@ export default function Whiteboard({ boardId }) {
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
+      
       <a
         href="/"
         style={{
