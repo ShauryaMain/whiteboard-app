@@ -104,17 +104,36 @@ export default function Whiteboard({ boardId }) {
     };
   }
 
+  // Draws a smoothed curve through points[startIdx..endIdx] instead of
+  // straight point-to-point segments. Straight segments look fine at
+  // normal zoom, but zooming in magnifies each facet, making a freehand
+  // stroke look visibly jagged/polygonal — this fixes that at any zoom
+  // level, and also compensates for Safari not supporting
+  // getCoalescedEvents, which means fewer raw points to work with there
+  // than on Chrome/desktop in the first place.
+  function smoothPath(ctx, pts, startIdx, endIdx) {
+    if (endIdx - startIdx < 1) return;
+    ctx.beginPath();
+    ctx.moveTo(pts[startIdx].x, pts[startIdx].y);
+    if (endIdx - startIdx === 1) {
+      ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
+    } else {
+      for (let i = startIdx + 1; i < endIdx; i++) {
+        const xc = (pts[i].x + pts[i + 1].x) / 2;
+        const yc = (pts[i].y + pts[i + 1].y) / 2;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+      }
+      ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
+    }
+    ctx.stroke();
+  }
+
   function drawStroke(ctx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
     ctx.globalAlpha = stroke.opacity ?? 1;
     ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
     ctx.lineWidth = stroke.width;
-    ctx.beginPath();
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) {
-      ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-    }
-    ctx.stroke();
+    smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
   }
 
   function fullRedraw() {
@@ -137,16 +156,17 @@ export default function Whiteboard({ boardId }) {
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
     if (pts.length < 2 || newPointsCount < 1) return;
-    const startIdx = Math.max(0, pts.length - newPointsCount - 1);
+    // Redraw a few extra points behind the newest ones each frame, purely
+    // so the smoothing curve has enough context to blend seamlessly with
+    // what was already painted — repainting a few already-drawn pixels
+    // is harmless (same color) and cheap (only a handful of points).
+    const lookback = 3;
+    const startIdx = Math.max(0, pts.length - newPointsCount - 1 - lookback);
+    const endIdx = pts.length - 1;
     ctx.globalAlpha = styleStroke.opacity ?? 1;
     ctx.strokeStyle = styleStroke.tool === "eraser" ? "#ffffff" : styleStroke.color;
     ctx.lineWidth = styleStroke.width;
-    ctx.beginPath();
-    ctx.moveTo(pts[startIdx].x, pts[startIdx].y);
-    for (let i = startIdx + 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
-    }
-    ctx.stroke();
+    smoothPath(ctx, pts, startIdx, endIdx);
     ctx.globalAlpha = 1;
   }
 
