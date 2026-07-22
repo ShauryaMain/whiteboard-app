@@ -9,6 +9,8 @@ import { useAuth } from "@/lib/AuthContext";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 8;
 
 function opacityForTool(t) {
   return t === "highlighter" ? 0.35 : 1;
@@ -20,9 +22,9 @@ function widthForTool(t, baseWidth) {
   return baseWidth;
 }
 
-// Projects `pos` onto the infinite line passing through `start` at `angle`,
-// so the resulting point is always exactly along that direction —
-// this is what makes ruler-mode strokes perfectly straight at a fixed angle.
+// Projects `pos` onto the infinite line through `start` at `angle` —
+// this is what makes ruler-mode strokes perfectly straight at a fixed
+// angle. Operates in screen space (the ruler is a screen-anchored aid).
 function projectOntoAngle(start, pos, angle) {
   const dx = pos.x - start.x;
   const dy = pos.y - start.y;
@@ -30,6 +32,14 @@ function projectOntoAngle(start, pos, angle) {
   const dirY = Math.sin(angle);
   const t = dx * dirX + dy * dirY;
   return { x: start.x + t * dirX, y: start.y + t * dirY };
+}
+
+function distance(p1, p2) {
+  return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+function centroid(p1, p2) {
+  return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
 }
 
 export default function Whiteboard({ boardId }) {
@@ -43,6 +53,17 @@ export default function Whiteboard({ boardId }) {
   const currentStrokeId = useRef(null);
   const activePointerId = useRef(null);
   const stylusActive = useRef(false);
+  const strokeScreenStart = useRef(null);
+
+  // World-space camera: where we're panned to, and how zoomed in we are.
+  // Each person has their own — it's never synced between users.
+  const panRef = useRef({ x: 0, y: 0 });
+  const scaleRef = useRef(1);
+
+  // Tracks every currently-touching pointer (for detecting a 2-finger
+  // pinch/pan gesture vs. ordinary single-pointer drawing).
+  const activePointers = useRef(new Map());
+  const panZoomState = useRef(null);
 
   const pendingBroadcastPoints = useRef([]);
   const pendingStraightUpdate = useRef(null);
@@ -80,6 +101,13 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { rulerActiveRef.current = rulerActive; }, [rulerActive]);
   useEffect(() => { rulerAngleRef.current = rulerAngle; }, [rulerAngle]);
 
+  function screenToWorld(p) {
+    return {
+      x: (p.x - panRef.current.x) / scaleRef.current,
+      y: (p.y - panRef.current.y) / scaleRef.current,
+    };
+  }
+
   function drawStroke(ctx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
     ctx.globalAlpha = stroke.opacity ?? 1;
@@ -93,25 +121,30 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
   }
 
-  // Full reconstruction from current data — committed strokes, any
-  // strokes other people currently have in progress, and our own
-  // in-progress stroke. Used whenever something needs to visually
-  // "replace" rather than just grow (straight-line previews, undo,
-  // resize, loading a board).
+  // Full reconstruction: sets the world<->screen transform based on the
+  // current pan/zoom, clears exactly the visible area, and redraws
+  // committed strokes + anyone's in-progress strokes. Used for pan/zoom,
+  // undo/redo/clear, resize, and straight-line previews.
   function fullRedraw() {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
     if (!canvas || !ctx) return;
     const ratio = window.devicePixelRatio || 1;
-    ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
+    const scale = scaleRef.current;
+    const pan = panRef.current;
+
+    ctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
+    ctx.clearRect(-pan.x / scale, -pan.y / scale, window.innerWidth / scale, window.innerHeight / scale);
+
     for (const stroke of strokesRef.current) drawStroke(ctx, stroke);
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
   }
 
-  // Draws only newly-added points as one polyline — fast, additive,
-  // used for ordinary freehand drawing (local and remote).
+  // Fast incremental draw for ordinary freehand strokes — draws only the
+  // newly-added points, relying on the transform already set by the last
+  // fullRedraw (valid since pan/zoom is disabled while a stroke is active).
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
     if (pts.length < 2 || newPointsCount < 1) return;
@@ -149,6 +182,12 @@ export default function Whiteboard({ boardId }) {
   function performClear() {
     setStrokes([]);
     setRedoStack([]);
+  }
+
+  function handleResetView() {
+    panRef.current = { x: 0, y: 0 };
+    scaleRef.current = 1;
+    fullRedraw();
   }
 
   useEffect(() => {
@@ -296,6 +335,8 @@ export default function Whiteboard({ boardId }) {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
     ctxRef.current = ctx;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
 
     function resizeCanvas() {
       const ratio = window.devicePixelRatio || 1;
@@ -303,10 +344,6 @@ export default function Whiteboard({ boardId }) {
       canvas.height = window.innerHeight * ratio;
       canvas.style.width = window.innerWidth + "px";
       canvas.style.height = window.innerHeight + "px";
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(ratio, ratio);
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
       fullRedraw();
     }
 
@@ -336,8 +373,8 @@ export default function Whiteboard({ boardId }) {
       });
     }
 
-    function scheduleStraightBroadcast(start, end) {
-      pendingStraightUpdate.current = { start, end };
+    function scheduleStraightBroadcast(worldStart, worldEnd) {
+      pendingStraightUpdate.current = { start: worldStart, end: worldEnd };
       if (rafId.current) return;
       rafId.current = requestAnimationFrame(() => {
         rafId.current = null;
@@ -356,97 +393,7 @@ export default function Whiteboard({ boardId }) {
       });
     }
 
-    function handlePointerDown(e) {
-      if (e.pointerType === "pen") {
-        stylusActive.current = true;
-      } else if (e.pointerType === "touch" && stylusActive.current) {
-        return;
-      }
-      if (isDrawing.current) return;
-
-      isDrawing.current = true;
-      activePointerId.current = e.pointerId;
-      const pos = getPos(e);
-      const strokeId =
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : Math.random().toString(36).slice(2);
-      currentStrokeId.current = strokeId;
-
-      const t = toolRef.current;
-      currentStroke.current = {
-        tool: t,
-        color: colorRef.current,
-        width: widthForTool(t, widthRef.current),
-        opacity: opacityForTool(t),
-        points: [pos],
-      };
-      canvas.setPointerCapture(e.pointerId);
-
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "stroke-start",
-        payload: {
-          strokeKey: `${clientId.current}-${strokeId}`,
-          tool: currentStroke.current.tool,
-          color: currentStroke.current.color,
-          width: currentStroke.current.width,
-          opacity: currentStroke.current.opacity,
-          point: pos,
-        },
-      });
-    }
-
-    function handlePointerMove(e) {
-      if (e.pointerId !== activePointerId.current) return;
-      if (!isDrawing.current || !currentStroke.current) return;
-
-      const pos = getPos(e);
-      const start = currentStroke.current.points[0];
-
-      // Ruler active: constrain to the ruler's fixed angle, wherever we touch.
-      if (rulerActiveRef.current) {
-        const projected = projectOntoAngle(start, pos, rulerAngleRef.current);
-        currentStroke.current.points = [start, projected];
-        fullRedraw();
-        scheduleStraightBroadcast(start, projected);
-        return;
-      }
-
-      // Shift held: free straight line, angle follows the drag itself.
-      if (e.shiftKey) {
-        currentStroke.current.points = [start, pos];
-        fullRedraw();
-        scheduleStraightBroadcast(start, pos);
-        return;
-      }
-
-      // Ordinary freehand — fast incremental drawing.
-      const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
-      const eventsToProcess = coalesced.length > 0 ? coalesced : [e];
-
-      const before = currentStroke.current.points.length;
-      for (const ev of eventsToProcess) {
-        const p = getPos(ev);
-        currentStroke.current.points.push(p);
-        pendingBroadcastPoints.current.push(p);
-      }
-      const newCount = currentStroke.current.points.length - before;
-
-      drawNewSegment(ctxRef.current, currentStroke.current, newCount);
-      scheduleBroadcastFlush();
-    }
-
-    function handlePointerUp(e) {
-      if (e.pointerId !== activePointerId.current) return;
-      if (!isDrawing.current) return;
-      isDrawing.current = false;
-      activePointerId.current = null;
-
-      const finished = currentStroke.current;
-      const strokeId = currentStrokeId.current;
-      currentStroke.current = null;
-
+    function finalizeStroke(strokeId) {
       if (rafId.current) {
         cancelAnimationFrame(rafId.current);
         rafId.current = null;
@@ -469,14 +416,6 @@ export default function Whiteboard({ boardId }) {
           payload: { strokeKey: `${clientId.current}-${strokeId}`, start, end },
         });
       }
-
-      currentStrokeId.current = null;
-
-      if (finished && finished.points.length > 1) {
-        setStrokes((prev) => [...prev, finished]);
-        setRedoStack([]);
-      }
-
       if (strokeId) {
         channelRef.current?.send({
           type: "broadcast",
@@ -484,11 +423,213 @@ export default function Whiteboard({ boardId }) {
           payload: { strokeKey: `${clientId.current}-${strokeId}` },
         });
       }
+    }
 
-      if (e && e.pointerId !== undefined) {
-        try {
-          canvas.releasePointerCapture(e.pointerId);
-        } catch (err) {}
+    // Interrupts an in-progress single-finger stroke — used the instant a
+    // second finger touches down and turns this into a pinch/pan gesture.
+    function cancelActiveDrawing() {
+      if (!isDrawing.current) return;
+      isDrawing.current = false;
+      const finished = currentStroke.current;
+      const strokeId = currentStrokeId.current;
+      currentStroke.current = null;
+      currentStrokeId.current = null;
+      activePointerId.current = null;
+
+      finalizeStroke(strokeId);
+
+      if (finished && finished.points.length > 1) {
+        setStrokes((prev) => [...prev, finished]);
+        setRedoStack([]);
+      }
+    }
+
+    function beginPanZoom() {
+      const pts = Array.from(activePointers.current.values());
+      if (pts.length < 2) return;
+      const [p1, p2] = pts;
+      const c = centroid(p1, p2);
+      panZoomState.current = {
+        initialDistance: distance(p1, p2),
+        initialScale: scaleRef.current,
+        worldAnchor: screenToWorld(c),
+      };
+    }
+
+    function updatePanZoom() {
+      const pz = panZoomState.current;
+      if (!pz) return;
+      const pts = Array.from(activePointers.current.values());
+      if (pts.length < 2) return;
+      const [p1, p2] = pts;
+      const c = centroid(p1, p2);
+      const dist = distance(p1, p2);
+      const rawScale = pz.initialScale * (dist / pz.initialDistance);
+      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, rawScale));
+      panRef.current = {
+        x: c.x - pz.worldAnchor.x * newScale,
+        y: c.y - pz.worldAnchor.y * newScale,
+      };
+      scaleRef.current = newScale;
+      fullRedraw();
+    }
+
+    function handleWheel(e) {
+      e.preventDefault();
+      const screenPos = getPos(e);
+
+      if (e.ctrlKey) {
+        // Trackpad pinch is reported by browsers as ctrl+wheel; this also
+        // covers an explicit Ctrl+scroll zoom on a plain mouse.
+        const zoomFactor = Math.exp(-e.deltaY * 0.01);
+        const worldPos = screenToWorld(screenPos);
+        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scaleRef.current * zoomFactor));
+        panRef.current = {
+          x: screenPos.x - worldPos.x * newScale,
+          y: screenPos.y - worldPos.y * newScale,
+        };
+        scaleRef.current = newScale;
+      } else {
+        panRef.current = {
+          x: panRef.current.x - e.deltaX,
+          y: panRef.current.y - e.deltaY,
+        };
+      }
+      fullRedraw();
+    }
+
+    function handlePointerDown(e) {
+      const pos = getPos(e);
+      activePointers.current.set(e.pointerId, pos);
+
+      if (activePointers.current.size >= 2) {
+        cancelActiveDrawing();
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        beginPanZoom();
+        return;
+      }
+
+      if (e.pointerType === "pen") {
+        stylusActive.current = true;
+      } else if (e.pointerType === "touch" && stylusActive.current) {
+        activePointers.current.delete(e.pointerId);
+        return;
+      }
+      if (isDrawing.current) return;
+
+      isDrawing.current = true;
+      activePointerId.current = e.pointerId;
+      strokeScreenStart.current = pos;
+      const worldPos = screenToWorld(pos);
+
+      const strokeId =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+      currentStrokeId.current = strokeId;
+
+      const t = toolRef.current;
+      currentStroke.current = {
+        tool: t,
+        color: colorRef.current,
+        width: widthForTool(t, widthRef.current),
+        opacity: opacityForTool(t),
+        points: [worldPos],
+      };
+      canvas.setPointerCapture(e.pointerId);
+
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "stroke-start",
+        payload: {
+          strokeKey: `${clientId.current}-${strokeId}`,
+          tool: currentStroke.current.tool,
+          color: currentStroke.current.color,
+          width: currentStroke.current.width,
+          opacity: currentStroke.current.opacity,
+          point: worldPos,
+        },
+      });
+    }
+
+    function handlePointerMove(e) {
+      if (activePointers.current.has(e.pointerId)) {
+        activePointers.current.set(e.pointerId, getPos(e));
+      }
+
+      if (panZoomState.current && activePointers.current.size >= 2) {
+        updatePanZoom();
+        return;
+      }
+
+      if (e.pointerId !== activePointerId.current) return;
+      if (!isDrawing.current || !currentStroke.current) return;
+
+      const screenPos = getPos(e);
+
+      if (rulerActiveRef.current) {
+        const projectedScreen = projectOntoAngle(strokeScreenStart.current, screenPos, rulerAngleRef.current);
+        const worldStart = screenToWorld(strokeScreenStart.current);
+        const worldEnd = screenToWorld(projectedScreen);
+        currentStroke.current.points = [worldStart, worldEnd];
+        fullRedraw();
+        scheduleStraightBroadcast(worldStart, worldEnd);
+        return;
+      }
+
+      if (e.shiftKey) {
+        const worldStart = screenToWorld(strokeScreenStart.current);
+        const worldEnd = screenToWorld(screenPos);
+        currentStroke.current.points = [worldStart, worldEnd];
+        fullRedraw();
+        scheduleStraightBroadcast(worldStart, worldEnd);
+        return;
+      }
+
+      const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+      const eventsToProcess = coalesced.length > 0 ? coalesced : [e];
+
+      const before = currentStroke.current.points.length;
+      for (const ev of eventsToProcess) {
+        const sp = getPos(ev);
+        const wp = screenToWorld(sp);
+        currentStroke.current.points.push(wp);
+        pendingBroadcastPoints.current.push(wp);
+      }
+      const newCount = currentStroke.current.points.length - before;
+
+      drawNewSegment(ctxRef.current, currentStroke.current, newCount);
+      scheduleBroadcastFlush();
+    }
+
+    function handlePointerUp(e) {
+      if (activePointers.current.has(e.pointerId)) {
+        activePointers.current.delete(e.pointerId);
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
+
+      if (panZoomState.current) {
+        if (activePointers.current.size < 2) {
+          panZoomState.current = null;
+        }
+        return;
+      }
+
+      if (e.pointerId !== activePointerId.current) return;
+      if (!isDrawing.current) return;
+      isDrawing.current = false;
+      activePointerId.current = null;
+
+      const finished = currentStroke.current;
+      const strokeId = currentStrokeId.current;
+      currentStroke.current = null;
+      currentStrokeId.current = null;
+
+      finalizeStroke(strokeId);
+
+      if (finished && finished.points.length > 1) {
+        setStrokes((prev) => [...prev, finished]);
+        setRedoStack([]);
       }
     }
 
@@ -496,6 +637,7 @@ export default function Whiteboard({ boardId }) {
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", handlePointerUp);
     canvas.addEventListener("pointercancel", handlePointerUp);
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
       window.removeEventListener("resize", resizeCanvas);
@@ -503,6 +645,7 @@ export default function Whiteboard({ boardId }) {
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
       canvas.removeEventListener("pointercancel", handlePointerUp);
+      canvas.removeEventListener("wheel", handleWheel);
     };
   }, []);
 
@@ -589,6 +732,7 @@ export default function Whiteboard({ boardId }) {
         saveStatus={saveStatus}
         rulerActive={rulerActive}
         onToggleRuler={handleToggleRuler}
+        onResetView={handleResetView}
       />
     </div>
   );
