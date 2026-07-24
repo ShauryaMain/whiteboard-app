@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Toolbar from "./Toolbar";
 import RulerOverlay from "./RulerOverlay";
+import ZoomMenu from "./ZoomMenu";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
+
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -89,6 +91,7 @@ export default function Whiteboard({ boardId }) {
   const [rulerActive, setRulerActive] = useState(false);
   const [rulerAngle, setRulerAngle] = useState(0);
   const [rulerPos, setRulerPos] = useState({ x: 300, y: 300 });
+  const [zoomPercent, setZoomPercent] = useState(100);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -197,6 +200,22 @@ export default function Whiteboard({ boardId }) {
     panRef.current = { x: 0, y: 0 };
     scaleRef.current = 1;
     fullRedraw();
+    setZoomPercent(100);
+  }
+
+  // Zooms to an exact level, anchored on the center of the screen so
+  // whatever you're currently looking at stays roughly centered.
+  function handleSetZoom(percent) {
+    const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, percent / 100));
+    const center = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const worldCenter = screenToWorld(center);
+    panRef.current = {
+      x: center.x - worldCenter.x * newScale,
+      y: center.y - worldCenter.y * newScale,
+    };
+    scaleRef.current = newScale;
+    fullRedraw();
+    setZoomPercent(Math.round(newScale * 100));
   }
 
   useEffect(() => {
@@ -479,6 +498,7 @@ export default function Whiteboard({ boardId }) {
         y: c.y - pz.worldAnchor.y * newScale,
       };
       scaleRef.current = newScale;
+      setZoomPercent(Math.round(newScale * 100));
       fullRedraw();
     }
 
@@ -495,6 +515,7 @@ export default function Whiteboard({ boardId }) {
           y: screenPos.y - worldPos.y * newScale,
         };
         scaleRef.current = newScale;
+        setZoomPercent(Math.round(newScale * 100));
       } else {
         panRef.current = {
           x: panRef.current.x - e.deltaX,
@@ -729,6 +750,7 @@ export default function Whiteboard({ boardId }) {
           setPosition={setRulerPos}
         />
       )}
+      <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} />
       <Toolbar
         tool={tool}
         setTool={setTool}

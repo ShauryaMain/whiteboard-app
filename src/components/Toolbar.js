@@ -168,7 +168,7 @@ const barStyle = {
   borderRadius: 999,
   boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
   zIndex: 10,
-  maxWidth: "94vw",
+  maxWidth: "calc(100vw - 92px)",
   overflowX: "auto",
   WebkitOverflowScrolling: "touch",
   WebkitUserSelect: "none",
