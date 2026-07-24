@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import Toolbar from "./Toolbar";
 import RulerOverlay from "./RulerOverlay";
+import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -41,6 +41,16 @@ function centroid(p1, p2) {
   return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
 }
 
+// Shortest signed angular difference from `from` to `to`, in (-π, π].
+// Used to track how far a compass sweep has traveled without breaking
+// at the -π/π wraparound point.
+function angleDelta(from, to) {
+  let d = to - from;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return d;
+}
+
 export default function Whiteboard({ boardId }) {
   const { user } = useAuth();
   const [isOwner, setIsOwner] = useState(false);
@@ -57,14 +67,12 @@ export default function Whiteboard({ boardId }) {
   const panRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
 
-  // Only ever populated by pointerType === "touch" — a mouse or pencil,
-  // however many stray/duplicate events it produces, never counts toward
-  // "two fingers," so it can never spuriously trigger or interrupt a pinch.
   const touchPoints = useRef(new Map());
   const panZoomState = useRef(null);
 
   const pendingBroadcastPoints = useRef([]);
   const pendingStraightUpdate = useRef(null);
+  const pendingShapeUpdate = useRef(null);
   const rafId = useRef(null);
 
   const clientId = useRef(
@@ -82,6 +90,16 @@ export default function Whiteboard({ boardId }) {
   const rulerActiveRef = useRef(false);
   const rulerAngleRef = useRef(0);
 
+  const compassActiveRef = useRef(false);
+  const compassCenterRef = useRef({ x: 0, y: 0 });
+  const compassRadiusRef = useRef(100);
+  // Snapshotted at the start of each compass stroke, so the circle stays
+  // consistent even if the overlay were somehow adjusted mid-sweep.
+  const activeCompassParams = useRef(null);
+  const compassStartAngle = useRef(0);
+  const compassCumulativeAngle = useRef(0);
+  const compassLastRawAngle = useRef(0);
+
   const [strokes, setStrokes] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [tool, setTool] = useState("pen");
@@ -91,6 +109,10 @@ export default function Whiteboard({ boardId }) {
   const [rulerActive, setRulerActive] = useState(false);
   const [rulerAngle, setRulerAngle] = useState(0);
   const [rulerPos, setRulerPos] = useState({ x: 300, y: 300 });
+  const [compassActive, setCompassActive] = useState(false);
+  const [compassCenter, setCompassCenter] = useState({ x: 300, y: 300 });
+  const [compassRadius, setCompassRadius] = useState(100);
+  const [compassAngle, setCompassAngle] = useState(-Math.PI / 2);
   const [zoomPercent, setZoomPercent] = useState(100);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
@@ -99,6 +121,9 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { widthRef.current = strokeWidth; }, [strokeWidth]);
   useEffect(() => { rulerActiveRef.current = rulerActive; }, [rulerActive]);
   useEffect(() => { rulerAngleRef.current = rulerAngle; }, [rulerAngle]);
+  useEffect(() => { compassActiveRef.current = compassActive; }, [compassActive]);
+  useEffect(() => { compassCenterRef.current = compassCenter; }, [compassCenter]);
+  useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
 
   function screenToWorld(p) {
     return {
@@ -107,13 +132,14 @@ export default function Whiteboard({ boardId }) {
     };
   }
 
-  // Draws a smoothed curve through points[startIdx..endIdx] instead of
-  // straight point-to-point segments. Straight segments look fine at
-  // normal zoom, but zooming in magnifies each facet, making a freehand
-  // stroke look visibly jagged/polygonal — this fixes that at any zoom
-  // level, and also compensates for Safari not supporting
-  // getCoalescedEvents, which means fewer raw points to work with there
-  // than on Chrome/desktop in the first place.
+  function drawStroke(ctx, stroke) {
+    if (!stroke || !stroke.points || stroke.points.length < 2) return;
+    ctx.globalAlpha = stroke.opacity ?? 1;
+    ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
+    ctx.lineWidth = stroke.width;
+    smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
+  }
+
   function smoothPath(ctx, pts, startIdx, endIdx) {
     if (endIdx - startIdx < 1) return;
     ctx.beginPath();
@@ -129,14 +155,6 @@ export default function Whiteboard({ boardId }) {
       ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
     }
     ctx.stroke();
-  }
-
-  function drawStroke(ctx, stroke) {
-    if (!stroke || !stroke.points || stroke.points.length < 2) return;
-    ctx.globalAlpha = stroke.opacity ?? 1;
-    ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
-    ctx.lineWidth = stroke.width;
-    smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
   }
 
   function fullRedraw() {
@@ -159,10 +177,6 @@ export default function Whiteboard({ boardId }) {
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
     if (pts.length < 2 || newPointsCount < 1) return;
-    // Redraw a few extra points behind the newest ones each frame, purely
-    // so the smoothing curve has enough context to blend seamlessly with
-    // what was already painted — repainting a few already-drawn pixels
-    // is harmless (same color) and cheap (only a handful of points).
     const lookback = 3;
     const startIdx = Math.max(0, pts.length - newPointsCount - 1 - lookback);
     const endIdx = pts.length - 1;
@@ -203,8 +217,6 @@ export default function Whiteboard({ boardId }) {
     setZoomPercent(100);
   }
 
-  // Zooms to an exact level, anchored on the center of the screen so
-  // whatever you're currently looking at stays roughly centered.
   function handleSetZoom(percent) {
     const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, percent / 100));
     const center = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
@@ -301,6 +313,20 @@ export default function Whiteboard({ boardId }) {
       const next = !prev;
       if (next) {
         setRulerPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        setCompassActive(false);
+      }
+      return next;
+    });
+  }
+
+  function handleToggleCompass() {
+    setCompassActive((prev) => {
+      const next = !prev;
+      if (next) {
+        setCompassCenter({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        setCompassRadius(100);
+        setCompassAngle(-Math.PI / 2);
+        setRulerActive(false);
       }
       return next;
     });
@@ -334,6 +360,13 @@ export default function Whiteboard({ boardId }) {
       const s = remoteStrokes.current[payload.strokeKey];
       if (!s) return;
       s.points = [payload.start, payload.end];
+      fullRedraw();
+    });
+
+    channel.on("broadcast", { event: "stroke-shape" }, ({ payload }) => {
+      const s = remoteStrokes.current[payload.strokeKey];
+      if (!s) return;
+      s.points = payload.points;
       fullRedraw();
     });
 
@@ -421,6 +454,25 @@ export default function Whiteboard({ boardId }) {
       });
     }
 
+    function scheduleShapeBroadcast(worldPoints) {
+      pendingShapeUpdate.current = worldPoints;
+      if (rafId.current) return;
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        if (!pendingShapeUpdate.current) return;
+        const points = pendingShapeUpdate.current;
+        pendingShapeUpdate.current = null;
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "stroke-shape",
+          payload: {
+            strokeKey: `${clientId.current}-${currentStrokeId.current}`,
+            points,
+          },
+        });
+      });
+    }
+
     function finalizeStroke(strokeId) {
       if (rafId.current) {
         cancelAnimationFrame(rafId.current);
@@ -444,6 +496,15 @@ export default function Whiteboard({ boardId }) {
           payload: { strokeKey: `${clientId.current}-${strokeId}`, start, end },
         });
       }
+      if (pendingShapeUpdate.current && strokeId) {
+        const points = pendingShapeUpdate.current;
+        pendingShapeUpdate.current = null;
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "stroke-shape",
+          payload: { strokeKey: `${clientId.current}-${strokeId}`, points },
+        });
+      }
       if (strokeId) {
         channelRef.current?.send({
           type: "broadcast",
@@ -462,6 +523,7 @@ export default function Whiteboard({ boardId }) {
       currentStrokeId.current = null;
       activePointerId.current = null;
       activePointerType.current = null;
+      activeCompassParams.current = null;
 
       finalizeStroke(strokeId);
 
@@ -525,6 +587,24 @@ export default function Whiteboard({ boardId }) {
       fullRedraw();
     }
 
+    // Samples points along the arc from startAngle through
+    // startAngle + sweep, at the given center/radius, returning them
+    // already converted to world coordinates.
+    function sampleArc(center, radius, startAngle, sweep) {
+      const stepAngle = Math.PI / 90; // ~2 degrees
+      const steps = Math.max(1, Math.ceil(Math.abs(sweep) / stepAngle));
+      const points = [];
+      for (let i = 0; i <= steps; i++) {
+        const a = startAngle + (sweep * i) / steps;
+        const screenPt = {
+          x: center.x + Math.cos(a) * radius,
+          y: center.y + Math.sin(a) * radius,
+        };
+        points.push(screenToWorld(screenPt));
+      }
+      return points;
+    }
+
     function handlePointerDown(e) {
       const pos = getPos(e);
 
@@ -532,8 +612,6 @@ export default function Whiteboard({ boardId }) {
         touchPoints.current.set(e.pointerId, pos);
       }
 
-      // Two simultaneous touches is always a pinch/pan gesture, no matter
-      // what a pen or mouse happens to be doing at the same moment.
       if (touchPoints.current.size >= 2) {
         cancelActiveDrawing();
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
@@ -541,10 +619,6 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
-      // Anything else arriving while a stroke is already in progress —
-      // most commonly a resting palm during an active pencil stroke —
-      // is simply ignored. It doesn't start its own stroke, and since
-      // it's not (yet) a second touch, it isn't a pinch either.
       if (isDrawing.current) {
         if (e.pointerType === "touch") touchPoints.current.delete(e.pointerId);
         return;
@@ -554,21 +628,38 @@ export default function Whiteboard({ boardId }) {
       activePointerId.current = e.pointerId;
       activePointerType.current = e.pointerType;
       strokeScreenStart.current = pos;
-      const worldPos = screenToWorld(pos);
 
+      const t = toolRef.current;
       const strokeId =
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
           : Math.random().toString(36).slice(2);
       currentStrokeId.current = strokeId;
 
-      const t = toolRef.current;
+      let firstWorldPoint;
+
+      if (compassActiveRef.current) {
+        const center = { ...compassCenterRef.current };
+        const radius = compassRadiusRef.current;
+        activeCompassParams.current = { center, radius };
+        const startAngle = Math.atan2(pos.y - center.y, pos.x - center.x);
+        compassStartAngle.current = startAngle;
+        compassCumulativeAngle.current = 0;
+        compassLastRawAngle.current = startAngle;
+        firstWorldPoint = screenToWorld({
+          x: center.x + Math.cos(startAngle) * radius,
+          y: center.y + Math.sin(startAngle) * radius,
+        });
+      } else {
+        firstWorldPoint = screenToWorld(pos);
+      }
+
       currentStroke.current = {
         tool: t,
         color: colorRef.current,
         width: widthForTool(t, widthRef.current),
         opacity: opacityForTool(t),
-        points: [worldPos],
+        points: [firstWorldPoint],
       };
       canvas.setPointerCapture(e.pointerId);
 
@@ -581,7 +672,7 @@ export default function Whiteboard({ boardId }) {
           color: currentStroke.current.color,
           width: currentStroke.current.width,
           opacity: currentStroke.current.opacity,
-          point: worldPos,
+          point: firstWorldPoint,
         },
       });
     }
@@ -600,6 +691,22 @@ export default function Whiteboard({ boardId }) {
       if (!isDrawing.current || !currentStroke.current) return;
 
       const screenPos = getPos(e);
+
+      if (activeCompassParams.current) {
+        const { center, radius } = activeCompassParams.current;
+        const rawAngle = Math.atan2(screenPos.y - center.y, screenPos.x - center.x);
+        const delta = angleDelta(compassLastRawAngle.current, rawAngle);
+        compassLastRawAngle.current = rawAngle;
+        let cumulative = compassCumulativeAngle.current + delta;
+        cumulative = Math.max(-2 * Math.PI, Math.min(2 * Math.PI, cumulative));
+        compassCumulativeAngle.current = cumulative;
+
+        const worldPoints = sampleArc(center, radius, compassStartAngle.current, cumulative);
+        currentStroke.current.points = worldPoints;
+        fullRedraw();
+        scheduleShapeBroadcast(worldPoints);
+        return;
+      }
 
       if (rulerActiveRef.current) {
         const projectedScreen = projectOntoAngle(strokeScreenStart.current, screenPos, rulerAngleRef.current);
@@ -654,6 +761,7 @@ export default function Whiteboard({ boardId }) {
       isDrawing.current = false;
       activePointerId.current = null;
       activePointerType.current = null;
+      activeCompassParams.current = null;
 
       const finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
@@ -708,7 +816,6 @@ export default function Whiteboard({ boardId }) {
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      
       <a
         href="/"
         style={{
@@ -750,6 +857,16 @@ export default function Whiteboard({ boardId }) {
           setPosition={setRulerPos}
         />
       )}
+      {compassActive && (
+        <CompassOverlay
+          center={compassCenter}
+          setCenter={setCompassCenter}
+          radius={compassRadius}
+          setRadius={setCompassRadius}
+          angle={compassAngle}
+          setAngle={setCompassAngle}
+        />
+      )}
       <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} />
       <Toolbar
         tool={tool}
@@ -770,6 +887,8 @@ export default function Whiteboard({ boardId }) {
         rulerActive={rulerActive}
         onToggleRuler={handleToggleRuler}
         onResetView={handleResetView}
+        compassActive={compassActive}
+        onToggleCompass={handleToggleCompass}
       />
     </div>
   );
