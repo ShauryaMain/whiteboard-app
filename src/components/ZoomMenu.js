@@ -57,7 +57,7 @@ const containerStyle = {
   position: "fixed",
   bottom: "max(16px, env(safe-area-inset-bottom))",
   right: "max(16px, env(safe-area-inset-right))",
-  zIndex: 10,
+  zIndex: 20,
 };
 
 const buttonStyle = {
