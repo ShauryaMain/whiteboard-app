@@ -13,6 +13,9 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
+const ERASER_MAX_BOOST = 2; // eraser can grow up to 3x its base size at full speed
+const ERASER_SENSITIVITY = 0.6;
+const ERASER_SMOOTHING = 0.25; // how quickly it grows/shrinks toward the target size
 
 function opacityForTool(t) {
   return t === "highlighter" ? 0.35 : 1;
@@ -41,14 +44,30 @@ function centroid(p1, p2) {
   return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
 }
 
-// Shortest signed angular difference from `from` to `to`, in (-π, π].
-// Used to track how far a compass sweep has traveled without breaking
-// at the -π/π wraparound point.
 function angleDelta(from, to) {
   let d = to - from;
   while (d > Math.PI) d -= 2 * Math.PI;
   while (d < -Math.PI) d += 2 * Math.PI;
   return d;
+}
+
+function strokeSegment(ctx, p0, p1, width) {
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(p0.x, p0.y);
+  ctx.lineTo(p1.x, p1.y);
+  ctx.stroke();
+}
+
+// Eraser strokes carry a per-point width (fatter where you moved faster),
+// so instead of one continuous curve at a fixed thickness, we draw each
+// tiny segment individually at the width interpolated between its two points.
+function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
+  for (let i = startIdx; i < endIdx; i++) {
+    const w0 = pts[i].w ?? fallbackWidth;
+    const w1 = pts[i + 1].w ?? fallbackWidth;
+    strokeSegment(ctx, pts[i], pts[i + 1], (w0 + w1) / 2);
+  }
 }
 
 export default function Whiteboard({ boardId }) {
@@ -63,6 +82,9 @@ export default function Whiteboard({ boardId }) {
   const activePointerId = useRef(null);
   const activePointerType = useRef(null);
   const strokeScreenStart = useRef(null);
+  const eraserSpeedMultiplier = useRef(1);
+  const eraserLastPointTime = useRef(0);
+  const eraserLastScreenPos = useRef(null);
 
   const panRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
@@ -74,6 +96,13 @@ export default function Whiteboard({ boardId }) {
   const pendingStraightUpdate = useRef(null);
   const pendingShapeUpdate = useRef(null);
   const rafId = useRef(null);
+
+  const pendingGridUpdate = useRef(null);
+  const gridRafId = useRef(null);
+  const gridToolActiveRef = useRef(false);
+  const gridConfigRef = useRef(null);
+  const gridDragMode = useRef(null);
+  const gridDragStart = useRef(null);
 
   const clientId = useRef(
     typeof crypto !== "undefined" && crypto.randomUUID
@@ -93,8 +122,6 @@ export default function Whiteboard({ boardId }) {
   const compassActiveRef = useRef(false);
   const compassCenterRef = useRef({ x: 0, y: 0 });
   const compassRadiusRef = useRef(100);
-  // Snapshotted at the start of each compass stroke, so the circle stays
-  // consistent even if the overlay were somehow adjusted mid-sweep.
   const activeCompassParams = useRef(null);
   const compassStartAngle = useRef(0);
   const compassCumulativeAngle = useRef(0);
@@ -114,6 +141,7 @@ export default function Whiteboard({ boardId }) {
   const [compassRadius, setCompassRadius] = useState(100);
   const [compassAngle, setCompassAngle] = useState(-Math.PI / 2);
   const [zoomPercent, setZoomPercent] = useState(100);
+  const [gridToolActive, setGridToolActive] = useState(false);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -124,6 +152,7 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { compassActiveRef.current = compassActive; }, [compassActive]);
   useEffect(() => { compassCenterRef.current = compassCenter; }, [compassCenter]);
   useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
+  useEffect(() => { gridToolActiveRef.current = gridToolActive; }, [gridToolActive]);
 
   function screenToWorld(p) {
     return {
@@ -132,12 +161,11 @@ export default function Whiteboard({ boardId }) {
     };
   }
 
-  function drawStroke(ctx, stroke) {
-    if (!stroke || !stroke.points || stroke.points.length < 2) return;
-    ctx.globalAlpha = stroke.opacity ?? 1;
-    ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
-    ctx.lineWidth = stroke.width;
-    smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
+  function worldToScreen(p) {
+    return {
+      x: p.x * scaleRef.current + panRef.current.x,
+      y: p.y * scaleRef.current + panRef.current.y,
+    };
   }
 
   function smoothPath(ctx, pts, startIdx, endIdx) {
@@ -157,6 +185,69 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
   }
 
+  function drawStroke(ctx, stroke) {
+    if (!stroke || !stroke.points || stroke.points.length < 2) return;
+    ctx.globalAlpha = stroke.opacity ?? 1;
+    ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
+    if (stroke.tool === "eraser") {
+      drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
+    } else {
+      ctx.lineWidth = stroke.width;
+      smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
+    }
+  }
+
+  function drawGrid(ctx, grid) {
+    if (!grid) return;
+    const { x, y, size, cols } = grid;
+    const cell = size / cols;
+    const scale = scaleRef.current;
+
+    ctx.save();
+    ctx.strokeStyle = "#cfd8e3";
+    ctx.lineWidth = 1 / scale;
+    for (let i = 0; i <= cols; i++) {
+      const gx = x + i * cell;
+      ctx.beginPath();
+      ctx.moveTo(gx, y);
+      ctx.lineTo(gx, y + size);
+      ctx.stroke();
+    }
+    for (let j = 0; j <= cols; j++) {
+      const gy = y + j * cell;
+      ctx.beginPath();
+      ctx.moveTo(x, gy);
+      ctx.lineTo(x + size, gy);
+      ctx.stroke();
+    }
+
+    // Bolder center axes — helpful reference lines for plotting graphs
+    const mid = cols / 2;
+    ctx.strokeStyle = "#9aa7b8";
+    ctx.lineWidth = 1.5 / scale;
+    const midX = x + mid * cell;
+    const midY = y + mid * cell;
+    ctx.beginPath();
+    ctx.moveTo(midX, y);
+    ctx.lineTo(midX, y + size);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, midY);
+    ctx.lineTo(x + size, midY);
+    ctx.stroke();
+    ctx.restore();
+
+    // Resize handle, only shown while the grid tool is active
+    if (gridToolActiveRef.current) {
+      ctx.save();
+      ctx.fillStyle = "#1E88E5";
+      ctx.beginPath();
+      ctx.arc(x + size, y + size, 8 / scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   function fullRedraw() {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
@@ -172,6 +263,11 @@ export default function Whiteboard({ boardId }) {
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
+
+    // Grid is drawn last, on top of every stroke — including eraser
+    // strokes — so it can never actually be erased, only visually
+    // covered for an instant before the next redraw restores it.
+    drawGrid(ctx, gridConfigRef.current);
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
@@ -182,9 +278,15 @@ export default function Whiteboard({ boardId }) {
     const endIdx = pts.length - 1;
     ctx.globalAlpha = styleStroke.opacity ?? 1;
     ctx.strokeStyle = styleStroke.tool === "eraser" ? "#ffffff" : styleStroke.color;
-    ctx.lineWidth = styleStroke.width;
-    smoothPath(ctx, pts, startIdx, endIdx);
+    if (styleStroke.tool === "eraser") {
+      drawVariableWidthPath(ctx, pts, startIdx, endIdx, styleStroke.width);
+    } else {
+      ctx.lineWidth = styleStroke.width;
+      smoothPath(ctx, pts, startIdx, endIdx);
+    }
     ctx.globalAlpha = 1;
+
+    if (gridConfigRef.current) drawGrid(ctx, gridConfigRef.current);
   }
 
   function performUndo() {
@@ -238,11 +340,13 @@ export default function Whiteboard({ boardId }) {
 
       const { data, error } = await supabase
         .from("boards")
-        .select("stroke_data, owner_id")
+        .select("stroke_data, grid_config, owner_id")
         .eq("id", boardId)
         .single();
       if (!error && data) {
         if (Array.isArray(data.stroke_data)) setStrokes(data.stroke_data);
+        gridConfigRef.current = data.grid_config || null;
+        fullRedraw();
         setIsOwner(user.id === data.owner_id);
       } else if (error) {
         console.error("Error loading board:", error);
@@ -255,7 +359,7 @@ export default function Whiteboard({ boardId }) {
     if (!boardId) return;
     const { error } = await supabase
       .from("boards")
-      .update({ stroke_data: strokesRef.current })
+      .update({ stroke_data: strokesRef.current, grid_config: gridConfigRef.current })
       .eq("id", boardId);
     return !error;
   }
@@ -283,7 +387,7 @@ export default function Whiteboard({ boardId }) {
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
             Prefer: "return=minimal",
           },
-          body: JSON.stringify({ stroke_data: strokesRef.current }),
+          body: JSON.stringify({ stroke_data: strokesRef.current, grid_config: gridConfigRef.current }),
         });
       } catch (err) {}
     }
@@ -314,6 +418,7 @@ export default function Whiteboard({ boardId }) {
       if (next) {
         setRulerPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
         setCompassActive(false);
+        setGridToolActive(false);
       }
       return next;
     });
@@ -327,9 +432,30 @@ export default function Whiteboard({ boardId }) {
         setCompassRadius(100);
         setCompassAngle(-Math.PI / 2);
         setRulerActive(false);
+        setGridToolActive(false);
       }
       return next;
     });
+  }
+
+  function handleToggleGrid() {
+    setGridToolActive((prev) => {
+      const next = !prev;
+      if (next) {
+        setRulerActive(false);
+        setCompassActive(false);
+      }
+      fullRedraw();
+      return next;
+    });
+  }
+
+  function handleRemoveGrid() {
+    if (!gridConfigRef.current) return;
+    gridConfigRef.current = null;
+    fullRedraw();
+    channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: null } });
+    saveBoard();
   }
 
   useEffect(() => {
@@ -377,6 +503,11 @@ export default function Whiteboard({ boardId }) {
       if (s.points.length > 1) {
         setStrokes((prev) => [...prev, s]);
       }
+    });
+
+    channel.on("broadcast", { event: "grid-set" }, ({ payload }) => {
+      gridConfigRef.current = payload.grid;
+      fullRedraw();
     });
 
     channel.on("broadcast", { event: "undo" }, () => performUndo());
@@ -470,6 +601,18 @@ export default function Whiteboard({ boardId }) {
             points,
           },
         });
+      });
+    }
+
+    function scheduleGridBroadcast(grid) {
+      pendingGridUpdate.current = grid;
+      if (gridRafId.current) return;
+      gridRafId.current = requestAnimationFrame(() => {
+        gridRafId.current = null;
+        if (!pendingGridUpdate.current) return;
+        const g = pendingGridUpdate.current;
+        pendingGridUpdate.current = null;
+        channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: g } });
       });
     }
 
@@ -587,11 +730,8 @@ export default function Whiteboard({ boardId }) {
       fullRedraw();
     }
 
-    // Samples points along the arc from startAngle through
-    // startAngle + sweep, at the given center/radius, returning them
-    // already converted to world coordinates.
     function sampleArc(center, radius, startAngle, sweep) {
-      const stepAngle = Math.PI / 90; // ~2 degrees
+      const stepAngle = Math.PI / 90;
       const steps = Math.max(1, Math.ceil(Math.abs(sweep) / stepAngle));
       const points = [];
       for (let i = 0; i <= steps; i++) {
@@ -605,6 +745,57 @@ export default function Whiteboard({ boardId }) {
       return points;
     }
 
+    function handleGridPointerDown(pos) {
+      const grid = gridConfigRef.current;
+
+      if (!grid) {
+        const worldPos = screenToWorld(pos);
+        const defaultWorldSize = 300 / scaleRef.current;
+        const newGrid = {
+          x: worldPos.x - defaultWorldSize / 2,
+          y: worldPos.y - defaultWorldSize / 2,
+          size: defaultWorldSize,
+          cols: 10,
+        };
+        gridConfigRef.current = newGrid;
+        fullRedraw();
+        scheduleGridBroadcast(newGrid);
+        return;
+      }
+
+      const topLeftScreen = worldToScreen({ x: grid.x, y: grid.y });
+      const bottomRightScreen = worldToScreen({ x: grid.x + grid.size, y: grid.y + grid.size });
+      const nearCorner = distance(pos, bottomRightScreen) < 24;
+      const inBounds =
+        pos.x >= topLeftScreen.x - 10 && pos.x <= bottomRightScreen.x + 10 &&
+        pos.y >= topLeftScreen.y - 10 && pos.y <= bottomRightScreen.y + 10;
+
+      if (nearCorner) {
+        gridDragMode.current = "resize";
+        gridDragStart.current = { pos, orig: { ...grid } };
+      } else if (inBounds) {
+        gridDragMode.current = "move";
+        gridDragStart.current = { pos, orig: { ...grid } };
+      }
+    }
+
+    function handleGridPointerMove(pos) {
+      const { pos: startPos, orig } = gridDragStart.current;
+      const dxWorld = (pos.x - startPos.x) / scaleRef.current;
+      const dyWorld = (pos.y - startPos.y) / scaleRef.current;
+
+      let updated;
+      if (gridDragMode.current === "move") {
+        updated = { ...orig, x: orig.x + dxWorld, y: orig.y + dyWorld };
+      } else {
+        const newSize = Math.max(40 / scaleRef.current, orig.size + Math.max(dxWorld, dyWorld));
+        updated = { ...orig, size: newSize };
+      }
+      gridConfigRef.current = updated;
+      fullRedraw();
+      scheduleGridBroadcast(updated);
+    }
+
     function handlePointerDown(e) {
       const pos = getPos(e);
 
@@ -616,6 +807,12 @@ export default function Whiteboard({ boardId }) {
         cancelActiveDrawing();
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         beginPanZoom();
+        return;
+      }
+
+      if (gridToolActiveRef.current) {
+        canvas.setPointerCapture(e.pointerId);
+        handleGridPointerDown(pos);
         return;
       }
 
@@ -654,12 +851,20 @@ export default function Whiteboard({ boardId }) {
         firstWorldPoint = screenToWorld(pos);
       }
 
+      const baseWidth = widthForTool(t, widthRef.current);
+
+      if (t === "eraser") {
+        eraserSpeedMultiplier.current = 1;
+        eraserLastPointTime.current = e.timeStamp;
+        eraserLastScreenPos.current = pos;
+      }
+
       currentStroke.current = {
         tool: t,
         color: colorRef.current,
-        width: widthForTool(t, widthRef.current),
+        width: baseWidth,
         opacity: opacityForTool(t),
-        points: [firstWorldPoint],
+        points: [t === "eraser" ? { ...firstWorldPoint, w: baseWidth } : firstWorldPoint],
       };
       canvas.setPointerCapture(e.pointerId);
 
@@ -684,6 +889,11 @@ export default function Whiteboard({ boardId }) {
 
       if (panZoomState.current && touchPoints.current.size >= 2) {
         updatePanZoom();
+        return;
+      }
+
+      if (gridDragMode.current) {
+        handleGridPointerMove(getPos(e));
         return;
       }
 
@@ -729,13 +939,31 @@ export default function Whiteboard({ boardId }) {
 
       const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
       const eventsToProcess = coalesced.length > 0 ? coalesced : [e];
+      const isEraser = currentStroke.current.tool === "eraser";
 
       const before = currentStroke.current.points.length;
       for (const ev of eventsToProcess) {
         const sp = getPos(ev);
         const wp = screenToWorld(sp);
-        currentStroke.current.points.push(wp);
-        pendingBroadcastPoints.current.push(wp);
+
+        if (isEraser) {
+          const t = ev.timeStamp || performance.now();
+          const dt = Math.max(1, t - eraserLastPointTime.current);
+          const dist = eraserLastScreenPos.current ? distance(sp, eraserLastScreenPos.current) : 0;
+          const speed = dist / dt; // screen pixels per millisecond
+          const targetMultiplier = 1 + Math.min(ERASER_MAX_BOOST, speed * ERASER_SENSITIVITY);
+          eraserSpeedMultiplier.current +=
+            (targetMultiplier - eraserSpeedMultiplier.current) * ERASER_SMOOTHING;
+          eraserLastPointTime.current = t;
+          eraserLastScreenPos.current = sp;
+
+          const pointWidth = currentStroke.current.width * eraserSpeedMultiplier.current;
+          currentStroke.current.points.push({ ...wp, w: pointWidth });
+          pendingBroadcastPoints.current.push({ ...wp, w: pointWidth });
+        } else {
+          currentStroke.current.points.push(wp);
+          pendingBroadcastPoints.current.push(wp);
+        }
       }
       const newCount = currentStroke.current.points.length - before;
 
@@ -753,6 +981,14 @@ export default function Whiteboard({ boardId }) {
         if (touchPoints.current.size < 2) {
           panZoomState.current = null;
         }
+        return;
+      }
+
+      if (gridDragMode.current) {
+        gridDragMode.current = null;
+        gridDragStart.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        saveBoard();
         return;
       }
 
@@ -889,6 +1125,9 @@ export default function Whiteboard({ boardId }) {
         onResetView={handleResetView}
         compassActive={compassActive}
         onToggleCompass={handleToggleCompass}
+        gridToolActive={gridToolActive}
+        onToggleGrid={handleToggleGrid}
+        onRemoveGrid={handleRemoveGrid}
       />
     </div>
   );

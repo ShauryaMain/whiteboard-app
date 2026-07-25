@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Highlighter, Eraser, Ruler, Compass, Home, Undo2, Redo2, Trash2, Link2, CheckCircle2 } from "lucide-react";
+import { Pencil, Highlighter, Eraser, Ruler, Compass, Grid3x3, X, Home, Undo2, Redo2, Trash2, Link2, CheckCircle2 } from "lucide-react";
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
 
 export default function Toolbar({
@@ -9,6 +9,7 @@ export default function Toolbar({
   isOwner, onCopyLink, onEndSession, saveStatus,
   rulerActive, onToggleRuler, onResetView,
   compassActive, onToggleCompass,
+  gridToolActive, onToggleGrid, onRemoveGrid,
 }) {
   return (
     <>
@@ -29,7 +30,32 @@ export default function Toolbar({
           <IconButton active={compassActive} onClick={onToggleCompass} label="Compass">
             <Compass size={19} strokeWidth={2} />
           </IconButton>
+          <IconButton active={gridToolActive} onClick={onToggleGrid} label="Grid">
+            <Grid3x3 size={19} strokeWidth={2} />
+          </IconButton>
         </div>
+
+        <Divider />
+
+        <IconButton onClick={onRemoveGrid} label="Remove grid">
+          <span style={{ position: "relative", display: "inline-flex" }}>
+            <Grid3x3 size={19} strokeWidth={2} />
+            <span
+              style={{
+                position: "absolute",
+                bottom: -5,
+                right: -5,
+                background: "#fff",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <X size={11} strokeWidth={3.5} color="#d32f2f" />
+            </span>
+          </span>
+        </IconButton>
 
         <Divider />
 
