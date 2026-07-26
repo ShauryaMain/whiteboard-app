@@ -9,13 +9,11 @@ import ZoomMenu from "./ZoomMenu";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
-const ERASER_MAX_BOOST = 2; // eraser can grow up to 3x its base size at full speed
+const ERASER_MAX_BOOST = 2;
 const ERASER_SENSITIVITY = 0.6;
-const ERASER_SMOOTHING = 0.25; // how quickly it grows/shrinks toward the target size
+const ERASER_SMOOTHING = 0.25;
 
 function opacityForTool(t) {
   return t === "highlighter" ? 0.35 : 1;
@@ -59,15 +57,22 @@ function strokeSegment(ctx, p0, p1, width) {
   ctx.stroke();
 }
 
-// Eraser strokes carry a per-point width (fatter where you moved faster),
-// so instead of one continuous curve at a fixed thickness, we draw each
-// tiny segment individually at the width interpolated between its two points.
 function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
   for (let i = startIdx; i < endIdx; i++) {
     const w0 = pts[i].w ?? fallbackWidth;
     const w1 = pts[i + 1].w ?? fallbackWidth;
     strokeSegment(ctx, pts[i], pts[i + 1], (w0 + w1) / 2);
   }
+}
+
+// Trims stored precision — imperceptible visually, meaningfully smaller
+// JSON per stroke saved to the database.
+function roundPoints(points) {
+  return points.map((p) => {
+    const rp = { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100 };
+    if (p.w !== undefined) rp.w = Math.round(p.w * 100) / 100;
+    return rp;
+  });
 }
 
 export default function Whiteboard({ boardId }) {
@@ -103,6 +108,10 @@ export default function Whiteboard({ boardId }) {
   const gridConfigRef = useRef(null);
   const gridDragMode = useRef(null);
   const gridDragStart = useRef(null);
+
+  const panToolActiveRef = useRef(false);
+  const panDragActive = useRef(false);
+  const panDragStart = useRef(null);
 
   const clientId = useRef(
     typeof crypto !== "undefined" && crypto.randomUUID
@@ -142,6 +151,7 @@ export default function Whiteboard({ boardId }) {
   const [compassAngle, setCompassAngle] = useState(-Math.PI / 2);
   const [zoomPercent, setZoomPercent] = useState(100);
   const [gridToolActive, setGridToolActive] = useState(false);
+  const [panToolActive, setPanToolActive] = useState(false);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -153,6 +163,7 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { compassCenterRef.current = compassCenter; }, [compassCenter]);
   useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
   useEffect(() => { gridToolActiveRef.current = gridToolActive; }, [gridToolActive]);
+  useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
 
   function screenToWorld(p) {
     return {
@@ -221,7 +232,6 @@ export default function Whiteboard({ boardId }) {
       ctx.stroke();
     }
 
-    // Bolder center axes — helpful reference lines for plotting graphs
     const mid = cols / 2;
     ctx.strokeStyle = "#9aa7b8";
     ctx.lineWidth = 1.5 / scale;
@@ -237,7 +247,6 @@ export default function Whiteboard({ boardId }) {
     ctx.stroke();
     ctx.restore();
 
-    // Resize handle, only shown while the grid tool is active
     if (gridToolActiveRef.current) {
       ctx.save();
       ctx.fillStyle = "#1E88E5";
@@ -264,9 +273,6 @@ export default function Whiteboard({ boardId }) {
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
 
-    // Grid is drawn last, on top of every stroke — including eraser
-    // strokes — so it can never actually be erased, only visually
-    // covered for an instant before the next redraw restores it.
     drawGrid(ctx, gridConfigRef.current);
   }
 
@@ -287,6 +293,25 @@ export default function Whiteboard({ boardId }) {
     ctx.globalAlpha = 1;
 
     if (gridConfigRef.current) drawGrid(ctx, gridConfigRef.current);
+  }
+
+  // Saves one finished stroke as its own small row — an append, never a
+  // rewrite of existing data. This is what keeps disk IO low regardless
+  // of how long a session runs or how much gets drawn.
+  async function insertStroke(stroke) {
+    if (!boardId || !stroke?.id) return;
+    const { error } = await supabase.from("strokes").upsert({
+      id: stroke.id,
+      board_id: boardId,
+      data: {
+        tool: stroke.tool,
+        color: stroke.color,
+        width: stroke.width,
+        opacity: stroke.opacity,
+        points: roundPoints(stroke.points),
+      },
+    });
+    if (error) console.error("Error saving stroke:", error);
   }
 
   function performUndo() {
@@ -338,70 +363,46 @@ export default function Whiteboard({ boardId }) {
       const { error: joinError } = await supabase.rpc("join_board_via_link", { board_id: boardId });
       if (joinError) console.error("Error joining board:", joinError);
 
-      const { data, error } = await supabase
+      const { data: boardRow, error: boardError } = await supabase
         .from("boards")
-        .select("stroke_data, grid_config, owner_id")
+        .select("grid_config, owner_id")
         .eq("id", boardId)
         .single();
-      if (!error && data) {
-        if (Array.isArray(data.stroke_data)) setStrokes(data.stroke_data);
-        gridConfigRef.current = data.grid_config || null;
-        fullRedraw();
-        setIsOwner(user.id === data.owner_id);
-      } else if (error) {
-        console.error("Error loading board:", error);
+      if (!boardError && boardRow) {
+        gridConfigRef.current = boardRow.grid_config || null;
+        setIsOwner(user.id === boardRow.owner_id);
+      } else if (boardError) {
+        console.error("Error loading board:", boardError);
       }
+
+      const { data: strokeRows, error: strokesError } = await supabase
+        .from("strokes")
+        .select("id, data")
+        .eq("board_id", boardId)
+        .order("created_at", { ascending: true });
+      if (!strokesError && strokeRows) {
+        setStrokes(strokeRows.map((r) => ({ ...r.data, id: r.id })));
+      } else if (strokesError) {
+        console.error("Error loading strokes:", strokesError);
+      }
+
+      fullRedraw();
     }
     loadBoard();
   }, [boardId, user]);
 
-  async function saveBoard() {
+  async function saveGrid() {
     if (!boardId) return;
     const { error } = await supabase
       .from("boards")
-      .update({ stroke_data: strokesRef.current, grid_config: gridConfigRef.current })
+      .update({ grid_config: gridConfigRef.current })
       .eq("id", boardId);
     return !error;
   }
 
-  useEffect(() => {
-    if (!isOwner || !boardId) return;
-    const interval = setInterval(async () => {
-      const ok = await saveBoard();
-      setSaveStatus(ok ? "Autosaved" : "Save failed");
-      setTimeout(() => setSaveStatus(""), 2000);
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [isOwner, boardId]);
-
-  useEffect(() => {
-    if (!isOwner || !boardId) return;
-    function saveOnClose() {
-      try {
-        fetch(`${SUPABASE_URL}/rest/v1/boards?id=eq.${boardId}`, {
-          method: "PATCH",
-          keepalive: true,
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            Prefer: "return=minimal",
-          },
-          body: JSON.stringify({ stroke_data: strokesRef.current, grid_config: gridConfigRef.current }),
-        });
-      } catch (err) {}
-    }
-    window.addEventListener("pagehide", saveOnClose);
-    window.addEventListener("beforeunload", saveOnClose);
-    return () => {
-      window.removeEventListener("pagehide", saveOnClose);
-      window.removeEventListener("beforeunload", saveOnClose);
-    };
-  }, [isOwner, boardId]);
-
   async function handleEndSession() {
     setSaveStatus("Saving…");
-    const ok = await saveBoard();
+    const ok = await saveGrid();
     setSaveStatus(ok ? "Saved" : "Save failed");
     setTimeout(() => setSaveStatus(""), 3000);
   }
@@ -419,6 +420,7 @@ export default function Whiteboard({ boardId }) {
         setRulerPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
         setCompassActive(false);
         setGridToolActive(false);
+        setPanToolActive(false);
       }
       return next;
     });
@@ -433,6 +435,7 @@ export default function Whiteboard({ boardId }) {
         setCompassAngle(-Math.PI / 2);
         setRulerActive(false);
         setGridToolActive(false);
+        setPanToolActive(false);
       }
       return next;
     });
@@ -444,8 +447,21 @@ export default function Whiteboard({ boardId }) {
       if (next) {
         setRulerActive(false);
         setCompassActive(false);
+        setPanToolActive(false);
       }
       fullRedraw();
+      return next;
+    });
+  }
+
+  function handleTogglePan() {
+    setPanToolActive((prev) => {
+      const next = !prev;
+      if (next) {
+        setRulerActive(false);
+        setCompassActive(false);
+        setGridToolActive(false);
+      }
       return next;
     });
   }
@@ -455,7 +471,7 @@ export default function Whiteboard({ boardId }) {
     gridConfigRef.current = null;
     fullRedraw();
     channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: null } });
-    saveBoard();
+    saveGrid();
   }
 
   useEffect(() => {
@@ -673,6 +689,7 @@ export default function Whiteboard({ boardId }) {
       if (finished && finished.points.length > 1) {
         setStrokes((prev) => [...prev, finished]);
         setRedoStack([]);
+        insertStroke(finished);
       }
     }
 
@@ -810,6 +827,13 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
+      if (panToolActiveRef.current) {
+        panDragActive.current = true;
+        panDragStart.current = { pos, origPan: { ...panRef.current } };
+        canvas.setPointerCapture(e.pointerId);
+        return;
+      }
+
       if (gridToolActiveRef.current) {
         canvas.setPointerCapture(e.pointerId);
         handleGridPointerDown(pos);
@@ -860,6 +884,7 @@ export default function Whiteboard({ boardId }) {
       }
 
       currentStroke.current = {
+        id: strokeId,
         tool: t,
         color: colorRef.current,
         width: baseWidth,
@@ -889,6 +914,18 @@ export default function Whiteboard({ boardId }) {
 
       if (panZoomState.current && touchPoints.current.size >= 2) {
         updatePanZoom();
+        return;
+      }
+
+      if (panDragActive.current) {
+        const pos = getPos(e);
+        const dx = pos.x - panDragStart.current.pos.x;
+        const dy = pos.y - panDragStart.current.pos.y;
+        panRef.current = {
+          x: panDragStart.current.origPan.x + dx,
+          y: panDragStart.current.origPan.y + dy,
+        };
+        fullRedraw();
         return;
       }
 
@@ -950,7 +987,7 @@ export default function Whiteboard({ boardId }) {
           const t = ev.timeStamp || performance.now();
           const dt = Math.max(1, t - eraserLastPointTime.current);
           const dist = eraserLastScreenPos.current ? distance(sp, eraserLastScreenPos.current) : 0;
-          const speed = dist / dt; // screen pixels per millisecond
+          const speed = dist / dt;
           const targetMultiplier = 1 + Math.min(ERASER_MAX_BOOST, speed * ERASER_SENSITIVITY);
           eraserSpeedMultiplier.current +=
             (targetMultiplier - eraserSpeedMultiplier.current) * ERASER_SMOOTHING;
@@ -984,11 +1021,18 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
+      if (panDragActive.current) {
+        panDragActive.current = false;
+        panDragStart.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        return;
+      }
+
       if (gridDragMode.current) {
         gridDragMode.current = null;
         gridDragStart.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        saveBoard();
+        saveGrid();
         return;
       }
 
@@ -1009,6 +1053,7 @@ export default function Whiteboard({ boardId }) {
       if (finished && finished.points.length > 1) {
         setStrokes((prev) => [...prev, finished]);
         setRedoStack([]);
+        insertStroke(finished);
       }
     }
 
@@ -1033,13 +1078,21 @@ export default function Whiteboard({ boardId }) {
   }, [strokes]);
 
   function handleUndo() {
+    const last = strokes[strokes.length - 1];
     performUndo();
     channelRef.current?.send({ type: "broadcast", event: "undo", payload: {} });
+    if (last?.id) {
+      supabase.from("strokes").delete().eq("id", last.id).then(({ error }) => {
+        if (error) console.error("Error deleting stroke:", error);
+      });
+    }
   }
 
   function handleRedo() {
+    const next = redoStack[redoStack.length - 1];
     performRedo();
     channelRef.current?.send({ type: "broadcast", event: "redo", payload: {} });
+    if (next) insertStroke(next);
   }
 
   function handleClear() {
@@ -1047,11 +1100,15 @@ export default function Whiteboard({ boardId }) {
     if (window.confirm("Clear the whole board for everyone? This can't be undone.")) {
       performClear();
       channelRef.current?.send({ type: "broadcast", event: "clear", payload: {} });
+      supabase.from("strokes").delete().eq("board_id", boardId).then(({ error }) => {
+        if (error) console.error("Error clearing strokes:", error);
+      });
     }
   }
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
+      
       <a
         href="/"
         style={{
@@ -1083,6 +1140,7 @@ export default function Whiteboard({ boardId }) {
           userSelect: "none",
           WebkitTouchCallout: "none",
           WebkitTapHighlightColor: "transparent",
+          cursor: panToolActive ? "grab" : "default",
         }}
       />
       {rulerActive && (
@@ -1128,6 +1186,8 @@ export default function Whiteboard({ boardId }) {
         gridToolActive={gridToolActive}
         onToggleGrid={handleToggleGrid}
         onRemoveGrid={handleRemoveGrid}
+        panToolActive={panToolActive}
+        onTogglePan={handleTogglePan}
       />
     </div>
   );

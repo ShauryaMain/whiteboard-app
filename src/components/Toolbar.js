@@ -1,6 +1,6 @@
 "use client";
 
-import { Pencil, Highlighter, Eraser, Ruler, Compass, Grid3x3, X, Home, Undo2, Redo2, Trash2, Link2, CheckCircle2 } from "lucide-react";
+import { Pencil, Highlighter, Eraser, Ruler, Compass, Grid3x3, Hand, X, Home, Undo2, Redo2, Trash2, Link2, CheckCircle2 } from "lucide-react";
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
 
 export default function Toolbar({
@@ -10,11 +10,15 @@ export default function Toolbar({
   rulerActive, onToggleRuler, onResetView,
   compassActive, onToggleCompass,
   gridToolActive, onToggleGrid, onRemoveGrid,
+  panToolActive, onTogglePan,
 }) {
   return (
     <>
       <div className="toolbar-scroll" onContextMenu={(e) => e.preventDefault()} style={barStyle}>
         <div style={groupStyle}>
+          <IconButton active={panToolActive} onClick={onTogglePan} label="Pan">
+            <Hand size={19} strokeWidth={2} />
+          </IconButton>
           <IconButton active={tool === "pen"} onClick={() => setTool("pen")} label="Pen">
             <Pencil size={19} strokeWidth={2} />
           </IconButton>
