@@ -14,6 +14,7 @@ const MAX_SCALE = 8;
 const ERASER_MAX_BOOST = 2;
 const ERASER_SENSITIVITY = 0.6;
 const ERASER_SMOOTHING = 0.25;
+const INTERP_MAX_STEP = 6;
 
 function opacityForTool(t) {
   return t === "highlighter" ? 0.35 : 1;
@@ -36,6 +37,25 @@ function projectOntoAngle(start, pos, angle) {
 
 function distance(p1, p2) {
   return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+// Fills the gap between two screen points with evenly-spaced intermediate
+// points when they're further apart than expected — compensating for
+// input sources (notably Safari + Apple Pencil under pressure) that
+// sometimes deliver sparser raw samples than the stroke actually needs.
+function interpolateGap(prevScreen, newScreen, maxStep) {
+  const dist = distance(prevScreen, newScreen);
+  if (dist <= maxStep) return [];
+  const steps = Math.floor(dist / maxStep);
+  const points = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = i / (steps + 1);
+    points.push({
+      x: prevScreen.x + (newScreen.x - prevScreen.x) * t,
+      y: prevScreen.y + (newScreen.y - prevScreen.y) * t,
+    });
+  }
+  return points;
 }
 
 function centroid(p1, p2) {
@@ -87,6 +107,7 @@ export default function Whiteboard({ boardId }) {
   const activePointerId = useRef(null);
   const activePointerType = useRef(null);
   const strokeScreenStart = useRef(null);
+  const lastRawScreenPos = useRef(null);
   const eraserSpeedMultiplier = useRef(1);
   const eraserLastPointTime = useRef(0);
   const eraserLastScreenPos = useRef(null);
@@ -849,6 +870,7 @@ export default function Whiteboard({ boardId }) {
       activePointerId.current = e.pointerId;
       activePointerType.current = e.pointerType;
       strokeScreenStart.current = pos;
+      lastRawScreenPos.current = pos;
 
       const t = toolRef.current;
       const strokeId =
@@ -981,6 +1003,23 @@ export default function Whiteboard({ boardId }) {
       const before = currentStroke.current.points.length;
       for (const ev of eventsToProcess) {
         const sp = getPos(ev);
+
+        const gapPoints = lastRawScreenPos.current
+          ? interpolateGap(lastRawScreenPos.current, sp, INTERP_MAX_STEP)
+          : [];
+
+        for (const gp of gapPoints) {
+          const gwp = screenToWorld(gp);
+          if (isEraser) {
+            const gWidth = currentStroke.current.width * eraserSpeedMultiplier.current;
+            currentStroke.current.points.push({ ...gwp, w: gWidth });
+            pendingBroadcastPoints.current.push({ ...gwp, w: gWidth });
+          } else {
+            currentStroke.current.points.push(gwp);
+            pendingBroadcastPoints.current.push(gwp);
+          }
+        }
+
         const wp = screenToWorld(sp);
 
         if (isEraser) {
@@ -1001,6 +1040,8 @@ export default function Whiteboard({ boardId }) {
           currentStroke.current.points.push(wp);
           pendingBroadcastPoints.current.push(wp);
         }
+
+        lastRawScreenPos.current = sp;
       }
       const newCount = currentStroke.current.points.length - before;
 
