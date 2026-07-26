@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Share2, LogOut } from "lucide-react";
+import { Plus, Share2, Trash2, LogOut } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import NewBoardModal from "@/components/NewBoardModal";
@@ -60,6 +60,20 @@ export default function Home() {
     setShareTarget(board);
   }
 
+
+  async function handleDeleteBoard(board, e) {
+    e.stopPropagation();
+    if (!window.confirm(`Delete "${board.name || "Untitled board"}"? This can't be undone.`)) {
+      return;
+    }
+    const { error } = await supabase.from("boards").delete().eq("id", board.id);
+    if (error) {
+      alert("Couldn't delete board: " + error.message);
+      return;
+    }
+    loadBoards();
+  }
+
   async function handleShareSubmit(email) {
     const board = shareTarget;
     setShareTarget(null);
@@ -101,11 +115,21 @@ export default function Home() {
                 onClick={(e) => openShareModal(b, e)}
                 title="Share"
                 style={{
-                  position: "absolute", top: 10, right: 10, border: "none",
+                  position: "absolute", top: 10, right: 34, border: "none",
                   background: "transparent", cursor: "pointer", padding: 4, color: "#999",
                 }}
               >
                 <Share2 size={15} />
+              </button>
+              <button
+                onClick={(e) => handleDeleteBoard(b, e)}
+                title="Delete"
+                style={{
+                  position: "absolute", top: 10, right: 10, border: "none",
+                  background: "transparent", cursor: "pointer", padding: 4, color: "#999",
+                }}
+              >
+                <Trash2 size={15} />
               </button>
               <span style={{ fontSize: 16, fontWeight: 500, color: "#1a1a1a", textAlign: "center" }}>
                 {b.name || "Untitled board"}
