@@ -39,6 +39,25 @@ function distance(p1, p2) {
   return Math.hypot(p1.x - p2.x, p1.y - p2.y);
 }
 
+// Fills the gap between two screen points with evenly-spaced intermediate
+// points when they're further apart than expected — compensating for
+// input sources (notably Safari + Apple Pencil under pressure) that
+// sometimes deliver sparser raw samples than the stroke actually needs.
+function interpolateGap(prevScreen, newScreen, maxStep) {
+  const dist = distance(prevScreen, newScreen);
+  if (dist <= maxStep) return [];
+  const steps = Math.floor(dist / maxStep);
+  const points = [];
+  for (let i = 1; i <= steps; i++) {
+    const t = i / (steps + 1);
+    points.push({
+      x: prevScreen.x + (newScreen.x - prevScreen.x) * t,
+      y: prevScreen.y + (newScreen.y - prevScreen.y) * t,
+    });
+  }
+  return points;
+}
+
 function centroid(p1, p2) {
   return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
 }
@@ -66,27 +85,14 @@ function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
   }
 }
 
+// Trims stored precision — imperceptible visually, meaningfully smaller
+// JSON per stroke saved to the database.
 function roundPoints(points) {
   return points.map((p) => {
     const rp = { x: Math.round(p.x * 100) / 100, y: Math.round(p.y * 100) / 100 };
     if (p.w !== undefined) rp.w = Math.round(p.w * 100) / 100;
     return rp;
   });
-}
-
-function interpolateGap(prevScreen, newScreen, maxStep) {
-  const dist = distance(prevScreen, newScreen);
-  if (dist <= maxStep) return [];
-  const steps = Math.floor(dist / maxStep);
-  const points = [];
-  for (let i = 1; i <= steps; i++) {
-    const t = i / (steps + 1);
-    points.push({
-      x: prevScreen.x + (newScreen.x - prevScreen.x) * t,
-      y: prevScreen.y + (newScreen.y - prevScreen.y) * t,
-    });
-  }
-  return points;
 }
 
 export default function Whiteboard({ boardId }) {
@@ -103,17 +109,17 @@ export default function Whiteboard({ boardId }) {
   const strokeScreenStart = useRef(null);
   const lastRawScreenPos = useRef(null);
   const eraserSpeedMultiplier = useRef(1);
+
+  // Mobile-only predictive drawing overlay — see mobileOverlayTick below.
+  // Never touched on desktop.
+  const isMobileRef = useRef(false);
+  const mobileOverlayCanvasRef = useRef(null);
+  const mobileOverlayCtxRef = useRef(null);
+  const mobileDrawRafId = useRef(null);
+  const mobileOverlayStrokeActive = useRef(false);
+  const rawHistory = useRef([]);
   const eraserLastPointTime = useRef(0);
   const eraserLastScreenPos = useRef(null);
-
-  // Mobile-only: while true, a freehand stroke's actual point samples come
-  // from native Touch Events instead of Pointer Events (Safari delivers
-  // Apple Pencil movement at a meaningfully higher rate via Touch Events —
-  // this is the fix for jagged fast strokes under pressure). All state
-  // (start/stop/cancel, ruler, compass, pinch, pan) stays fully driven by
-  // Pointer Events, completely unchanged.
-  const isMobileRef = useRef(false);
-  const touchDrivenStrokeActive = useRef(false);
 
   const panRef = useRef({ x: 0, y: 0 });
   const scaleRef = useRef(1);
@@ -319,6 +325,9 @@ export default function Whiteboard({ boardId }) {
     if (gridConfigRef.current) drawGrid(ctx, gridConfigRef.current);
   }
 
+  // Saves one finished stroke as its own small row — an append, never a
+  // rewrite of existing data. This is what keeps disk IO low regardless
+  // of how long a session runs or how much gets drawn.
   async function insertStroke(stroke) {
     if (!boardId || !stroke?.id) return;
     const { error } = await supabase.from("strokes").upsert({
@@ -567,6 +576,16 @@ export default function Whiteboard({ boardId }) {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
+    const overlayCanvas = mobileOverlayCanvasRef.current;
+    const overlayCtx = overlayCanvas ? overlayCanvas.getContext("2d") : null;
+    mobileOverlayCtxRef.current = overlayCtx;
+    if (overlayCtx) {
+      overlayCtx.lineCap = "round";
+      overlayCtx.lineJoin = "round";
+    }
+    // Detect a genuinely touch-primary device (tablets/phones) rather than
+    // checking pointer type — a desktop with a drawing tablet still reports
+    // a fine, hover-capable primary pointer, so this never fires there.
     isMobileRef.current =
       typeof window !== "undefined" && window.matchMedia
         ? window.matchMedia("(hover: none) and (pointer: coarse)").matches
@@ -578,6 +597,12 @@ export default function Whiteboard({ boardId }) {
       canvas.height = window.innerHeight * ratio;
       canvas.style.width = window.innerWidth + "px";
       canvas.style.height = window.innerHeight + "px";
+      if (overlayCanvas) {
+        overlayCanvas.width = window.innerWidth * ratio;
+        overlayCanvas.height = window.innerHeight * ratio;
+        overlayCanvas.style.width = window.innerWidth + "px";
+        overlayCanvas.style.height = window.innerHeight + "px";
+      }
       fullRedraw();
     }
 
@@ -699,51 +724,6 @@ export default function Whiteboard({ boardId }) {
       }
     }
 
-    // Handles one incoming raw sample, regardless of whether it came from
-    // a Pointer Event (desktop/mouse/tablet, or non-drawing mobile
-    // interactions) or a Touch Event (mobile freehand drawing). Keeping
-    // this shared avoids duplicating the eraser dynamic-width logic.
-    function ingestPoint(screenPt, timeMs) {
-      const gapPoints = lastRawScreenPos.current
-        ? interpolateGap(lastRawScreenPos.current, screenPt, INTERP_MAX_STEP)
-        : [];
-      const isEraser = currentStroke.current.tool === "eraser";
-
-      for (const gp of gapPoints) {
-        const gwp = screenToWorld(gp);
-        if (isEraser) {
-          const gWidth = currentStroke.current.width * eraserSpeedMultiplier.current;
-          currentStroke.current.points.push({ ...gwp, w: gWidth });
-          pendingBroadcastPoints.current.push({ ...gwp, w: gWidth });
-        } else {
-          currentStroke.current.points.push(gwp);
-          pendingBroadcastPoints.current.push(gwp);
-        }
-      }
-
-      const wp = screenToWorld(screenPt);
-
-      if (isEraser) {
-        const dt = Math.max(1, timeMs - eraserLastPointTime.current);
-        const dist = eraserLastScreenPos.current ? distance(screenPt, eraserLastScreenPos.current) : 0;
-        const speed = dist / dt;
-        const targetMultiplier = 1 + Math.min(ERASER_MAX_BOOST, speed * ERASER_SENSITIVITY);
-        eraserSpeedMultiplier.current +=
-          (targetMultiplier - eraserSpeedMultiplier.current) * ERASER_SMOOTHING;
-        eraserLastPointTime.current = timeMs;
-        eraserLastScreenPos.current = screenPt;
-
-        const pointWidth = currentStroke.current.width * eraserSpeedMultiplier.current;
-        currentStroke.current.points.push({ ...wp, w: pointWidth });
-        pendingBroadcastPoints.current.push({ ...wp, w: pointWidth });
-      } else {
-        currentStroke.current.points.push(wp);
-        pendingBroadcastPoints.current.push(wp);
-      }
-
-      lastRawScreenPos.current = screenPt;
-    }
-
     function cancelActiveDrawing() {
       if (!isDrawing.current) return;
       isDrawing.current = false;
@@ -754,14 +734,13 @@ export default function Whiteboard({ boardId }) {
       activePointerId.current = null;
       activePointerType.current = null;
       activeCompassParams.current = null;
-      touchDrivenStrokeActive.current = false;
+      stopMobileOverlay();
 
       finalizeStroke(strokeId);
 
       if (finished && finished.points.length > 1) {
         setStrokes((prev) => [...prev, finished]);
         setRedoStack([]);
-        insertStroke(finished);
       }
     }
 
@@ -885,6 +864,75 @@ export default function Whiteboard({ boardId }) {
       scheduleGridBroadcast(updated);
     }
 
+    function stopMobileOverlay() {
+      if (mobileDrawRafId.current) {
+        cancelAnimationFrame(mobileDrawRafId.current);
+        mobileDrawRafId.current = null;
+      }
+      mobileOverlayStrokeActive.current = false;
+      const octx = mobileOverlayCtxRef.current;
+      if (octx) {
+        const ratio = window.devicePixelRatio || 1;
+        octx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        octx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      }
+    }
+
+    // Runs every animation frame while a mobile freehand stroke is active.
+    // Redraws the confirmed points so far, PLUS a short predicted
+    // extension estimated from recent direction/speed — this is what
+    // keeps the line visually caught up to the pencil even when Safari's
+    // real samples arrive sparsely under pressure. Nothing drawn here is
+    // ever saved, synced, or persisted — it's purely local visual polish.
+    function mobileOverlayTick() {
+      if (!mobileOverlayStrokeActive.current || !isDrawing.current || !currentStroke.current) {
+        mobileDrawRafId.current = null;
+        return;
+      }
+      const octx = mobileOverlayCtxRef.current;
+      if (octx) {
+        const ratio = window.devicePixelRatio || 1;
+        octx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        octx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+        const stroke = currentStroke.current;
+        const screenPts = stroke.points.map((p) => worldToScreen(p));
+
+        let tail = null;
+        const hist = rawHistory.current;
+        if (hist.length === 2) {
+          const dt = Math.max(1, hist[1].t - hist[0].t);
+          const vx = (hist[1].pos.x - hist[0].pos.x) / dt;
+          const vy = (hist[1].pos.y - hist[0].pos.y) / dt;
+          const predictMs = 24;
+          let px = hist[1].pos.x + vx * predictMs;
+          let py = hist[1].pos.y + vy * predictMs;
+          const maxDist = 40;
+          const ddx = px - hist[1].pos.x;
+          const ddy = py - hist[1].pos.y;
+          const dd = Math.hypot(ddx, ddy);
+          if (dd > maxDist) {
+            px = hist[1].pos.x + (ddx / dd) * maxDist;
+            py = hist[1].pos.y + (ddy / dd) * maxDist;
+          }
+          tail = { x: px, y: py };
+        }
+
+        const allPts = tail ? [...screenPts, tail] : screenPts;
+        if (allPts.length >= 2) {
+          octx.globalAlpha = stroke.opacity ?? 1;
+          octx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
+          octx.lineWidth = stroke.width * scaleRef.current;
+          octx.beginPath();
+          octx.moveTo(allPts[0].x, allPts[0].y);
+          for (let i = 1; i < allPts.length; i++) octx.lineTo(allPts[i].x, allPts[i].y);
+          octx.stroke();
+          octx.globalAlpha = 1;
+        }
+      }
+      mobileDrawRafId.current = requestAnimationFrame(mobileOverlayTick);
+    }
+
     function handlePointerDown(e) {
       const pos = getPos(e);
 
@@ -967,10 +1015,16 @@ export default function Whiteboard({ boardId }) {
       canvas.setPointerCapture(e.pointerId);
 
       // Only plain freehand strokes on an actual touch/pen mobile device
-      // get their point samples from Touch Events instead of Pointer
-      // Events — ruler/compass and all desktop input are untouched.
-      touchDrivenStrokeActive.current =
+      // get the predictive overlay — ruler/compass keep their existing
+      // exact behavior untouched, on both mobile and desktop.
+      mobileOverlayStrokeActive.current =
         isMobileRef.current && !compassActiveRef.current && !rulerActiveRef.current;
+      if (mobileOverlayStrokeActive.current) {
+        rawHistory.current = [{ pos, t: e.timeStamp || performance.now() }];
+        if (mobileDrawRafId.current === null) {
+          mobileDrawRafId.current = requestAnimationFrame(mobileOverlayTick);
+        }
+      }
 
       channelRef.current?.send({
         type: "broadcast",
@@ -1053,46 +1107,62 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
-      // On mobile, plain freehand strokes get their samples from the
-      // touchmove listener below instead — skip collecting here to avoid
-      // double-counting the same physical movement.
-      if (touchDrivenStrokeActive.current) return;
-
       const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
       const eventsToProcess = coalesced.length > 0 ? coalesced : [e];
+      const isEraser = currentStroke.current.tool === "eraser";
 
       const before = currentStroke.current.points.length;
       for (const ev of eventsToProcess) {
         const sp = getPos(ev);
+
+        const gapPoints = lastRawScreenPos.current
+          ? interpolateGap(lastRawScreenPos.current, sp, INTERP_MAX_STEP)
+          : [];
+
+        for (const gp of gapPoints) {
+          const gwp = screenToWorld(gp);
+          if (isEraser) {
+            const gWidth = currentStroke.current.width * eraserSpeedMultiplier.current;
+            currentStroke.current.points.push({ ...gwp, w: gWidth });
+            pendingBroadcastPoints.current.push({ ...gwp, w: gWidth });
+          } else {
+            currentStroke.current.points.push(gwp);
+            pendingBroadcastPoints.current.push(gwp);
+          }
+        }
+
+        const wp = screenToWorld(sp);
+
+        if (isEraser) {
+          const t = ev.timeStamp || performance.now();
+          const dt = Math.max(1, t - eraserLastPointTime.current);
+          const dist = eraserLastScreenPos.current ? distance(sp, eraserLastScreenPos.current) : 0;
+          const speed = dist / dt;
+          const targetMultiplier = 1 + Math.min(ERASER_MAX_BOOST, speed * ERASER_SENSITIVITY);
+          eraserSpeedMultiplier.current +=
+            (targetMultiplier - eraserSpeedMultiplier.current) * ERASER_SMOOTHING;
+          eraserLastPointTime.current = t;
+          eraserLastScreenPos.current = sp;
+
+          const pointWidth = currentStroke.current.width * eraserSpeedMultiplier.current;
+          currentStroke.current.points.push({ ...wp, w: pointWidth });
+          pendingBroadcastPoints.current.push({ ...wp, w: pointWidth });
+        } else {
+          currentStroke.current.points.push(wp);
+          pendingBroadcastPoints.current.push(wp);
+        }
+
+        lastRawScreenPos.current = sp;
+
         const t = ev.timeStamp || performance.now();
-        ingestPoint(sp, t);
+        rawHistory.current.push({ pos: sp, t });
+        if (rawHistory.current.length > 2) rawHistory.current.shift();
       }
       const newCount = currentStroke.current.points.length - before;
 
-      drawNewSegment(ctxRef.current, currentStroke.current, newCount);
-      scheduleBroadcastFlush();
-    }
-
-    // Mobile-only: supplies the actual point samples for a freehand
-    // stroke, sourced from native Touch Events rather than Pointer
-    // Events, per the documented Safari/Apple Pencil sampling-rate gap.
-    function handleTouchMove(e) {
-      if (!touchDrivenStrokeActive.current) return;
-      if (!isDrawing.current || !currentStroke.current) return;
-      e.preventDefault();
-
-      const rect = canvas.getBoundingClientRect();
-      const before = currentStroke.current.points.length;
-      const t = e.timeStamp || performance.now();
-
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const touch = e.changedTouches[i];
-        const sp = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
-        ingestPoint(sp, t);
+      if (!mobileOverlayStrokeActive.current) {
+        drawNewSegment(ctxRef.current, currentStroke.current, newCount);
       }
-
-      const newCount = currentStroke.current.points.length - before;
-      drawNewSegment(ctxRef.current, currentStroke.current, newCount);
       scheduleBroadcastFlush();
     }
 
@@ -1130,7 +1200,7 @@ export default function Whiteboard({ boardId }) {
       activePointerId.current = null;
       activePointerType.current = null;
       activeCompassParams.current = null;
-      touchDrivenStrokeActive.current = false;
+      stopMobileOverlay();
 
       const finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
@@ -1151,9 +1221,6 @@ export default function Whiteboard({ boardId }) {
     canvas.addEventListener("pointerup", handlePointerUp);
     canvas.addEventListener("pointercancel", handlePointerUp);
     canvas.addEventListener("wheel", handleWheel, { passive: false });
-    if (isMobileRef.current) {
-      canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
-    }
 
     return () => {
       window.removeEventListener("resize", resizeCanvas);
@@ -1162,9 +1229,6 @@ export default function Whiteboard({ boardId }) {
       canvas.removeEventListener("pointerup", handlePointerUp);
       canvas.removeEventListener("pointercancel", handlePointerUp);
       canvas.removeEventListener("wheel", handleWheel);
-      if (isMobileRef.current) {
-        canvas.removeEventListener("touchmove", handleTouchMove);
-      }
     };
   }, []);
 
@@ -1203,6 +1267,7 @@ export default function Whiteboard({ boardId }) {
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
+      
       <a
         href="/"
         style={{
@@ -1236,6 +1301,10 @@ export default function Whiteboard({ boardId }) {
           WebkitTapHighlightColor: "transparent",
           cursor: panToolActive ? "grab" : "default",
         }}
+      />
+      <canvas
+        ref={mobileOverlayCanvasRef}
+        style={{ position: "fixed", inset: 0, zIndex: 5, pointerEvents: "none" }}
       />
       {rulerActive && (
         <RulerOverlay
