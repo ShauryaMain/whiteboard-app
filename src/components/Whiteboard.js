@@ -109,6 +109,15 @@ export default function Whiteboard({ boardId }) {
   const strokeScreenStart = useRef(null);
   const lastRawScreenPos = useRef(null);
   const eraserSpeedMultiplier = useRef(1);
+
+  // Mobile-only predictive drawing overlay — see mobileOverlayTick below.
+  // Never touched on desktop.
+  const isMobileRef = useRef(false);
+  const mobileOverlayCanvasRef = useRef(null);
+  const mobileOverlayCtxRef = useRef(null);
+  const mobileDrawRafId = useRef(null);
+  const mobileOverlayStrokeActive = useRef(false);
+  const rawHistory = useRef([]);
   const eraserLastPointTime = useRef(0);
   const eraserLastScreenPos = useRef(null);
 
@@ -567,12 +576,33 @@ export default function Whiteboard({ boardId }) {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
+    const overlayCanvas = mobileOverlayCanvasRef.current;
+    const overlayCtx = overlayCanvas ? overlayCanvas.getContext("2d") : null;
+    mobileOverlayCtxRef.current = overlayCtx;
+    if (overlayCtx) {
+      overlayCtx.lineCap = "round";
+      overlayCtx.lineJoin = "round";
+    }
+    // Detect a genuinely touch-primary device (tablets/phones) rather than
+    // checking pointer type — a desktop with a drawing tablet still reports
+    // a fine, hover-capable primary pointer, so this never fires there.
+    isMobileRef.current =
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia("(hover: none) and (pointer: coarse)").matches
+        : false;
+
     function resizeCanvas() {
       const ratio = window.devicePixelRatio || 1;
       canvas.width = window.innerWidth * ratio;
       canvas.height = window.innerHeight * ratio;
       canvas.style.width = window.innerWidth + "px";
       canvas.style.height = window.innerHeight + "px";
+      if (overlayCanvas) {
+        overlayCanvas.width = window.innerWidth * ratio;
+        overlayCanvas.height = window.innerHeight * ratio;
+        overlayCanvas.style.width = window.innerWidth + "px";
+        overlayCanvas.style.height = window.innerHeight + "px";
+      }
       fullRedraw();
     }
 
@@ -704,13 +734,13 @@ export default function Whiteboard({ boardId }) {
       activePointerId.current = null;
       activePointerType.current = null;
       activeCompassParams.current = null;
+      stopMobileOverlay();
 
       finalizeStroke(strokeId);
 
       if (finished && finished.points.length > 1) {
         setStrokes((prev) => [...prev, finished]);
         setRedoStack([]);
-        insertStroke(finished);
       }
     }
 
@@ -834,6 +864,75 @@ export default function Whiteboard({ boardId }) {
       scheduleGridBroadcast(updated);
     }
 
+    function stopMobileOverlay() {
+      if (mobileDrawRafId.current) {
+        cancelAnimationFrame(mobileDrawRafId.current);
+        mobileDrawRafId.current = null;
+      }
+      mobileOverlayStrokeActive.current = false;
+      const octx = mobileOverlayCtxRef.current;
+      if (octx) {
+        const ratio = window.devicePixelRatio || 1;
+        octx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        octx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      }
+    }
+
+    // Runs every animation frame while a mobile freehand stroke is active.
+    // Redraws the confirmed points so far, PLUS a short predicted
+    // extension estimated from recent direction/speed — this is what
+    // keeps the line visually caught up to the pencil even when Safari's
+    // real samples arrive sparsely under pressure. Nothing drawn here is
+    // ever saved, synced, or persisted — it's purely local visual polish.
+    function mobileOverlayTick() {
+      if (!mobileOverlayStrokeActive.current || !isDrawing.current || !currentStroke.current) {
+        mobileDrawRafId.current = null;
+        return;
+      }
+      const octx = mobileOverlayCtxRef.current;
+      if (octx) {
+        const ratio = window.devicePixelRatio || 1;
+        octx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        octx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+        const stroke = currentStroke.current;
+        const screenPts = stroke.points.map((p) => worldToScreen(p));
+
+        let tail = null;
+        const hist = rawHistory.current;
+        if (hist.length === 2) {
+          const dt = Math.max(1, hist[1].t - hist[0].t);
+          const vx = (hist[1].pos.x - hist[0].pos.x) / dt;
+          const vy = (hist[1].pos.y - hist[0].pos.y) / dt;
+          const predictMs = 24;
+          let px = hist[1].pos.x + vx * predictMs;
+          let py = hist[1].pos.y + vy * predictMs;
+          const maxDist = 40;
+          const ddx = px - hist[1].pos.x;
+          const ddy = py - hist[1].pos.y;
+          const dd = Math.hypot(ddx, ddy);
+          if (dd > maxDist) {
+            px = hist[1].pos.x + (ddx / dd) * maxDist;
+            py = hist[1].pos.y + (ddy / dd) * maxDist;
+          }
+          tail = { x: px, y: py };
+        }
+
+        const allPts = tail ? [...screenPts, tail] : screenPts;
+        if (allPts.length >= 2) {
+          octx.globalAlpha = stroke.opacity ?? 1;
+          octx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
+          octx.lineWidth = stroke.width * scaleRef.current;
+          octx.beginPath();
+          octx.moveTo(allPts[0].x, allPts[0].y);
+          for (let i = 1; i < allPts.length; i++) octx.lineTo(allPts[i].x, allPts[i].y);
+          octx.stroke();
+          octx.globalAlpha = 1;
+        }
+      }
+      mobileDrawRafId.current = requestAnimationFrame(mobileOverlayTick);
+    }
+
     function handlePointerDown(e) {
       const pos = getPos(e);
 
@@ -914,6 +1013,18 @@ export default function Whiteboard({ boardId }) {
         points: [t === "eraser" ? { ...firstWorldPoint, w: baseWidth } : firstWorldPoint],
       };
       canvas.setPointerCapture(e.pointerId);
+
+      // Only plain freehand strokes on an actual touch/pen mobile device
+      // get the predictive overlay — ruler/compass keep their existing
+      // exact behavior untouched, on both mobile and desktop.
+      mobileOverlayStrokeActive.current =
+        isMobileRef.current && !compassActiveRef.current && !rulerActiveRef.current;
+      if (mobileOverlayStrokeActive.current) {
+        rawHistory.current = [{ pos, t: e.timeStamp || performance.now() }];
+        if (mobileDrawRafId.current === null) {
+          mobileDrawRafId.current = requestAnimationFrame(mobileOverlayTick);
+        }
+      }
 
       channelRef.current?.send({
         type: "broadcast",
@@ -1042,10 +1153,16 @@ export default function Whiteboard({ boardId }) {
         }
 
         lastRawScreenPos.current = sp;
+
+        const t = ev.timeStamp || performance.now();
+        rawHistory.current.push({ pos: sp, t });
+        if (rawHistory.current.length > 2) rawHistory.current.shift();
       }
       const newCount = currentStroke.current.points.length - before;
 
-      drawNewSegment(ctxRef.current, currentStroke.current, newCount);
+      if (!mobileOverlayStrokeActive.current) {
+        drawNewSegment(ctxRef.current, currentStroke.current, newCount);
+      }
       scheduleBroadcastFlush();
     }
 
@@ -1083,6 +1200,7 @@ export default function Whiteboard({ boardId }) {
       activePointerId.current = null;
       activePointerType.current = null;
       activeCompassParams.current = null;
+      stopMobileOverlay();
 
       const finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
@@ -1183,6 +1301,10 @@ export default function Whiteboard({ boardId }) {
           WebkitTapHighlightColor: "transparent",
           cursor: panToolActive ? "grab" : "default",
         }}
+      />
+      <canvas
+        ref={mobileOverlayCanvasRef}
+        style={{ position: "fixed", inset: 0, zIndex: 5, pointerEvents: "none" }}
       />
       {rulerActive && (
         <RulerOverlay
