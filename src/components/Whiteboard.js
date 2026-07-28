@@ -306,21 +306,64 @@ export default function Whiteboard({ boardId }) {
     drawGrid(ctx, gridConfigRef.current);
   }
 
-  function drawNewSegment(ctx, styleStroke, newPointsCount) {
-    const pts = styleStroke.points;
-    if (pts.length < 2 || newPointsCount < 1) return;
-    const lookback = 3;
-    const startIdx = Math.max(0, pts.length - newPointsCount - 1 - lookback);
-    const endIdx = pts.length - 1;
-    ctx.globalAlpha = styleStroke.opacity ?? 1;
-    ctx.strokeStyle = styleStroke.tool === "eraser" ? "#ffffff" : styleStroke.color;
-    if (styleStroke.tool === "eraser") {
-      drawVariableWidthPath(ctx, pts, startIdx, endIdx, styleStroke.width);
-    } else {
-      ctx.lineWidth = styleStroke.width;
-      smoothPath(ctx, pts, startIdx, endIdx);
+  // Draws every curve segment EXACTLY ONCE, the moment enough future data
+  // exists to know its true final shape — never redrawing/revising a
+  // segment that's already been committed to the canvas. Only the very
+  // last, still-provisional sliver near the live pencil tip is redrawn
+  // each frame (and it's always tiny, so any overlap there is invisible).
+  // This is what eliminates jaggedness WHILE writing, not just after.
+  function drawFreehandIncremental(ctx, stroke) {
+    const pts = stroke.points;
+    const n = pts.length;
+    if (n < 2) return;
+
+    ctx.globalAlpha = stroke.opacity ?? 1;
+    ctx.strokeStyle = stroke.color;
+    ctx.lineWidth = stroke.width;
+
+    const committed = stroke.committedIndex ?? 0;
+    const maxFinalizable = n - 2; // segment i is fully determined once pts[i+1] exists
+
+    if (maxFinalizable > committed) {
+      ctx.beginPath();
+      const startAnchor = committed === 0 ? pts[0] : centroid(pts[committed], pts[committed + 1]);
+      ctx.moveTo(startAnchor.x, startAnchor.y);
+      for (let i = committed + 1; i <= maxFinalizable; i++) {
+        const mid = centroid(pts[i], pts[i + 1]);
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mid.x, mid.y);
+      }
+      ctx.stroke();
+      stroke.committedIndex = maxFinalizable;
     }
+
+    const committedNow = stroke.committedIndex ?? 0;
+    const tipStart = committedNow === 0 ? pts[0] : centroid(pts[committedNow], pts[committedNow + 1]);
+    ctx.beginPath();
+    ctx.moveTo(tipStart.x, tipStart.y);
+    ctx.lineTo(pts[n - 1].x, pts[n - 1].y);
+    ctx.stroke();
+
     ctx.globalAlpha = 1;
+  }
+
+  function drawNewSegment(ctx, styleStroke, newPointsCount) {
+    if (!styleStroke.points || styleStroke.points.length < 2 || newPointsCount < 1) return;
+
+    if (styleStroke.tool === "eraser") {
+      // Eraser uses independent straight segments, not connected curves —
+      // each one's shape is fixed the instant it's drawn, so it was never
+      // affected by this issue and doesn't need the same treatment.
+      const pts = styleStroke.points;
+      const lookback = 3;
+      const startIdx = Math.max(0, pts.length - newPointsCount - 1 - lookback);
+      const endIdx = pts.length - 1;
+      ctx.globalAlpha = styleStroke.opacity ?? 1;
+      ctx.strokeStyle = "#ffffff";
+      drawVariableWidthPath(ctx, pts, startIdx, endIdx, styleStroke.width);
+      ctx.globalAlpha = 1;
+    } else {
+      drawFreehandIncremental(ctx, styleStroke);
+    }
 
     if (gridConfigRef.current) drawGrid(ctx, gridConfigRef.current);
   }
@@ -517,6 +560,7 @@ export default function Whiteboard({ boardId }) {
         width: payload.width,
         opacity: payload.opacity,
         points: [payload.point],
+        committedIndex: 0,
       };
     });
 
@@ -1011,6 +1055,7 @@ export default function Whiteboard({ boardId }) {
         width: baseWidth,
         opacity: opacityForTool(t),
         points: [t === "eraser" ? { ...firstWorldPoint, w: baseWidth } : firstWorldPoint],
+        committedIndex: 0,
       };
       canvas.setPointerCapture(e.pointerId);
 
