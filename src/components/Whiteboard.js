@@ -211,8 +211,22 @@ export default function Whiteboard({ boardId }) {
 
   function smoothPath(ctx, pts, startIdx, endIdx) {
     if (endIdx - startIdx < 1) return;
+
+    // A windowed redraw (used while actively drawing, for speed) needs to
+    // begin exactly where a single continuous pass over the whole stroke
+    // would be sitting at this point — the midpoint just before startIdx,
+    // not the raw point itself. Anchoring on the raw point was creating a
+    // tiny discontinuity between each frame's redraw and the last,
+    // visible as jaggedness only while actively drawing — it disappeared
+    // once finished because the final render is always one single
+    // continuous pass (startIdx 0), which was never affected.
+    const anchor =
+      startIdx === 0
+        ? pts[startIdx]
+        : { x: (pts[startIdx - 1].x + pts[startIdx].x) / 2, y: (pts[startIdx - 1].y + pts[startIdx].y) / 2 };
+
     ctx.beginPath();
-    ctx.moveTo(pts[startIdx].x, pts[startIdx].y);
+    ctx.moveTo(anchor.x, anchor.y);
     if (endIdx - startIdx === 1) {
       ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
     } else {
