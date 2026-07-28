@@ -211,26 +211,12 @@ export default function Whiteboard({ boardId }) {
 
   function smoothPath(ctx, pts, startIdx, endIdx) {
     if (endIdx - startIdx < 1) return;
-
-    // Where the continuous curve is actually sitting right before we
-    // resume drawing at startIdx — the true starting point only when
-    // this is the very beginning of the stroke, otherwise the midpoint
-    // the full curve would have reached by pts[startIdx].
-    const anchor = startIdx === 0 ? pts[0] : centroid(pts[startIdx - 1], pts[startIdx]);
-
     ctx.beginPath();
-    ctx.moveTo(anchor.x, anchor.y);
-
-    if (startIdx === 0 && endIdx - startIdx === 1) {
-      // The very start of a stroke with only two points total so far —
-      // nothing to curve yet, just connect them directly.
+    ctx.moveTo(pts[startIdx].x, pts[startIdx].y);
+    if (endIdx - startIdx === 1) {
       ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
     } else {
-      // Must resume the loop AT startIdx (not startIdx + 1) so pts[startIdx]
-      // itself still gets used as a curve control point — skipping it is
-      // what caused the last version to visibly displace the stroke.
-      const loopStart = startIdx === 0 ? 1 : startIdx;
-      for (let i = loopStart; i < endIdx; i++) {
+      for (let i = startIdx + 1; i < endIdx; i++) {
         const xc = (pts[i].x + pts[i + 1].x) / 2;
         const yc = (pts[i].y + pts[i + 1].y) / 2;
         ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
