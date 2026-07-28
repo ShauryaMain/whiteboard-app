@@ -212,25 +212,25 @@ export default function Whiteboard({ boardId }) {
   function smoothPath(ctx, pts, startIdx, endIdx) {
     if (endIdx - startIdx < 1) return;
 
-    // A windowed redraw (used while actively drawing, for speed) needs to
-    // begin exactly where a single continuous pass over the whole stroke
-    // would be sitting at this point — the midpoint just before startIdx,
-    // not the raw point itself. Anchoring on the raw point was creating a
-    // tiny discontinuity between each frame's redraw and the last,
-    // visible as jaggedness only while actively drawing — it disappeared
-    // once finished because the final render is always one single
-    // continuous pass (startIdx 0), which was never affected.
-    const anchor =
-      startIdx === 0
-        ? pts[startIdx]
-        : { x: (pts[startIdx - 1].x + pts[startIdx].x) / 2, y: (pts[startIdx - 1].y + pts[startIdx].y) / 2 };
+    // Where the continuous curve is actually sitting right before we
+    // resume drawing at startIdx — the true starting point only when
+    // this is the very beginning of the stroke, otherwise the midpoint
+    // the full curve would have reached by pts[startIdx].
+    const anchor = startIdx === 0 ? pts[0] : centroid(pts[startIdx - 1], pts[startIdx]);
 
     ctx.beginPath();
     ctx.moveTo(anchor.x, anchor.y);
-    if (endIdx - startIdx === 1) {
+
+    if (startIdx === 0 && endIdx - startIdx === 1) {
+      // The very start of a stroke with only two points total so far —
+      // nothing to curve yet, just connect them directly.
       ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
     } else {
-      for (let i = startIdx + 1; i < endIdx; i++) {
+      // Must resume the loop AT startIdx (not startIdx + 1) so pts[startIdx]
+      // itself still gets used as a curve control point — skipping it is
+      // what caused the last version to visibly displace the stroke.
+      const loopStart = startIdx === 0 ? 1 : startIdx;
+      for (let i = loopStart; i < endIdx; i++) {
         const xc = (pts[i].x + pts[i + 1].x) / 2;
         const yc = (pts[i].y + pts[i + 1].y) / 2;
         ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
