@@ -182,6 +182,8 @@ export default function Whiteboard({ boardId }) {
   const [zoomPercent, setZoomPercent] = useState(100);
   const [gridToolActive, setGridToolActive] = useState(false);
   const [panToolActive, setPanToolActive] = useState(false);
+  const [showPencilTip, setShowPencilTip] = useState(false);
+  const pencilTipCheckedRef = useRef(false);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
@@ -482,6 +484,13 @@ export default function Whiteboard({ boardId }) {
       fullRedraw();
       return next;
     });
+  }
+
+  function handleDismissPencilTip() {
+    setShowPencilTip(false);
+    try {
+      window.localStorage.setItem("whiteboard_scribble_tip_dismissed", "true");
+    } catch (err) {}
   }
 
   function handleTogglePan() {
@@ -965,6 +974,21 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
+      if (
+        e.pointerType === "pen" &&
+        isMobileRef.current &&
+        !pencilTipCheckedRef.current
+      ) {
+        pencilTipCheckedRef.current = true;
+        try {
+          if (!window.localStorage.getItem("whiteboard_scribble_tip_dismissed")) {
+            setShowPencilTip(true);
+          }
+        } catch (err) {
+          // localStorage unavailable (e.g. private browsing) — just skip the tip
+        }
+      }
+
       isDrawing.current = true;
       activePointerId.current = e.pointerId;
       activePointerType.current = e.pointerType;
@@ -1323,6 +1347,49 @@ export default function Whiteboard({ boardId }) {
           angle={compassAngle}
           setAngle={setCompassAngle}
         />
+      )}
+      {showPencilTip && (
+        <div
+          style={{
+            position: "fixed",
+            top: "max(16px, env(safe-area-inset-top))",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 30,
+            maxWidth: "min(92vw, 380px)",
+            background: "#1a1a1a",
+            color: "#fff",
+            borderRadius: 12,
+            padding: "12px 14px",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            fontSize: 13,
+            lineHeight: 1.4,
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            <strong>Tip for the smoothest drawing:</strong> turn off Scribble —
+            Settings → Apple Pencil → Scribble → off. iPadOS intercepts some
+            Pencil strokes for handwriting recognition otherwise, even here.
+          </span>
+          <button
+            onClick={handleDismissPencilTip}
+            style={{
+              border: "none",
+              background: "rgba(255,255,255,0.15)",
+              color: "#fff",
+              borderRadius: 8,
+              padding: "4px 8px",
+              fontSize: 12,
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            Got it
+          </button>
+        </div>
       )}
       <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} />
       <Toolbar
