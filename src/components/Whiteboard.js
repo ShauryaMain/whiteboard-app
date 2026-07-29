@@ -89,9 +89,6 @@ function interpolateGap(prevScreen, newScreen, maxStep) {
   return points;
 }
 
-// Draws a smoothed curve through points[startIdx..endIdx]. Caller sets
-// ctx.lineCap beforehand — round for a single complete-stroke render,
-// butt for a windowed in-progress redraw (see drawNewSegment).
 function smoothPath(ctx, pts, startIdx, endIdx) {
   if (endIdx - startIdx < 1) return;
   ctx.beginPath();
@@ -175,8 +172,18 @@ export default function Whiteboard({ boardId }) {
   const compassCumulativeAngle = useRef(0);
   const compassLastRawAngle = useRef(0);
 
+  // Per-user undo/redo: myStrokeStack tracks the IDs of strokes THIS
+  // client personally drew, in order. myRedoStack holds the full stroke
+  // objects for anything this client has undone. Neither is shared or
+  // synced directly — each person's Undo button only ever touches their
+  // own history, which is what keeps it from stepping on anyone else's
+  // work on a shared board.
+  const myStrokeStack = useRef([]);
+  const myRedoStack = useRef([]);
+
   const [strokes, setStrokes] = useState([]);
-  const [redoStack, setRedoStack] = useState([]);
+  const [myUndoAvailable, setMyUndoAvailable] = useState(false);
+  const [myRedoAvailable, setMyRedoAvailable] = useState(false);
   const [tool, setTool] = useState("pen");
   const [color, setColor] = useState("#1a1a1a");
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -227,8 +234,6 @@ export default function Whiteboard({ boardId }) {
       drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
     } else {
       ctx.lineWidth = stroke.width;
-      // Complete, single-pass render — the whole stroke is one continuous
-      // subpath, so round caps only ever appear at its two true ends.
       ctx.lineCap = "round";
       smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
     }
@@ -314,11 +319,6 @@ export default function Whiteboard({ boardId }) {
       drawVariableWidthPath(ctx, pts, startIdx, endIdx, styleStroke.width);
     } else {
       ctx.lineWidth = styleStroke.width;
-      // Windowed in-progress redraw — butt caps so each frame's segment
-      // joins the next with a flat edge instead of leaving a round "bump"
-      // baked in at the trailing edge. This is what made thicker strokes
-      // look visibly jagged while thinner ones looked fine: the bump size
-      // scales directly with line width.
       ctx.lineCap = "butt";
       smoothPath(ctx, pts, startIdx, endIdx);
     }
@@ -343,27 +343,8 @@ export default function Whiteboard({ boardId }) {
     if (error) console.error("Error saving stroke:", error);
   }
 
-  function performUndo() {
-    setStrokes((prevStrokes) => {
-      if (prevStrokes.length === 0) return prevStrokes;
-      const last = prevStrokes[prevStrokes.length - 1];
-      setRedoStack((prevRedo) => [...prevRedo, last]);
-      return prevStrokes.slice(0, -1);
-    });
-  }
-
-  function performRedo() {
-    setRedoStack((prevRedo) => {
-      if (prevRedo.length === 0) return prevRedo;
-      const next = prevRedo[prevRedo.length - 1];
-      setStrokes((prevStrokes) => [...prevStrokes, next]);
-      return prevRedo.slice(0, -1);
-    });
-  }
-
   function performClear() {
     setStrokes([]);
-    setRedoStack([]);
   }
 
   function handleResetView() {
@@ -518,6 +499,7 @@ export default function Whiteboard({ boardId }) {
 
     channel.on("broadcast", { event: "stroke-start" }, ({ payload }) => {
       remoteStrokes.current[payload.strokeKey] = {
+        id: payload.strokeId,
         tool: payload.tool,
         color: payload.color,
         width: payload.width,
@@ -557,14 +539,26 @@ export default function Whiteboard({ boardId }) {
       }
     });
 
+    channel.on("broadcast", { event: "stroke-remove" }, ({ payload }) => {
+      setStrokes((prev) => prev.filter((s) => s.id !== payload.strokeId));
+    });
+
+    channel.on("broadcast", { event: "stroke-restore" }, ({ payload }) => {
+      setStrokes((prev) => [...prev, payload.stroke]);
+    });
+
     channel.on("broadcast", { event: "grid-set" }, ({ payload }) => {
       gridConfigRef.current = payload.grid;
       fullRedraw();
     });
 
-    channel.on("broadcast", { event: "undo" }, () => performUndo());
-    channel.on("broadcast", { event: "redo" }, () => performRedo());
-    channel.on("broadcast", { event: "clear" }, () => performClear());
+    channel.on("broadcast", { event: "clear" }, () => {
+      performClear();
+      myStrokeStack.current = [];
+      myRedoStack.current = [];
+      setMyUndoAvailable(false);
+      setMyRedoAvailable(false);
+    });
 
     channel.subscribe();
     channelRef.current = channel;
@@ -755,6 +749,15 @@ export default function Whiteboard({ boardId }) {
       lastRawScreenPos.current = screenPt;
     }
 
+    function commitFinishedStroke(finished) {
+      setStrokes((prev) => [...prev, finished]);
+      myStrokeStack.current.push(finished.id);
+      myRedoStack.current = [];
+      setMyUndoAvailable(true);
+      setMyRedoAvailable(false);
+      insertStroke(finished);
+    }
+
     function cancelActiveDrawing() {
       if (!isDrawing.current) return;
       isDrawing.current = false;
@@ -770,9 +773,7 @@ export default function Whiteboard({ boardId }) {
       finalizeStroke(strokeId);
 
       if (finished && finished.points.length > 1) {
-        setStrokes((prev) => [...prev, finished]);
-        setRedoStack([]);
-        insertStroke(finished);
+        commitFinishedStroke(finished);
       }
     }
 
@@ -998,6 +999,7 @@ export default function Whiteboard({ boardId }) {
         event: "stroke-start",
         payload: {
           strokeKey: `${clientId.current}-${strokeId}`,
+          strokeId,
           tool: currentStroke.current.tool,
           color: currentStroke.current.color,
           width: currentStroke.current.width,
@@ -1155,9 +1157,7 @@ export default function Whiteboard({ boardId }) {
       finalizeStroke(strokeId);
 
       if (finished && finished.points.length > 1) {
-        setStrokes((prev) => [...prev, finished]);
-        setRedoStack([]);
-        insertStroke(finished);
+        commitFinishedStroke(finished);
       }
     }
 
@@ -1188,27 +1188,53 @@ export default function Whiteboard({ boardId }) {
   }, [strokes]);
 
   function handleUndo() {
-    const last = strokes[strokes.length - 1];
-    performUndo();
-    channelRef.current?.send({ type: "broadcast", event: "undo", payload: {} });
-    if (last?.id) {
-      supabase.from("strokes").delete().eq("id", last.id).then(({ error }) => {
-        if (error) console.error("Error deleting stroke:", error);
-      });
-    }
+    const myLastId = myStrokeStack.current[myStrokeStack.current.length - 1];
+    if (!myLastId) return;
+    const strokeToUndo = strokes.find((s) => s.id === myLastId);
+    if (!strokeToUndo) return;
+
+    myStrokeStack.current.pop();
+    myRedoStack.current.push(strokeToUndo);
+    setMyUndoAvailable(myStrokeStack.current.length > 0);
+    setMyRedoAvailable(true);
+
+    setStrokes((prev) => prev.filter((s) => s.id !== myLastId));
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "stroke-remove",
+      payload: { strokeId: myLastId },
+    });
+    supabase.from("strokes").delete().eq("id", myLastId).then(({ error }) => {
+      if (error) console.error("Error deleting stroke:", error);
+    });
   }
 
   function handleRedo() {
-    const next = redoStack[redoStack.length - 1];
-    performRedo();
-    channelRef.current?.send({ type: "broadcast", event: "redo", payload: {} });
-    if (next) insertStroke(next);
+    const strokeToRedo = myRedoStack.current[myRedoStack.current.length - 1];
+    if (!strokeToRedo) return;
+
+    myRedoStack.current.pop();
+    myStrokeStack.current.push(strokeToRedo.id);
+    setMyRedoAvailable(myRedoStack.current.length > 0);
+    setMyUndoAvailable(true);
+
+    setStrokes((prev) => [...prev, strokeToRedo]);
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "stroke-restore",
+      payload: { stroke: strokeToRedo },
+    });
+    insertStroke(strokeToRedo);
   }
 
   function handleClear() {
     if (strokes.length === 0) return;
     if (window.confirm("Clear the whole board for everyone? This can't be undone.")) {
       performClear();
+      myStrokeStack.current = [];
+      myRedoStack.current = [];
+      setMyUndoAvailable(false);
+      setMyRedoAvailable(false);
       channelRef.current?.send({ type: "broadcast", event: "clear", payload: {} });
       supabase.from("strokes").delete().eq("board_id", boardId).then(({ error }) => {
         if (error) console.error("Error clearing strokes:", error);
@@ -1218,6 +1244,7 @@ export default function Whiteboard({ boardId }) {
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
+      
       <a
         href="/"
         style={{
@@ -1324,8 +1351,8 @@ export default function Whiteboard({ boardId }) {
         onUndo={handleUndo}
         onRedo={handleRedo}
         onClear={handleClear}
-        canUndo={strokes.length > 0}
-        canRedo={redoStack.length > 0}
+        canUndo={myUndoAvailable}
+        canRedo={myRedoAvailable}
         isOwner={isOwner}
         onCopyLink={handleCopyLink}
         onEndSession={handleEndSession}
