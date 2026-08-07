@@ -184,6 +184,9 @@ export default function Whiteboard({ boardId }) {
   // just controls whether the textarea is mounted at all.
   const editingTextRef = useRef(null);
   const textareaElRef = useRef(null);
+  const movingTextRef = useRef(null);
+  const pendingTextMoveUpdate = useRef(null);
+  const textMoveRafId = useRef(null);
 
   const [strokes, setStrokes] = useState([]);
   const [texts, setTexts] = useState([]);
@@ -256,7 +259,7 @@ export default function Whiteboard({ boardId }) {
     }
   }
 
-  function drawTexts(ctx, textsArr) {
+  function drawTexts(ctx, textsArr, showBounds) {
     for (const t of textsArr) {
       ctx.save();
       ctx.fillStyle = t.color;
@@ -264,9 +267,50 @@ export default function Whiteboard({ boardId }) {
       ctx.textBaseline = "top";
       const lines = String(t.text).split("\n");
       const lineHeight = t.fontSize * 1.3;
+      let maxWidth = 0;
+      lines.forEach((line) => {
+        maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
+      });
       lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + i * lineHeight));
+
+      if (showBounds) {
+        const scale = scaleRef.current;
+        ctx.strokeStyle = "rgba(30,136,229,0.55)";
+        ctx.lineWidth = 1 / scale;
+        ctx.setLineDash([4 / scale, 3 / scale]);
+        ctx.strokeRect(t.x - 4, t.y - 4, maxWidth + 8, lines.length * lineHeight + 8);
+        ctx.setLineDash([]);
+      }
       ctx.restore();
     }
+  }
+
+  // Finds the topmost existing text box under a world-space point, if any
+  // — used to decide whether a tap with the Text tool should start
+  // dragging an existing box instead of creating a new one.
+  function hitTestText(worldPos) {
+    const ctx = ctxRef.current;
+    if (!ctx) return null;
+    const arr = textsRef.current;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const t = arr[i];
+      ctx.font = `${t.fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+      const lines = String(t.text).split("\n");
+      const lineHeight = t.fontSize * 1.3;
+      let maxWidth = 0;
+      lines.forEach((line) => {
+        maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
+      });
+      const height = lines.length * lineHeight;
+      const pad = 6;
+      if (
+        worldPos.x >= t.x - pad && worldPos.x <= t.x + maxWidth + pad &&
+        worldPos.y >= t.y - pad && worldPos.y <= t.y + height + pad
+      ) {
+        return t;
+      }
+    }
+    return null;
   }
 
   function drawGrid(ctx, grid) {
@@ -334,7 +378,7 @@ export default function Whiteboard({ boardId }) {
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
 
-    drawTexts(ctx, textsRef.current);
+    drawTexts(ctx, textsRef.current, toolRef.current === "text");
     drawGrid(ctx, gridConfigRef.current);
 
     repositionEditingTextarea();
@@ -663,6 +707,12 @@ export default function Whiteboard({ boardId }) {
       setTexts((prev) => prev.filter((t) => t.id !== payload.textId));
     });
 
+    channel.on("broadcast", { event: "text-move" }, ({ payload }) => {
+      setTexts((prev) =>
+        prev.map((t) => (t.id === payload.textId ? { ...t, x: payload.x, y: payload.y } : t))
+      );
+    });
+
     channel.on("broadcast", { event: "grid-set" }, ({ payload }) => {
       gridConfigRef.current = payload.grid;
       fullRedraw();
@@ -780,6 +830,18 @@ export default function Whiteboard({ boardId }) {
         const g = pendingGridUpdate.current;
         pendingGridUpdate.current = null;
         channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: g } });
+      });
+    }
+
+    function scheduleTextMoveBroadcast(textId, x, y) {
+      pendingTextMoveUpdate.current = { textId, x, y };
+      if (textMoveRafId.current) return;
+      textMoveRafId.current = requestAnimationFrame(() => {
+        textMoveRafId.current = null;
+        if (!pendingTextMoveUpdate.current) return;
+        const payload = pendingTextMoveUpdate.current;
+        pendingTextMoveUpdate.current = null;
+        channelRef.current?.send({ type: "broadcast", event: "text-move", payload });
       });
     }
 
@@ -1032,6 +1094,7 @@ export default function Whiteboard({ boardId }) {
 
       if (touchPoints.current.size >= 2) {
         cancelActiveDrawing();
+        movingTextRef.current = null;
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         beginPanZoom();
         return;
@@ -1056,7 +1119,14 @@ export default function Whiteboard({ boardId }) {
       }
 
       if (toolRef.current === "text") {
-        openTextEditor(screenToWorld(pos));
+        const worldPos = screenToWorld(pos);
+        const hit = hitTestText(worldPos);
+        if (hit) {
+          movingTextRef.current = { id: hit.id, startScreenPos: pos, origX: hit.x, origY: hit.y };
+          canvas.setPointerCapture(e.pointerId);
+          return;
+        }
+        openTextEditor(worldPos);
         return;
       }
 
@@ -1167,6 +1237,20 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
+      if (movingTextRef.current) {
+        const pos = getPos(e);
+        const dxWorld = (pos.x - movingTextRef.current.startScreenPos.x) / scaleRef.current;
+        const dyWorld = (pos.y - movingTextRef.current.startScreenPos.y) / scaleRef.current;
+        const newX = movingTextRef.current.origX + dxWorld;
+        const newY = movingTextRef.current.origY + dyWorld;
+        movingTextRef.current.lastX = newX;
+        movingTextRef.current.lastY = newY;
+        const textId = movingTextRef.current.id;
+        setTexts((prev) => prev.map((t) => (t.id === textId ? { ...t, x: newX, y: newY } : t)));
+        scheduleTextMoveBroadcast(textId, newX, newY);
+        return;
+      }
+
       if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current || !currentStroke.current) return;
 
@@ -1269,6 +1353,18 @@ export default function Whiteboard({ boardId }) {
         gridDragStart.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
         saveGrid();
+        return;
+      }
+
+      if (movingTextRef.current) {
+        const { id, lastX, lastY, origX, origY } = movingTextRef.current;
+        const finalX = lastX ?? origX;
+        const finalY = lastY ?? origY;
+        movingTextRef.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        supabase.from("texts").update({ x: finalX, y: finalY }).eq("id", id).then(({ error }) => {
+          if (error) console.error("Error saving text position:", error);
+        });
         return;
       }
 
