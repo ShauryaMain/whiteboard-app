@@ -378,7 +378,7 @@ export default function Whiteboard({ boardId }) {
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
 
-    drawTexts(ctx, textsRef.current, toolRef.current === "text");
+    drawTexts(ctx, textsRef.current, toolRef.current === "select");
     drawGrid(ctx, gridConfigRef.current);
 
     repositionEditingTextarea();
@@ -1118,15 +1118,20 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
-      if (toolRef.current === "text") {
+      if (toolRef.current === "select") {
         const worldPos = screenToWorld(pos);
         const hit = hitTestText(worldPos);
         if (hit) {
           movingTextRef.current = { id: hit.id, startScreenPos: pos, origX: hit.x, origY: hit.y };
           canvas.setPointerCapture(e.pointerId);
-          return;
         }
-        openTextEditor(worldPos);
+        // Tapping empty space with Select active intentionally does
+        // nothing — no stroke, no new text, just deselects.
+        return;
+      }
+
+      if (toolRef.current === "text") {
+        openTextEditor(screenToWorld(pos));
         return;
       }
 

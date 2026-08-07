@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import {
-  Pencil, Highlighter, Eraser, Type, Ruler, Compass, Grid3x3, Hand, X, Home,
+  Pencil, Highlighter, Eraser, Type, MousePointer2, Ruler, Compass, Grid3x3, Hand, X, Home,
   Undo2, Redo2, Trash2, Link2, CheckCircle2,
 } from "lucide-react";
 
@@ -110,6 +110,9 @@ export default function Toolbar({
         <div style={groupStyle}>
           <IconButton active={panToolActive} onClick={onTogglePan} label="Pan">
             <Hand size={19} strokeWidth={2} />
+          </IconButton>
+          <IconButton active={tool === "select"} onClick={() => setTool("select")} label="Select">
+            <MousePointer2 size={19} strokeWidth={2} />
           </IconButton>
           <IconButton
             active={tool === "pen"}
