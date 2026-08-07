@@ -158,6 +158,7 @@ export default function Whiteboard({ boardId }) {
   const channelRef = useRef(null);
   const remoteStrokes = useRef({});
   const strokesRef = useRef([]);
+  const textsRef = useRef([]);
   const toolRef = useRef("pen");
   const colorRef = useRef("#1a1a1a");
   const widthRef = useRef(4);
@@ -172,16 +173,20 @@ export default function Whiteboard({ boardId }) {
   const compassCumulativeAngle = useRef(0);
   const compassLastRawAngle = useRef(0);
 
-  // Per-user undo/redo: myStrokeStack tracks the IDs of strokes THIS
-  // client personally drew, in order. myRedoStack holds the full stroke
-  // objects for anything this client has undone. Neither is shared or
-  // synced directly — each person's Undo button only ever touches their
-  // own history, which is what keeps it from stepping on anyone else's
-  // work on a shared board.
+  // Per-user undo/redo, unified across both strokes and text boxes. Each
+  // entry is {kind: "stroke"|"text", id}; myRedoStack entries carry the
+  // full object ({kind, data}) since it's been removed from live state.
   const myStrokeStack = useRef([]);
   const myRedoStack = useRef([]);
 
+  // Text-editing overlay: editingTextRef is the source of truth used by
+  // imperative code (repositioning during pan/zoom); editingText (state)
+  // just controls whether the textarea is mounted at all.
+  const editingTextRef = useRef(null);
+  const textareaElRef = useRef(null);
+
   const [strokes, setStrokes] = useState([]);
+  const [texts, setTexts] = useState([]);
   const [myUndoAvailable, setMyUndoAvailable] = useState(false);
   const [myRedoAvailable, setMyRedoAvailable] = useState(false);
   const [tool, setTool] = useState("pen");
@@ -199,8 +204,10 @@ export default function Whiteboard({ boardId }) {
   const [gridToolActive, setGridToolActive] = useState(false);
   const [panToolActive, setPanToolActive] = useState(false);
   const [showPencilTip, setShowPencilTip] = useState(false);
+  const [editingText, setEditingText] = useState(null);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
+  useEffect(() => { textsRef.current = texts; }, [texts]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
   useEffect(() => { colorRef.current = color; }, [color]);
   useEffect(() => { widthRef.current = strokeWidth; }, [strokeWidth]);
@@ -226,6 +233,16 @@ export default function Whiteboard({ boardId }) {
     };
   }
 
+  function repositionEditingTextarea() {
+    const info = editingTextRef.current;
+    const el = textareaElRef.current;
+    if (!info || !el) return;
+    const screenPos = worldToScreen({ x: info.x, y: info.y });
+    el.style.left = screenPos.x + "px";
+    el.style.top = screenPos.y + "px";
+    el.style.fontSize = info.fontSize * scaleRef.current + "px";
+  }
+
   function drawStroke(ctx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
     ctx.globalAlpha = stroke.opacity ?? 1;
@@ -236,6 +253,19 @@ export default function Whiteboard({ boardId }) {
       ctx.lineWidth = stroke.width;
       ctx.lineCap = "round";
       smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
+    }
+  }
+
+  function drawTexts(ctx, textsArr) {
+    for (const t of textsArr) {
+      ctx.save();
+      ctx.fillStyle = t.color;
+      ctx.font = `${t.fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+      ctx.textBaseline = "top";
+      const lines = String(t.text).split("\n");
+      const lineHeight = t.fontSize * 1.3;
+      lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + i * lineHeight));
+      ctx.restore();
     }
   }
 
@@ -304,7 +334,10 @@ export default function Whiteboard({ boardId }) {
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
 
+    drawTexts(ctx, textsRef.current);
     drawGrid(ctx, gridConfigRef.current);
+
+    repositionEditingTextarea();
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
@@ -343,8 +376,23 @@ export default function Whiteboard({ boardId }) {
     if (error) console.error("Error saving stroke:", error);
   }
 
+  async function insertText(t) {
+    if (!boardId || !t?.id) return;
+    const { error } = await supabase.from("texts").upsert({
+      id: t.id,
+      board_id: boardId,
+      x: t.x,
+      y: t.y,
+      text: t.text,
+      color: t.color,
+      font_size: t.fontSize,
+    });
+    if (error) console.error("Error saving text:", error);
+  }
+
   function performClear() {
     setStrokes([]);
+    setTexts([]);
   }
 
   function handleResetView() {
@@ -394,6 +442,26 @@ export default function Whiteboard({ boardId }) {
         setStrokes(strokeRows.map((r) => ({ ...r.data, id: r.id })));
       } else if (strokesError) {
         console.error("Error loading strokes:", strokesError);
+      }
+
+      const { data: textRows, error: textsError } = await supabase
+        .from("texts")
+        .select("id, x, y, text, color, font_size")
+        .eq("board_id", boardId)
+        .order("created_at", { ascending: true });
+      if (!textsError && textRows) {
+        setTexts(
+          textRows.map((r) => ({
+            id: r.id,
+            x: r.x,
+            y: r.y,
+            text: r.text,
+            color: r.color,
+            fontSize: r.font_size,
+          }))
+        );
+      } else if (textsError) {
+        console.error("Error loading texts:", textsError);
       }
 
       fullRedraw();
@@ -491,6 +559,46 @@ export default function Whiteboard({ boardId }) {
     } catch (err) {}
   }
 
+  function handleTextBlur(e) {
+    const info = editingTextRef.current;
+    const value = e.target.value.trim();
+    editingTextRef.current = null;
+    setEditingText(null);
+    if (!info || !value) return;
+
+    const textObj = {
+      id: info.id,
+      x: info.x,
+      y: info.y,
+      text: value,
+      color: info.color,
+      fontSize: info.fontSize,
+    };
+    setTexts((prev) => [...prev, textObj]);
+    myStrokeStack.current.push({ kind: "text", id: textObj.id });
+    myRedoStack.current = [];
+    setMyUndoAvailable(true);
+    setMyRedoAvailable(false);
+
+    channelRef.current?.send({ type: "broadcast", event: "text-add", payload: { text: textObj } });
+    insertText(textObj);
+    fullRedraw();
+  }
+
+  useEffect(() => {
+    if (!editingText) return;
+    repositionEditingTextarea();
+    // The click that created this text box is still being resolved by the
+    // browser (mousedown -> mouseup -> click) when this effect first runs.
+    // Focusing synchronously here loses the race against the browser's own
+    // default focus handling for that click, which blurs us again almost
+    // immediately. Deferring to the next tick lets that resolve first.
+    const timerId = setTimeout(() => {
+      textareaElRef.current?.focus();
+    }, 0);
+    return () => clearTimeout(timerId);
+  }, [editingText]);
+
   useEffect(() => {
     if (!boardId) return;
     const channel = supabase.channel(`board-${boardId}`, {
@@ -545,6 +653,14 @@ export default function Whiteboard({ boardId }) {
 
     channel.on("broadcast", { event: "stroke-restore" }, ({ payload }) => {
       setStrokes((prev) => [...prev, payload.stroke]);
+    });
+
+    channel.on("broadcast", { event: "text-add" }, ({ payload }) => {
+      setTexts((prev) => (prev.some((t) => t.id === payload.text.id) ? prev : [...prev, payload.text]));
+    });
+
+    channel.on("broadcast", { event: "text-remove" }, ({ payload }) => {
+      setTexts((prev) => prev.filter((t) => t.id !== payload.textId));
     });
 
     channel.on("broadcast", { event: "grid-set" }, ({ payload }) => {
@@ -751,7 +867,7 @@ export default function Whiteboard({ boardId }) {
 
     function commitFinishedStroke(finished) {
       setStrokes((prev) => [...prev, finished]);
-      myStrokeStack.current.push(finished.id);
+      myStrokeStack.current.push({ kind: "stroke", id: finished.id });
       myRedoStack.current = [];
       setMyUndoAvailable(true);
       setMyRedoAvailable(false);
@@ -897,6 +1013,16 @@ export default function Whiteboard({ boardId }) {
       scheduleGridBroadcast(updated);
     }
 
+    function openTextEditor(worldPos) {
+      const id =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+      const info = { id, x: worldPos.x, y: worldPos.y, color: colorRef.current, fontSize: 24 };
+      editingTextRef.current = info;
+      setEditingText(info);
+    }
+
     function handlePointerDown(e) {
       const pos = getPos(e);
 
@@ -926,6 +1052,11 @@ export default function Whiteboard({ boardId }) {
 
       if (isDrawing.current) {
         if (e.pointerType === "touch") touchPoints.current.delete(e.pointerId);
+        return;
+      }
+
+      if (toolRef.current === "text") {
+        openTextEditor(screenToWorld(pos));
         return;
       }
 
@@ -1185,50 +1316,77 @@ export default function Whiteboard({ boardId }) {
 
   useEffect(() => {
     if (ctxRef.current) fullRedraw();
-  }, [strokes]);
+  }, [strokes, texts]);
 
   function handleUndo() {
-    const myLastId = myStrokeStack.current[myStrokeStack.current.length - 1];
-    if (!myLastId) return;
-    const strokeToUndo = strokes.find((s) => s.id === myLastId);
-    if (!strokeToUndo) return;
+    const last = myStrokeStack.current[myStrokeStack.current.length - 1];
+    if (!last) return;
 
-    myStrokeStack.current.pop();
-    myRedoStack.current.push(strokeToUndo);
+    if (last.kind === "stroke") {
+      const strokeToUndo = strokes.find((s) => s.id === last.id);
+      if (!strokeToUndo) return;
+      myStrokeStack.current.pop();
+      myRedoStack.current.push({ kind: "stroke", data: strokeToUndo });
+      setStrokes((prev) => prev.filter((s) => s.id !== last.id));
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "stroke-remove",
+        payload: { strokeId: last.id },
+      });
+      supabase.from("strokes").delete().eq("id", last.id).then(({ error }) => {
+        if (error) console.error("Error deleting stroke:", error);
+      });
+    } else {
+      const textToUndo = texts.find((t) => t.id === last.id);
+      if (!textToUndo) return;
+      myStrokeStack.current.pop();
+      myRedoStack.current.push({ kind: "text", data: textToUndo });
+      setTexts((prev) => prev.filter((t) => t.id !== last.id));
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "text-remove",
+        payload: { textId: last.id },
+      });
+      supabase.from("texts").delete().eq("id", last.id).then(({ error }) => {
+        if (error) console.error("Error deleting text:", error);
+      });
+    }
+
     setMyUndoAvailable(myStrokeStack.current.length > 0);
     setMyRedoAvailable(true);
-
-    setStrokes((prev) => prev.filter((s) => s.id !== myLastId));
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "stroke-remove",
-      payload: { strokeId: myLastId },
-    });
-    supabase.from("strokes").delete().eq("id", myLastId).then(({ error }) => {
-      if (error) console.error("Error deleting stroke:", error);
-    });
   }
 
   function handleRedo() {
-    const strokeToRedo = myRedoStack.current[myRedoStack.current.length - 1];
-    if (!strokeToRedo) return;
-
+    const last = myRedoStack.current[myRedoStack.current.length - 1];
+    if (!last) return;
     myRedoStack.current.pop();
-    myStrokeStack.current.push(strokeToRedo.id);
+
+    if (last.kind === "stroke") {
+      setStrokes((prev) => [...prev, last.data]);
+      myStrokeStack.current.push({ kind: "stroke", id: last.data.id });
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "stroke-restore",
+        payload: { stroke: last.data },
+      });
+      insertStroke(last.data);
+    } else {
+      setTexts((prev) => [...prev, last.data]);
+      myStrokeStack.current.push({ kind: "text", id: last.data.id });
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "text-add",
+        payload: { text: last.data },
+      });
+      insertText(last.data);
+    }
+
     setMyRedoAvailable(myRedoStack.current.length > 0);
     setMyUndoAvailable(true);
-
-    setStrokes((prev) => [...prev, strokeToRedo]);
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "stroke-restore",
-      payload: { stroke: strokeToRedo },
-    });
-    insertStroke(strokeToRedo);
   }
 
   function handleClear() {
-    if (strokes.length === 0) return;
+    if (strokes.length === 0 && texts.length === 0) return;
     if (window.confirm("Clear the whole board for everyone? This can't be undone.")) {
       performClear();
       myStrokeStack.current = [];
@@ -1239,12 +1397,14 @@ export default function Whiteboard({ boardId }) {
       supabase.from("strokes").delete().eq("board_id", boardId).then(({ error }) => {
         if (error) console.error("Error clearing strokes:", error);
       });
+      supabase.from("texts").delete().eq("board_id", boardId).then(({ error }) => {
+        if (error) console.error("Error clearing texts:", error);
+      });
     }
   }
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      
       <a
         href="/"
         style={{
@@ -1279,6 +1439,35 @@ export default function Whiteboard({ boardId }) {
           cursor: panToolActive ? "grab" : "default",
         }}
       />
+      {editingText && (
+        <textarea
+          ref={textareaElRef}
+          defaultValue=""
+          onBlur={handleTextBlur}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") e.target.blur();
+          }}
+          onInput={(e) => {
+            e.target.style.height = "auto";
+            e.target.style.height = e.target.scrollHeight + "px";
+          }}
+          style={{
+            position: "fixed",
+            zIndex: 15,
+            border: "1.5px dashed #1E88E5",
+            background: "rgba(255,255,255,0.9)",
+            outline: "none",
+            resize: "none",
+            padding: 2,
+            minWidth: 60,
+            minHeight: 30,
+            fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+            color: editingText.color,
+            lineHeight: 1.3,
+            overflow: "hidden",
+          }}
+        />
+      )}
       {rulerActive && (
         <RulerOverlay
           angle={rulerAngle}

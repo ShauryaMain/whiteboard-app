@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import {
-  Pencil, Highlighter, Eraser, Ruler, Compass, Grid3x3, Hand, X, Home,
+  Pencil, Highlighter, Eraser, Type, Ruler, Compass, Grid3x3, Hand, X, Home,
   Undo2, Redo2, Trash2, Link2, CheckCircle2,
 } from "lucide-react";
 
@@ -134,6 +134,9 @@ export default function Toolbar({
             dataAttr
           >
             <Eraser size={19} strokeWidth={2} />
+          </IconButton>
+          <IconButton active={tool === "text"} onClick={() => setTool("text")} label="Text">
+            <Type size={19} strokeWidth={2} />
           </IconButton>
           <IconButton active={rulerActive} onClick={onToggleRuler} label="Ruler">
             <Ruler size={19} strokeWidth={2} />
