@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   Pencil, Highlighter, Eraser, Type, MousePointer2, Ruler, Compass, Grid3x3, Hand, X, Home,
-  Undo2, Redo2, Trash2, Link2, CheckCircle2,
+  FileText, Undo2, Redo2, Trash2, Link2, CheckCircle2,
 } from "lucide-react";
 
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
@@ -16,9 +17,10 @@ export default function Toolbar({
   compassActive, onToggleCompass,
   gridToolActive, onToggleGrid, onRemoveGrid,
   panToolActive, onTogglePan,
+  canUseReferencePane, hasReferenceDoc, onReferenceToolClick, referenceUploadStatus,
 }) {
   const [openPopup, setOpenPopup] = useState(null); // null | "pen" | "highlighter" | "eraser"
-  const [popupAnchorX, setPopupAnchorX] = useState(0);
+  const [popupAnchor, setPopupAnchor] = useState(null); // {x, y} in viewport pixels
   const popoverRef = useRef(null);
 
   useEffect(() => {
@@ -32,8 +34,14 @@ export default function Toolbar({
   }, [openPopup]);
 
   function handleToolClick(name, e) {
+    // Measured here and used with position:fixed on a portaled element —
+    // both are genuinely viewport-relative in that combination, since the
+    // portal renders outside the whiteboard pane's transformed container
+    // entirely. This is different from (and safe, unlike) measuring a
+    // rect and applying it to a position:fixed element still nested
+    // inside that transformed pane.
     const rect = e.currentTarget.getBoundingClientRect();
-    setPopupAnchorX(rect.left + rect.width / 2);
+    setPopupAnchor({ x: rect.left + rect.width / 2, y: rect.top });
     if (tool !== name) {
       setTool(name);
       setOpenPopup(name);
@@ -42,69 +50,75 @@ export default function Toolbar({
     }
   }
 
+  const popoverContent = openPopup && popupAnchor && (
+    <div
+      ref={popoverRef}
+      style={{
+        ...popoverStyle,
+        left: popupAnchor.x,
+        top: popupAnchor.y - 8,
+        transform: "translate(-50%, -100%)",
+      }}
+    >
+      {(openPopup === "pen" || openPopup === "highlighter") && (
+        <>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {PRESET_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setColor(c)}
+                aria-label={`Color ${c}`}
+                style={{
+                  width: 26, height: 26, borderRadius: "50%", background: c,
+                  border: color === c ? "3px solid #1a1a1a" : "2px solid transparent",
+                  boxShadow: "0 0 0 1px #ddd", cursor: "pointer", padding: 0, flexShrink: 0,
+                }}
+              />
+            ))}
+            <label
+              style={{
+                width: 26, height: 26, borderRadius: "50%", overflow: "hidden",
+                border: "2px solid #ddd", cursor: "pointer", display: "block",
+                position: "relative", flexShrink: 0,
+              }}
+            >
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+              />
+              <div style={{ width: "100%", height: "100%", background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }} />
+            </label>
+          </div>
+          <Divider horizontal />
+        </>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+        <span
+          style={{
+            width: Math.max(6, Math.min(strokeWidth, 22)),
+            height: Math.max(6, Math.min(strokeWidth, 22)),
+            borderRadius: "50%",
+            background: openPopup === "eraser" ? "#ccc" : color,
+            flexShrink: 0,
+          }}
+        />
+        <input
+          type="range"
+          min={1}
+          max={40}
+          value={strokeWidth}
+          onChange={(e) => setStrokeWidth(Number(e.target.value))}
+          style={{ flex: 1, height: 36 }}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <>
-      {openPopup && (
-        <div
-          ref={popoverRef}
-          style={{ ...popoverStyle, left: popupAnchorX, transform: "translateX(-50%)" }}
-        >
-          {(openPopup === "pen" || openPopup === "highlighter") && (
-            <>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                {PRESET_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setColor(c)}
-                    aria-label={`Color ${c}`}
-                    style={{
-                      width: 26, height: 26, borderRadius: "50%", background: c,
-                      border: color === c ? "3px solid #1a1a1a" : "2px solid transparent",
-                      boxShadow: "0 0 0 1px #ddd", cursor: "pointer", padding: 0, flexShrink: 0,
-                    }}
-                  />
-                ))}
-                <label
-                  style={{
-                    width: 26, height: 26, borderRadius: "50%", overflow: "hidden",
-                    border: "2px solid #ddd", cursor: "pointer", display: "block",
-                    position: "relative", flexShrink: 0,
-                  }}
-                >
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
-                  />
-                  <div style={{ width: "100%", height: "100%", background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }} />
-                </label>
-              </div>
-              <Divider horizontal />
-            </>
-          )}
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-            <span
-              style={{
-                width: Math.max(6, Math.min(strokeWidth, 22)),
-                height: Math.max(6, Math.min(strokeWidth, 22)),
-                borderRadius: "50%",
-                background: openPopup === "eraser" ? "#ccc" : color,
-                flexShrink: 0,
-              }}
-            />
-            <input
-              type="range"
-              min={1}
-              max={40}
-              value={strokeWidth}
-              onChange={(e) => setStrokeWidth(Number(e.target.value))}
-              style={{ flex: 1, height: 36 }}
-            />
-          </div>
-        </div>
-      )}
+      {popoverContent && typeof document !== "undefined" && createPortal(popoverContent, document.body)}
 
       <div className="toolbar-scroll" onContextMenu={(e) => e.preventDefault()} style={barStyle}>
         <div style={groupStyle}>
@@ -114,28 +128,13 @@ export default function Toolbar({
           <IconButton active={tool === "select"} onClick={() => setTool("select")} label="Select">
             <MousePointer2 size={19} strokeWidth={2} />
           </IconButton>
-          <IconButton
-            active={tool === "pen"}
-            onClick={(e) => handleToolClick("pen", e)}
-            label="Pen"
-            dataAttr
-          >
+          <IconButton active={tool === "pen"} onClick={(e) => handleToolClick("pen", e)} label="Pen" dataAttr>
             <Pencil size={19} strokeWidth={2} />
           </IconButton>
-          <IconButton
-            active={tool === "highlighter"}
-            onClick={(e) => handleToolClick("highlighter", e)}
-            label="Highlighter"
-            dataAttr
-          >
+          <IconButton active={tool === "highlighter"} onClick={(e) => handleToolClick("highlighter", e)} label="Highlighter" dataAttr>
             <Highlighter size={19} strokeWidth={2} />
           </IconButton>
-          <IconButton
-            active={tool === "eraser"}
-            onClick={(e) => handleToolClick("eraser", e)}
-            label="Eraser"
-            dataAttr
-          >
+          <IconButton active={tool === "eraser"} onClick={(e) => handleToolClick("eraser", e)} label="Eraser" dataAttr>
             <Eraser size={19} strokeWidth={2} />
           </IconButton>
           <IconButton active={tool === "text"} onClick={() => setTool("text")} label="Text">
@@ -150,6 +149,15 @@ export default function Toolbar({
           <IconButton active={gridToolActive} onClick={onToggleGrid} label="Grid">
             <Grid3x3 size={19} strokeWidth={2} />
           </IconButton>
+          {canUseReferencePane && isOwner && (
+            <IconButton
+              active={hasReferenceDoc}
+              onClick={onReferenceToolClick}
+              label={hasReferenceDoc ? "Remove reference doc" : "Add reference PDF/image"}
+            >
+              <FileText size={19} strokeWidth={2} />
+            </IconButton>
+          )}
         </div>
 
         <Divider />
@@ -191,6 +199,7 @@ export default function Toolbar({
 
       {isOwner && (
         <div style={ownerBarStyle}>
+          {referenceUploadStatus && <span style={statusStyle}>{referenceUploadStatus}</span>}
           {saveStatus && <span style={statusStyle}>{saveStatus}</span>}
           <IconButton onClick={onCopyLink} label="Copy student link" pill>
             <Link2 size={16} strokeWidth={2} />
@@ -267,12 +276,11 @@ const barStyle = {
 
 const popoverStyle = {
   position: "fixed",
-  bottom: "calc(max(16px, env(safe-area-inset-bottom)) + 68px)",
   background: "#ffffff",
   borderRadius: 14,
   padding: 14,
   boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
-  zIndex: 11,
+  zIndex: 1000,
   width: 220,
   WebkitUserSelect: "none",
   userSelect: "none",

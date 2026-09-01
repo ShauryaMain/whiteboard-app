@@ -6,6 +6,7 @@ import Toolbar from "./Toolbar";
 import RulerOverlay from "./RulerOverlay";
 import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
+import ReferencePane from "./ReferencePane";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 
@@ -111,6 +112,7 @@ export default function Whiteboard({ boardId }) {
   const [isOwner, setIsOwner] = useState(false);
 
   const canvasRef = useRef(null);
+  const boardPaneRef = useRef(null);
   const ctxRef = useRef(null);
   const isDrawing = useRef(false);
   const currentStroke = useRef(null);
@@ -188,6 +190,12 @@ export default function Whiteboard({ boardId }) {
   const pendingTextMoveUpdate = useRef(null);
   const textMoveRafId = useRef(null);
 
+  // Mirrors referenceDoc state so the channel-setup effect (which only
+  // runs once on mount) can always read the current value when responding
+  // to a late-joiner's "is anything loaded?" request.
+  const referenceDocRef = useRef(null);
+  const myReferenceStrokeStack = useRef([]);
+
   const [strokes, setStrokes] = useState([]);
   const [texts, setTexts] = useState([]);
   const [myUndoAvailable, setMyUndoAvailable] = useState(false);
@@ -205,9 +213,17 @@ export default function Whiteboard({ boardId }) {
   const [compassAngle, setCompassAngle] = useState(-Math.PI / 2);
   const [zoomPercent, setZoomPercent] = useState(100);
   const [gridToolActive, setGridToolActive] = useState(false);
+  const [canUseReferencePane, setCanUseReferencePane] = useState(false);
   const [panToolActive, setPanToolActive] = useState(false);
   const [showPencilTip, setShowPencilTip] = useState(false);
+  const [referenceStrokes, setReferenceStrokes] = useState([]);
+  const [referenceTool, setReferenceTool] = useState("pen");
+  const [referenceColor, setReferenceColor] = useState("#E53935");
+  const [myReferenceUndoAvailable, setMyReferenceUndoAvailable] = useState(false);
   const [editingText, setEditingText] = useState(null);
+  const [referenceDoc, setReferenceDoc] = useState(null);
+  const [referenceUploadStatus, setReferenceUploadStatus] = useState("");
+  const referenceFileInputRef = useRef(null);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { textsRef.current = texts; }, [texts]);
@@ -221,6 +237,19 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
   useEffect(() => { gridToolActiveRef.current = gridToolActive; }, [gridToolActive]);
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
+  useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
+
+  // Reference docs are desktop/tablet only for now — a true side-by-side
+  // split isn't usable on a narrow phone screen. Re-checked on resize so
+  // rotating a tablet or resizing a browser window updates it live.
+  useEffect(() => {
+    function checkWidth() {
+      setCanUseReferencePane(window.innerWidth >= 800);
+    }
+    checkWidth();
+    window.addEventListener("resize", checkWidth);
+    return () => window.removeEventListener("resize", checkWidth);
+  }, []);
 
   function screenToWorld(p) {
     return {
@@ -234,6 +263,15 @@ export default function Whiteboard({ boardId }) {
       x: p.x * scaleRef.current + panRef.current.x,
       y: p.y * scaleRef.current + panRef.current.y,
     };
+  }
+
+  // The whiteboard's own visible size — not always the full window, since
+  // a reference-doc pane can now take up part of the screen alongside it.
+  function getPaneSize() {
+    const el = boardPaneRef.current;
+    if (!el) return { width: window.innerWidth, height: window.innerHeight };
+    const rect = el.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
   }
 
   function repositionEditingTextarea() {
@@ -371,7 +409,8 @@ export default function Whiteboard({ boardId }) {
     const pan = panRef.current;
 
     ctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
-    ctx.clearRect(-pan.x / scale, -pan.y / scale, window.innerWidth / scale, window.innerHeight / scale);
+    const { width: paneW, height: paneH } = getPaneSize();
+    ctx.clearRect(-pan.x / scale, -pan.y / scale, paneW / scale, paneH / scale);
 
     for (const stroke of strokesRef.current) drawStroke(ctx, stroke);
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
@@ -448,7 +487,8 @@ export default function Whiteboard({ boardId }) {
 
   function handleSetZoom(percent) {
     const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, percent / 100));
-    const center = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const { width: paneW, height: paneH } = getPaneSize();
+    const center = { x: paneW / 2, y: paneH / 2 };
     const worldCenter = screenToWorld(center);
     panRef.current = {
       x: center.x - worldCenter.x * newScale,
@@ -539,7 +579,8 @@ export default function Whiteboard({ boardId }) {
     setRulerActive((prev) => {
       const next = !prev;
       if (next) {
-        setRulerPos({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        const { width, height } = getPaneSize();
+        setRulerPos({ x: width / 2, y: height / 2 });
         setCompassActive(false);
         setGridToolActive(false);
         setPanToolActive(false);
@@ -552,7 +593,8 @@ export default function Whiteboard({ boardId }) {
     setCompassActive((prev) => {
       const next = !prev;
       if (next) {
-        setCompassCenter({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+        const { width, height } = getPaneSize();
+        setCompassCenter({ x: width / 2, y: height / 2 });
         setCompassRadius(100);
         setCompassAngle(-Math.PI / 2);
         setRulerActive(false);
@@ -594,6 +636,116 @@ export default function Whiteboard({ boardId }) {
     fullRedraw();
     channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: null } });
     saveGrid();
+  }
+
+  async function handleReferenceFileSelected(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !isOwner) return;
+
+    const allowedTypes = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
+    if (!allowedTypes.includes(file.type)) {
+      alert("Please choose a PDF, PNG, JPG, or WEBP file.");
+      return;
+    }
+    const MAX_BYTES = 25 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      alert("That file is too large — please choose one under 25MB.");
+      return;
+    }
+
+    setReferenceUploadStatus("Checking file…");
+
+    let pageCount = 1;
+    if (file.type === "application/pdf") {
+      try {
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        pageCount = pdfDoc.numPages;
+      } catch (err) {
+        console.error("Error reading PDF:", err);
+        setReferenceUploadStatus("");
+        alert("Couldn't read that PDF — it may be corrupted or password-protected.");
+        return;
+      }
+      if (pageCount > 30) {
+        setReferenceUploadStatus("");
+        alert(`That PDF has ${pageCount} pages — please choose one with 30 pages or fewer.`);
+        return;
+      }
+    }
+
+    setReferenceUploadStatus("Uploading…");
+
+    const path = `${boardId}/${Date.now()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage
+      .from("reference-docs")
+      .upload(path, file, { contentType: file.type, upsert: false });
+
+    if (uploadError) {
+      console.error("Error uploading reference doc:", uploadError);
+      setReferenceUploadStatus("");
+      alert("Upload failed: " + uploadError.message);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage.from("reference-docs").getPublicUrl(path);
+
+    const doc = {
+      url: urlData.publicUrl,
+      path,
+      pageCount,
+      fileType: file.type,
+      fileName: file.name,
+    };
+    setReferenceDoc(doc);
+    setReferenceUploadStatus("");
+    setReferenceStrokes([]);
+    myReferenceStrokeStack.current = [];
+    setMyReferenceUndoAvailable(false);
+    channelRef.current?.send({ type: "broadcast", event: "reference-set", payload: { doc } });
+  }
+
+  async function handleRemoveReferenceDoc() {
+    if (!referenceDoc) return;
+    if (!window.confirm("Remove this document? Any annotations on it will be lost.")) return;
+    const path = referenceDoc.path;
+    setReferenceDoc(null);
+    setReferenceStrokes([]);
+    myReferenceStrokeStack.current = [];
+    setMyReferenceUndoAvailable(false);
+    channelRef.current?.send({ type: "broadcast", event: "reference-remove", payload: {} });
+    const { error } = await supabase.storage.from("reference-docs").remove([path]);
+    if (error) console.error("Error removing reference doc:", error);
+  }
+
+  function handleReferenceToolClick() {
+    if (referenceDoc) {
+      handleRemoveReferenceDoc();
+    } else {
+      referenceFileInputRef.current?.click();
+    }
+  }
+
+  function handleReferenceStrokeComplete(stroke) {
+    setReferenceStrokes((prev) => [...prev, stroke]);
+    myReferenceStrokeStack.current.push(stroke.id);
+    setMyReferenceUndoAvailable(true);
+    channelRef.current?.send({ type: "broadcast", event: "reference-stroke", payload: { stroke } });
+  }
+
+  function handleReferenceUndo() {
+    const lastId = myReferenceStrokeStack.current.pop();
+    if (!lastId) return;
+    setReferenceStrokes((prev) => prev.filter((s) => s.id !== lastId));
+    setMyReferenceUndoAvailable(myReferenceStrokeStack.current.length > 0);
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "reference-stroke-remove",
+      payload: { strokeId: lastId },
+    });
   }
 
   function handleDismissPencilTip() {
@@ -726,7 +878,47 @@ export default function Whiteboard({ boardId }) {
       setMyRedoAvailable(false);
     });
 
-    channel.subscribe();
+    channel.on("broadcast", { event: "reference-set" }, ({ payload }) => {
+      setReferenceDoc(payload.doc);
+      setReferenceStrokes([]);
+      myReferenceStrokeStack.current = [];
+      setMyReferenceUndoAvailable(false);
+    });
+
+    channel.on("broadcast", { event: "reference-remove" }, () => {
+      setReferenceDoc(null);
+      setReferenceStrokes([]);
+      myReferenceStrokeStack.current = [];
+      setMyReferenceUndoAvailable(false);
+    });
+
+    // A late-joining viewer has no database to query for the reference
+    // doc (it's intentionally never persisted) — so instead they ask
+    // whoever's already here, and whoever currently has one loaded
+    // answers back.
+    channel.on("broadcast", { event: "reference-request" }, () => {
+      if (referenceDocRef.current) {
+        channelRef.current?.send({
+          type: "broadcast",
+          event: "reference-set",
+          payload: { doc: referenceDocRef.current },
+        });
+      }
+    });
+
+    channel.on("broadcast", { event: "reference-stroke" }, ({ payload }) => {
+      setReferenceStrokes((prev) => [...prev, payload.stroke]);
+    });
+
+    channel.on("broadcast", { event: "reference-stroke-remove" }, ({ payload }) => {
+      setReferenceStrokes((prev) => prev.filter((s) => s.id !== payload.strokeId));
+    });
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        channel.send({ type: "broadcast", event: "reference-request", payload: {} });
+      }
+    });
     channelRef.current = channel;
 
     return () => {
@@ -749,15 +941,21 @@ export default function Whiteboard({ boardId }) {
 
     function resizeCanvas() {
       const ratio = window.devicePixelRatio || 1;
-      canvas.width = window.innerWidth * ratio;
-      canvas.height = window.innerHeight * ratio;
-      canvas.style.width = window.innerWidth + "px";
-      canvas.style.height = window.innerHeight + "px";
+      const { width, height } = getPaneSize();
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
       fullRedraw();
     }
 
     resizeCanvas();
-    window.addEventListener("resize", resizeCanvas);
+    // A ResizeObserver on the pane itself (rather than a window resize
+    // listener) also correctly catches the canvas needing to resize when
+    // the reference-doc pane appears/disappears, not just when the
+    // browser window itself changes size.
+    const resizeObserver = new ResizeObserver(() => resizeCanvas());
+    if (boardPaneRef.current) resizeObserver.observe(boardPaneRef.current);
 
     function getPos(e) {
       const rect = canvas.getBoundingClientRect();
@@ -1403,7 +1601,7 @@ export default function Whiteboard({ boardId }) {
     }
 
     return () => {
-      window.removeEventListener("resize", resizeCanvas);
+      resizeObserver.disconnect();
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
@@ -1504,160 +1702,251 @@ export default function Whiteboard({ boardId }) {
     }
   }
 
+  const showReferencePane = canUseReferencePane && !!referenceDoc;
+
   return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
-      <a
-        href="/"
+    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", display: "flex" }}>
+      {showReferencePane && (
+        <div
+          style={{
+          width: "clamp(320px, 45%, 560px)",
+            height: "100%",
+            flexShrink: 0,
+            borderRight: "1px solid #ddd",
+            background: "#e8eaed",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 14px",
+              background: "#fff",
+              borderBottom: "1px solid #eee",
+              fontSize: 13,
+              color: "#333",
+            }}
+          >
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {referenceDoc.fileName}
+            </span>
+            {isOwner && (
+              <button
+                onClick={handleRemoveReferenceDoc}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "#c62828",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  marginLeft: 10,
+                }}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ReferencePane
+              doc={referenceDoc}
+              strokes={referenceStrokes}
+              onStrokeComplete={handleReferenceStrokeComplete}
+              tool={referenceTool}
+              setTool={setReferenceTool}
+              color={referenceColor}
+              setColor={setReferenceColor}
+              canUndo={myReferenceUndoAvailable}
+              onUndo={handleReferenceUndo}
+            />
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={boardPaneRef}
         style={{
-          position: "fixed",
-          top: "max(16px, env(safe-area-inset-top))",
-          left: 16,
-          zIndex: 10,
-          width: 40,
-          height: 40,
-          borderRadius: "50%",
-          background: "#fff",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
-          color: "#333",
+          position: "relative",
+          flex: 1,
+          height: "100%",
+          overflow: "hidden",
+          // A transform on this container makes it the "containing block"
+          // for any position:fixed descendant inside it (toolbar, ruler,
+          // zoom menu, etc.) instead of the full browser viewport — so all
+          // of that UI automatically anchors to just this pane, with zero
+          // changes needed inside those components themselves.
+          transform: "translate(0, 0)",
         }}
       >
-        <ArrowLeft size={18} />
-      </a>
-      <canvas
-        ref={canvasRef}
-        onContextMenu={(e) => e.preventDefault()}
-        style={{
-          display: "block",
-          touchAction: "none",
-          background: "#ffffff",
-          WebkitUserSelect: "none",
-          userSelect: "none",
-          WebkitTouchCallout: "none",
-          WebkitTapHighlightColor: "transparent",
-          cursor: panToolActive ? "grab" : "default",
-        }}
-      />
-      {editingText && (
-        <textarea
-          ref={textareaElRef}
-          defaultValue=""
-          onBlur={handleTextBlur}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") e.target.blur();
-          }}
-          onInput={(e) => {
-            e.target.style.height = "auto";
-            e.target.style.height = e.target.scrollHeight + "px";
-          }}
-          style={{
-            position: "fixed",
-            zIndex: 15,
-            border: "1.5px dashed #1E88E5",
-            background: "rgba(255,255,255,0.9)",
-            outline: "none",
-            resize: "none",
-            padding: 2,
-            minWidth: 60,
-            minHeight: 30,
-            fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
-            color: editingText.color,
-            lineHeight: 1.3,
-            overflow: "hidden",
-          }}
-        />
-      )}
-      {rulerActive && (
-        <RulerOverlay
-          angle={rulerAngle}
-          setAngle={setRulerAngle}
-          position={rulerPos}
-          setPosition={setRulerPos}
-        />
-      )}
-      {compassActive && (
-        <CompassOverlay
-          center={compassCenter}
-          setCenter={setCompassCenter}
-          radius={compassRadius}
-          setRadius={setCompassRadius}
-          angle={compassAngle}
-          setAngle={setCompassAngle}
-        />
-      )}
-      {showPencilTip && (
-        <div
+        <a
+          href="/"
           style={{
             position: "fixed",
             top: "max(16px, env(safe-area-inset-top))",
-            left: "50%",
-            transform: "translateX(-50%)",
-            zIndex: 30,
-            maxWidth: "min(92vw, 380px)",
-            background: "#1a1a1a",
-            color: "#fff",
-            borderRadius: 12,
-            padding: "12px 14px",
-            boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+            left: 16,
+            zIndex: 10,
+            width: 40,
+            height: 40,
+            borderRadius: "50%",
+            background: "#fff",
             display: "flex",
-            alignItems: "flex-start",
-            gap: 10,
-            fontSize: 13,
-            lineHeight: 1.4,
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
+            color: "#333",
           }}
         >
-          <span style={{ flex: 1 }}>
-            <strong>Tip for the smoothest drawing:</strong> turn off Scribble —
-            Settings → Apple Pencil → Scribble → off. iPadOS intercepts some
-            Pencil strokes for handwriting recognition otherwise, even here.
-          </span>
-          <button
-            onClick={handleDismissPencilTip}
+          <ArrowLeft size={18} />
+        </a>
+        <canvas
+          ref={canvasRef}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            display: "block",
+            touchAction: "none",
+            background: "#ffffff",
+            WebkitUserSelect: "none",
+            userSelect: "none",
+            WebkitTouchCallout: "none",
+            WebkitTapHighlightColor: "transparent",
+            cursor: panToolActive ? "grab" : "default",
+          }}
+        />
+        {editingText && (
+          <textarea
+            ref={textareaElRef}
+            defaultValue=""
+            onBlur={handleTextBlur}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") e.target.blur();
+            }}
+            onInput={(e) => {
+              e.target.style.height = "auto";
+              e.target.style.height = e.target.scrollHeight + "px";
+            }}
             style={{
-              border: "none",
-              background: "rgba(255,255,255,0.15)",
+              position: "fixed",
+              zIndex: 15,
+              border: "1.5px dashed #1E88E5",
+              background: "rgba(255,255,255,0.9)",
+              outline: "none",
+              resize: "none",
+              padding: 2,
+              minWidth: 60,
+              minHeight: 30,
+              fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+              color: editingText.color,
+              lineHeight: 1.3,
+              overflow: "hidden",
+            }}
+          />
+        )}
+        {rulerActive && (
+          <RulerOverlay
+            angle={rulerAngle}
+            setAngle={setRulerAngle}
+            position={rulerPos}
+            setPosition={setRulerPos}
+          />
+        )}
+        {compassActive && (
+          <CompassOverlay
+            center={compassCenter}
+            setCenter={setCompassCenter}
+            radius={compassRadius}
+            setRadius={setCompassRadius}
+            angle={compassAngle}
+            setAngle={setCompassAngle}
+          />
+        )}
+        {isOwner && (
+          <input
+            ref={referenceFileInputRef}
+            type="file"
+            accept="application/pdf,image/png,image/jpeg,image/webp"
+            onChange={handleReferenceFileSelected}
+            style={{ display: "none" }}
+          />
+        )}
+        {showPencilTip && (
+          <div
+            style={{
+              position: "fixed",
+              top: "max(16px, env(safe-area-inset-top))",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 30,
+              maxWidth: "min(92vw, 380px)",
+              background: "#1a1a1a",
               color: "#fff",
-              borderRadius: 8,
-              padding: "4px 8px",
-              fontSize: 12,
-              cursor: "pointer",
-              flexShrink: 0,
+              borderRadius: 12,
+              padding: "12px 14px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              fontSize: 13,
+              lineHeight: 1.4,
             }}
           >
-            Got it
-          </button>
-        </div>
-      )}
-      <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} />
-      <Toolbar
-        tool={tool}
-        setTool={setTool}
-        color={color}
-        setColor={setColor}
-        strokeWidth={strokeWidth}
-        setStrokeWidth={setStrokeWidth}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
-        onClear={handleClear}
-        canUndo={myUndoAvailable}
-        canRedo={myRedoAvailable}
-        isOwner={isOwner}
-        onCopyLink={handleCopyLink}
-        onEndSession={handleEndSession}
-        saveStatus={saveStatus}
-        rulerActive={rulerActive}
-        onToggleRuler={handleToggleRuler}
-        onResetView={handleResetView}
-        compassActive={compassActive}
-        onToggleCompass={handleToggleCompass}
-        gridToolActive={gridToolActive}
-        onToggleGrid={handleToggleGrid}
-        onRemoveGrid={handleRemoveGrid}
-        panToolActive={panToolActive}
-        onTogglePan={handleTogglePan}
-      />
+            <span style={{ flex: 1 }}>
+              <strong>Tip for the smoothest drawing:</strong> turn off Scribble —
+              Settings → Apple Pencil → Scribble → off. iPadOS intercepts some
+              Pencil strokes for handwriting recognition otherwise, even here.
+            </span>
+            <button
+              onClick={handleDismissPencilTip}
+              style={{
+                border: "none",
+                background: "rgba(255,255,255,0.15)",
+                color: "#fff",
+                borderRadius: 8,
+                padding: "4px 8px",
+                fontSize: 12,
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+            >
+              Got it
+            </button>
+          </div>
+        )}
+        <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} />
+        <Toolbar
+          tool={tool}
+          setTool={setTool}
+          color={color}
+          setColor={setColor}
+          strokeWidth={strokeWidth}
+          setStrokeWidth={setStrokeWidth}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onClear={handleClear}
+          canUndo={myUndoAvailable}
+          canRedo={myRedoAvailable}
+          isOwner={isOwner}
+          onCopyLink={handleCopyLink}
+          onEndSession={handleEndSession}
+          saveStatus={saveStatus}
+          rulerActive={rulerActive}
+          onToggleRuler={handleToggleRuler}
+          onResetView={handleResetView}
+          compassActive={compassActive}
+          onToggleCompass={handleToggleCompass}
+          gridToolActive={gridToolActive}
+          onToggleGrid={handleToggleGrid}
+          onRemoveGrid={handleRemoveGrid}
+          panToolActive={panToolActive}
+          onTogglePan={handleTogglePan}
+          canUseReferencePane={canUseReferencePane}
+          hasReferenceDoc={!!referenceDoc}
+          onReferenceToolClick={handleReferenceToolClick}
+          referenceUploadStatus={referenceUploadStatus}
+        />
+      </div>
     </div>
   );
 }
