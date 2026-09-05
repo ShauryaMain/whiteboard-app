@@ -15,6 +15,292 @@ function widthForTool(t, base) {
   return base;
 }
 
+// Uncapped devicePixelRatio can be 3+ on some phones/tablets — rendering
+// every page and the annotation overlay at that resolution multiplies the
+// pixel count (and the cost of compositing all those layers together on
+// every pen movement) far more than the visual sharpness gained is worth.
+const MAX_RENDER_RATIO = 2;
+function getRenderRatio() {
+  return Math.min(window.devicePixelRatio || 1, MAX_RENDER_RATIO);
+}
+
+// How far above/below the visible area a page still gets fully rendered —
+// large enough that scrolling feels seamless, small enough that most of a
+// long document stays as lightweight placeholders at any given time.
+const RENDER_BUFFER_PX = 1000;
+
+// One page: reserves its correct size immediately (so scrolling never
+// jumps), only actually rasterizes its PDF content while within
+// RENDER_BUFFER_PX of the visible area, and — importantly — owns its OWN
+// small annotation canvas sized to just this page, not the whole document.
+// A page-sized canvas is a dramatically smaller surface for the browser
+// to composite than one spanning every page stacked together, which is
+// what was causing real per-stroke latency on long/complex documents.
+function PdfPage({
+  pdfDoc, pageNum, width, height, margin, scrollRoot,
+  strokes, onStrokeComplete, tool, color,
+}) {
+  const wrapperRef = useRef(null);
+  const pageCanvasRef = useRef(null);
+  const annotationRef = useRef(null);
+  const annotationCtxRef = useRef(null);
+  const [isNear, setIsNear] = useState(pageNum <= 3);
+  const renderTokenRef = useRef(0);
+
+  const isDrawing = useRef(false);
+  const currentStroke = useRef(null);
+  const toolRef = useRef(tool);
+  const colorRef = useRef(color);
+  useEffect(() => {
+    toolRef.current = tool;
+  }, [tool]);
+  useEffect(() => {
+    colorRef.current = color;
+  }, [color]);
+
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el || !scrollRoot) return;
+    const observer = new IntersectionObserver(
+      (entries) => setIsNear(entries[0].isIntersecting),
+      { root: scrollRoot, rootMargin: `${RENDER_BUFFER_PX}px 0px ${RENDER_BUFFER_PX}px 0px` }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollRoot]);
+
+  // Render (or release) the actual PDF page bitmap.
+  useEffect(() => {
+    const canvas = pageCanvasRef.current;
+    if (!canvas) return;
+    const myToken = ++renderTokenRef.current;
+
+    if (isNear) {
+      let cancelled = false;
+      (async () => {
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          if (cancelled || myToken !== renderTokenRef.current) return;
+          const baseViewport = page.getViewport({ scale: 1 });
+          const scale = width / baseViewport.width;
+          const viewport = page.getViewport({ scale });
+          const ratio = getRenderRatio();
+          canvas.width = viewport.width * ratio;
+          canvas.height = viewport.height * ratio;
+          const ctx = canvas.getContext("2d");
+          ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+          await page.render({ canvasContext: ctx, viewport }).promise;
+        } catch (err) {
+          if (!cancelled) console.error("Error rendering page", pageNum, err);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    } else {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  }, [isNear, pdfDoc, pageNum, width]);
+
+  // Size this page's own small annotation canvas.
+  useEffect(() => {
+    const canvas = annotationRef.current;
+    if (!canvas || !isNear) return;
+    const ratio = getRenderRatio();
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineJoin = "round";
+    annotationCtxRef.current = ctx;
+    redrawAnnotations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNear, width, height]);
+
+  useEffect(() => {
+    redrawAnnotations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strokes]);
+
+  // This page's strokes are stored/synced as fractions of THIS page's own
+  // width/height (0-1) — converted to local pixels only here, at render
+  // time, so they land correctly regardless of any viewer's pane width.
+  function toLocal(s) {
+    return {
+      ...s,
+      width: s.widthFrac * width,
+      points: s.points.map((p) => ({ x: p.x * width, y: p.y * height })),
+    };
+  }
+
+  function drawFull(ctx, s) {
+    const local = toLocal(s);
+    if (!local.points || local.points.length < 2) return;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = local.opacity ?? 1;
+    ctx.strokeStyle = local.tool === "eraser" ? "#ffffff" : local.color;
+    ctx.lineWidth = local.width;
+    ctx.beginPath();
+    ctx.moveTo(local.points[0].x, local.points[0].y);
+    for (let i = 1; i < local.points.length; i++) ctx.lineTo(local.points[i].x, local.points[i].y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function redrawAnnotations() {
+    const ctx = annotationCtxRef.current;
+    const canvas = annotationRef.current;
+    if (!ctx || !canvas) return;
+    const ratio = getRenderRatio();
+    ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
+    for (const s of strokes) drawFull(ctx, s);
+
+    const cur = currentStroke.current;
+    if (cur && cur.localPoints.length > 1) {
+      ctx.lineCap = "round";
+      ctx.globalAlpha = cur.opacity;
+      ctx.strokeStyle = cur.tool === "eraser" ? "#ffffff" : cur.color;
+      ctx.lineWidth = cur.rawWidth;
+      ctx.beginPath();
+      ctx.moveTo(cur.localPoints[0].x, cur.localPoints[0].y);
+      for (let i = 1; i < cur.localPoints.length; i++) ctx.lineTo(cur.localPoints[i].x, cur.localPoints[i].y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawLive(fromIndex) {
+    const ctx = annotationCtxRef.current;
+    const cur = currentStroke.current;
+    if (!ctx || !cur) return;
+    const pts = cur.localPoints;
+    if (pts.length < 2 || fromIndex >= pts.length - 1) return;
+    ctx.lineCap = "butt";
+    ctx.globalAlpha = cur.opacity;
+    ctx.strokeStyle = cur.tool === "eraser" ? "#ffffff" : cur.color;
+    ctx.lineWidth = cur.rawWidth;
+    ctx.beginPath();
+    ctx.moveTo(pts[fromIndex].x, pts[fromIndex].y);
+    for (let i = fromIndex + 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function getPos(e) {
+    const rect = annotationRef.current.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function handlePointerDown(e) {
+    isDrawing.current = true;
+    const pos = getPos(e);
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2);
+    currentStroke.current = {
+      id,
+      tool: toolRef.current,
+      color: colorRef.current,
+      opacity: opacityForTool(toolRef.current),
+      rawWidth: widthForTool(toolRef.current, 3),
+      localPoints: [pos],
+    };
+    try {
+      annotationRef.current.setPointerCapture(e.pointerId);
+    } catch (err) {}
+  }
+
+  function handlePointerMove(e) {
+    if (!isDrawing.current || !currentStroke.current) return;
+    const coalesced = e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : [];
+    const events = coalesced.length > 0 ? coalesced : [e.nativeEvent];
+    const before = currentStroke.current.localPoints.length;
+    for (const ev of events) {
+      currentStroke.current.localPoints.push(getPos(ev));
+    }
+    drawLive(Math.max(0, before - 1));
+  }
+
+  function handlePointerUp(e) {
+    if (!isDrawing.current) return;
+    isDrawing.current = false;
+    const finished = currentStroke.current;
+    currentStroke.current = null;
+    try {
+      annotationRef.current.releasePointerCapture(e.pointerId);
+    } catch (err) {}
+
+    if (finished && finished.localPoints.length > 1) {
+      onStrokeComplete({
+        id: finished.id,
+        pageNum,
+        tool: finished.tool,
+        color: finished.color,
+        opacity: finished.opacity,
+        widthFrac: finished.rawWidth / width,
+        points: finished.localPoints.map((p) => ({ x: p.x / width, y: p.y / height })),
+      });
+    } else {
+      redrawAnnotations();
+    }
+  }
+
+  return (
+    <div
+      ref={wrapperRef}
+      style={{
+        width,
+        height,
+        marginBottom: margin,
+        background: "#fff",
+        boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
+        position: "relative",
+      }}
+    >
+      <canvas ref={pageCanvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
+      {isNear && (
+        <canvas
+          ref={annotationRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            touchAction: "none",
+            WebkitUserSelect: "none",
+            userSelect: "none",
+            WebkitTouchCallout: "none",
+          }}
+        />
+      )}
+      {!isNear && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#ccc",
+            fontSize: 13,
+            pointerEvents: "none",
+          }}
+        >
+          {pageNum}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ReferencePane({
   doc,
   strokes,
@@ -28,12 +314,19 @@ export default function ReferencePane({
 }) {
   const scrollRef = useRef(null);
   const contentRef = useRef(null);
+  const [status, setStatus] = useState("loading");
+  const [pdfDoc, setPdfDoc] = useState(null);
+  const [pageLayout, setPageLayout] = useState([]);
+  const [scrollRootEl, setScrollRootEl] = useState(null);
+
+  // Everything below this point (annotationCanvasRef, contentSize, the
+  // handlePointer* functions) is used ONLY for the single-image case now.
+  // PDFs get their annotation drawing from each PdfPage's own canvas above
+  // instead — that per-page split is the actual latency fix.
   const annotationCanvasRef = useRef(null);
   const ctxRef = useRef(null);
-  const [status, setStatus] = useState("loading");
   const [contentSize, setContentSize] = useState({ width: 0, height: 0 });
   const contentSizeRef = useRef({ width: 0, height: 0 });
-
   const isDrawing = useRef(false);
   const currentStroke = useRef(null);
   const toolRef = useRef(tool);
@@ -48,20 +341,24 @@ export default function ReferencePane({
     contentSizeRef.current = contentSize;
   }, [contentSize]);
 
-  // Renders the PDF's pages (or a single image) into contentRef, then
-  // measures the resulting total size so the annotation canvas — a
-  // separate element layered on top — can be sized to match exactly.
+  useEffect(() => {
+    setScrollRootEl(scrollRef.current);
+  }, []);
+
   useEffect(() => {
     if (!doc) return;
     let cancelled = false;
+    let loadedProxy = null;
 
-    async function renderContent() {
+    async function loadDoc() {
       setStatus("loading");
-      const content = contentRef.current;
-      if (!content) return;
-      content.innerHTML = "";
+      setPdfDoc(null);
+      setPageLayout([]);
 
       if (doc.fileType !== "application/pdf") {
+        const content = contentRef.current;
+        if (!content) return;
+        content.innerHTML = "";
         const img = document.createElement("img");
         img.src = doc.url;
         img.style.width = "100%";
@@ -85,62 +382,49 @@ export default function ReferencePane({
       try {
         const pdfjsLib = await import("pdfjs-dist");
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-        const pdfDoc = await pdfjsLib.getDocument({ url: doc.url }).promise;
+        const pdfDocProxy = await pdfjsLib.getDocument({ url: doc.url }).promise;
+        if (cancelled) {
+          if (typeof pdfDocProxy.destroy === "function") pdfDocProxy.destroy();
+          return;
+        }
+        loadedProxy = pdfDocProxy;
 
-        for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const containerWidth = contentRef.current?.clientWidth || 600;
+        const pages = [];
+        for (let pageNum = 1; pageNum <= pdfDocProxy.numPages; pageNum++) {
           if (cancelled) return;
-          const page = await pdfDoc.getPage(pageNum);
-          const containerWidth = content.clientWidth || 600;
+          const page = await pdfDocProxy.getPage(pageNum);
           const baseViewport = page.getViewport({ scale: 1 });
           const scale = containerWidth / baseViewport.width;
-          const viewport = page.getViewport({ scale });
-
-          const canvas = document.createElement("canvas");
-          const ratio = window.devicePixelRatio || 1;
-          canvas.width = viewport.width * ratio;
-          canvas.height = viewport.height * ratio;
-          canvas.style.width = viewport.width + "px";
-          canvas.style.height = viewport.height + "px";
-          canvas.style.display = "block";
-          // Proportional to page width, not a fixed pixel value — this
-          // keeps total content height exactly proportional to width for
-          // every viewer, regardless of how wide their own pane happens
-          // to be. That proportionality is what lets us store annotation
-          // coordinates as simple fractions (below) and have them land
-          // in the same place for everyone.
-          canvas.style.marginBottom = Math.round(viewport.width * 0.02) + "px";
-          canvas.style.boxShadow = "0 1px 6px rgba(0,0,0,0.15)";
-          canvas.style.background = "#fff";
-
-          const ctx = canvas.getContext("2d");
-          ctx.scale(ratio, ratio);
-          await page.render({ canvasContext: ctx, viewport }).promise;
-
-          if (cancelled) return;
-          content.appendChild(canvas);
+          const pageWidth = containerWidth;
+          const pageHeight = baseViewport.height * scale;
+          const margin = Math.round(pageWidth * 0.02);
+          pages.push({ pageNum, width: pageWidth, height: pageHeight, margin });
         }
 
-        if (!cancelled) {
-          setContentSize({ width: content.clientWidth, height: content.scrollHeight });
-          setStatus("ready");
-        }
+        if (cancelled) return;
+        setPdfDoc(pdfDocProxy);
+        setPageLayout(pages);
+        setStatus("ready");
       } catch (err) {
-        console.error("Error rendering reference document:", err);
+        console.error("Error loading reference document:", err);
         if (!cancelled) setStatus("error");
       }
     }
 
-    renderContent();
+    loadDoc();
     return () => {
       cancelled = true;
+      if (loadedProxy && typeof loadedProxy.destroy === "function") loadedProxy.destroy();
     };
   }, [doc]);
 
-  // Size the annotation canvas to match the rendered content exactly.
+  // --- Image-only annotation path below (unchanged) ---
+
   useEffect(() => {
     const canvas = annotationCanvasRef.current;
     if (!canvas || contentSize.width === 0 || contentSize.height === 0) return;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = getRenderRatio();
     canvas.width = contentSize.width * ratio;
     canvas.height = contentSize.height * ratio;
     canvas.style.width = contentSize.width + "px";
@@ -149,20 +433,16 @@ export default function ReferencePane({
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.lineJoin = "round";
     ctxRef.current = ctx;
-    redrawAll();
+    redrawAllImage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentSize]);
 
   useEffect(() => {
-    redrawAll();
+    if (doc && doc.fileType !== "application/pdf") redrawAllImage();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strokes]);
 
-  // Strokes are stored/synced as fractions of content width (0-1), not
-  // raw pixels — converting to THIS viewer's own local pixels only here,
-  // at render time. This is what makes an annotation land in the right
-  // spot for everyone regardless of how wide any two people's panes are.
-  function toLocalStroke(s) {
+  function toLocalImage(s) {
     const w = contentSizeRef.current.width || 1;
     return {
       ...s,
@@ -171,8 +451,8 @@ export default function ReferencePane({
     };
   }
 
-  function drawStrokeFull(ctx, s) {
-    const local = toLocalStroke(s);
+  function drawFullImage(ctx, s) {
+    const local = toLocalImage(s);
     if (!local.points || local.points.length < 2) return;
     ctx.lineCap = "round";
     ctx.globalAlpha = local.opacity ?? 1;
@@ -185,17 +465,14 @@ export default function ReferencePane({
     ctx.globalAlpha = 1;
   }
 
-  function redrawAll() {
+  function redrawAllImage() {
     const ctx = ctxRef.current;
     const canvas = annotationCanvasRef.current;
     if (!ctx || !canvas) return;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = getRenderRatio();
     ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
-    for (const s of strokes) drawStrokeFull(ctx, s);
+    for (const s of strokes) drawFullImage(ctx, s);
 
-    // If someone else's stroke arrives while we're mid-draw ourselves,
-    // this full redraw would otherwise wipe our own in-progress mark —
-    // repaint it on top, same as the main whiteboard does.
     const cur = currentStroke.current;
     if (cur && cur.localPoints.length > 1) {
       ctx.lineCap = "round";
@@ -210,31 +487,31 @@ export default function ReferencePane({
     }
   }
 
-  // Fast path used while actively drawing: paints only the newest bit of
-  // the stroke (kept in local pixels while in progress, only normalized
-  // to fractions once finished) instead of redrawing everything every
-  // frame — this is the fix for the slowness.
-  function drawLiveSegment(ctx, localPoints, width, strokeColor, opacity, strokeTool, fromIndex) {
-    if (localPoints.length < 2 || fromIndex >= localPoints.length - 1) return;
+  function drawLiveImage(fromIndex) {
+    const ctx = ctxRef.current;
+    const cur = currentStroke.current;
+    if (!ctx || !cur) return;
+    const pts = cur.localPoints;
+    if (pts.length < 2 || fromIndex >= pts.length - 1) return;
     ctx.lineCap = "butt";
-    ctx.globalAlpha = opacity;
-    ctx.strokeStyle = strokeTool === "eraser" ? "#ffffff" : strokeColor;
-    ctx.lineWidth = width;
+    ctx.globalAlpha = cur.opacity;
+    ctx.strokeStyle = cur.tool === "eraser" ? "#ffffff" : cur.color;
+    ctx.lineWidth = cur.rawWidth;
     ctx.beginPath();
-    ctx.moveTo(localPoints[fromIndex].x, localPoints[fromIndex].y);
-    for (let i = fromIndex + 1; i < localPoints.length; i++) ctx.lineTo(localPoints[i].x, localPoints[i].y);
+    ctx.moveTo(pts[fromIndex].x, pts[fromIndex].y);
+    for (let i = fromIndex + 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
     ctx.globalAlpha = 1;
   }
 
-  function getPos(e) {
+  function getPosImage(e) {
     const rect = annotationCanvasRef.current.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
-  function handlePointerDown(e) {
+  function handleImagePointerDown(e) {
     isDrawing.current = true;
-    const pos = getPos(e);
+    const pos = getPosImage(e);
     const id =
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
@@ -252,26 +529,18 @@ export default function ReferencePane({
     } catch (err) {}
   }
 
-  function handlePointerMove(e) {
+  function handleImagePointerMove(e) {
     if (!isDrawing.current || !currentStroke.current) return;
     const coalesced = e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : [];
     const events = coalesced.length > 0 ? coalesced : [e.nativeEvent];
     const before = currentStroke.current.localPoints.length;
     for (const ev of events) {
-      currentStroke.current.localPoints.push(getPos(ev));
+      currentStroke.current.localPoints.push(getPosImage(ev));
     }
-    drawLiveSegment(
-      ctxRef.current,
-      currentStroke.current.localPoints,
-      currentStroke.current.rawWidth,
-      currentStroke.current.color,
-      currentStroke.current.opacity,
-      currentStroke.current.tool,
-      Math.max(0, before - 1)
-    );
+    drawLiveImage(Math.max(0, before - 1));
   }
 
-  function handlePointerUp(e) {
+  function handleImagePointerUp(e) {
     if (!isDrawing.current) return;
     isDrawing.current = false;
     const finished = currentStroke.current;
@@ -291,11 +560,13 @@ export default function ReferencePane({
         points: finished.localPoints.map((p) => ({ x: p.x / w, y: p.y / w })),
       });
     } else {
-      redrawAll();
+      redrawAllImage();
     }
   }
 
   if (!doc) return null;
+
+  const isPdf = doc.fileType === "application/pdf";
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
@@ -313,28 +584,51 @@ export default function ReferencePane({
             Couldn't load this document.
           </div>
         )}
-        <div style={{ position: "relative" }}>
-          <div ref={contentRef} />
-          {status === "ready" && contentSize.width > 0 && (
-            <canvas
-              ref={annotationCanvasRef}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              onContextMenu={(e) => e.preventDefault()}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                touchAction: "none",
-                WebkitUserSelect: "none",
-                userSelect: "none",
-                WebkitTouchCallout: "none",
-              }}
-            />
-          )}
-        </div>
+
+        {isPdf ? (
+          <div ref={contentRef}>
+            {status === "ready" &&
+              pdfDoc &&
+              pageLayout.map((p) => (
+                <PdfPage
+                  key={p.pageNum}
+                  pdfDoc={pdfDoc}
+                  pageNum={p.pageNum}
+                  width={p.width}
+                  height={p.height}
+                  margin={p.margin}
+                  scrollRoot={scrollRootEl}
+                  strokes={strokes.filter((s) => s.pageNum === p.pageNum)}
+                  onStrokeComplete={onStrokeComplete}
+                  tool={tool}
+                  color={color}
+                />
+              ))}
+          </div>
+        ) : (
+          <div style={{ position: "relative" }}>
+            <div ref={contentRef} />
+            {status === "ready" && contentSize.width > 0 && (
+              <canvas
+                ref={annotationCanvasRef}
+                onPointerDown={handleImagePointerDown}
+                onPointerMove={handleImagePointerMove}
+                onPointerUp={handleImagePointerUp}
+                onPointerCancel={handleImagePointerUp}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  touchAction: "none",
+                  WebkitUserSelect: "none",
+                  userSelect: "none",
+                  WebkitTouchCallout: "none",
+                }}
+              />
+            )}
+          </div>
+        )}
       </div>
 
       <div
