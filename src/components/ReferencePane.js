@@ -15,6 +15,28 @@ function widthForTool(t, base) {
   return base;
 }
 
+// The eraser must actually punch a transparent hole in this (transparent)
+// annotation layer, not paint an opaque white stroke — painting white
+// only looks like erasing on a plain white background, but visibly wipes
+// out a colored PDF page or image (like graph paper) sitting underneath.
+// "destination-out" does that correctly regardless of what's behind it.
+function applyStrokeStyle(ctx, strokeTool, strokeColor, opacity) {
+  if (strokeTool === "eraser") {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = "#000000";
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = opacity ?? 1;
+    ctx.strokeStyle = strokeColor;
+  }
+}
+
+function resetCompositeMode(ctx) {
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+}
+
 // Uncapped devicePixelRatio can be 3+ on some phones/tablets — rendering
 // every page and the annotation overlay at that resolution multiplies the
 // pixel count (and the cost of compositing all those layers together on
@@ -138,14 +160,13 @@ function PdfPage({
     const local = toLocal(s);
     if (!local.points || local.points.length < 2) return;
     ctx.lineCap = "round";
-    ctx.globalAlpha = local.opacity ?? 1;
-    ctx.strokeStyle = local.tool === "eraser" ? "#ffffff" : local.color;
+    applyStrokeStyle(ctx, local.tool, local.color, local.opacity);
     ctx.lineWidth = local.width;
     ctx.beginPath();
     ctx.moveTo(local.points[0].x, local.points[0].y);
     for (let i = 1; i < local.points.length; i++) ctx.lineTo(local.points[i].x, local.points[i].y);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+    resetCompositeMode(ctx);
   }
 
   function redrawAnnotations() {
@@ -159,14 +180,13 @@ function PdfPage({
     const cur = currentStroke.current;
     if (cur && cur.localPoints.length > 1) {
       ctx.lineCap = "round";
-      ctx.globalAlpha = cur.opacity;
-      ctx.strokeStyle = cur.tool === "eraser" ? "#ffffff" : cur.color;
+      applyStrokeStyle(ctx, cur.tool, cur.color, cur.opacity);
       ctx.lineWidth = cur.rawWidth;
       ctx.beginPath();
       ctx.moveTo(cur.localPoints[0].x, cur.localPoints[0].y);
       for (let i = 1; i < cur.localPoints.length; i++) ctx.lineTo(cur.localPoints[i].x, cur.localPoints[i].y);
       ctx.stroke();
-      ctx.globalAlpha = 1;
+      resetCompositeMode(ctx);
     }
   }
 
@@ -177,14 +197,13 @@ function PdfPage({
     const pts = cur.localPoints;
     if (pts.length < 2 || fromIndex >= pts.length - 1) return;
     ctx.lineCap = "butt";
-    ctx.globalAlpha = cur.opacity;
-    ctx.strokeStyle = cur.tool === "eraser" ? "#ffffff" : cur.color;
+    applyStrokeStyle(ctx, cur.tool, cur.color, cur.opacity);
     ctx.lineWidth = cur.rawWidth;
     ctx.beginPath();
     ctx.moveTo(pts[fromIndex].x, pts[fromIndex].y);
     for (let i = fromIndex + 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+    resetCompositeMode(ctx);
   }
 
   function getPos(e) {
@@ -455,14 +474,13 @@ export default function ReferencePane({
     const local = toLocalImage(s);
     if (!local.points || local.points.length < 2) return;
     ctx.lineCap = "round";
-    ctx.globalAlpha = local.opacity ?? 1;
-    ctx.strokeStyle = local.tool === "eraser" ? "#ffffff" : local.color;
+    applyStrokeStyle(ctx, local.tool, local.color, local.opacity);
     ctx.lineWidth = local.width;
     ctx.beginPath();
     ctx.moveTo(local.points[0].x, local.points[0].y);
     for (let i = 1; i < local.points.length; i++) ctx.lineTo(local.points[i].x, local.points[i].y);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+    resetCompositeMode(ctx);
   }
 
   function redrawAllImage() {
@@ -476,14 +494,13 @@ export default function ReferencePane({
     const cur = currentStroke.current;
     if (cur && cur.localPoints.length > 1) {
       ctx.lineCap = "round";
-      ctx.globalAlpha = cur.opacity;
-      ctx.strokeStyle = cur.tool === "eraser" ? "#ffffff" : cur.color;
+      applyStrokeStyle(ctx, cur.tool, cur.color, cur.opacity);
       ctx.lineWidth = cur.rawWidth;
       ctx.beginPath();
       ctx.moveTo(cur.localPoints[0].x, cur.localPoints[0].y);
       for (let i = 1; i < cur.localPoints.length; i++) ctx.lineTo(cur.localPoints[i].x, cur.localPoints[i].y);
       ctx.stroke();
-      ctx.globalAlpha = 1;
+      resetCompositeMode(ctx);
     }
   }
 
@@ -494,14 +511,13 @@ export default function ReferencePane({
     const pts = cur.localPoints;
     if (pts.length < 2 || fromIndex >= pts.length - 1) return;
     ctx.lineCap = "butt";
-    ctx.globalAlpha = cur.opacity;
-    ctx.strokeStyle = cur.tool === "eraser" ? "#ffffff" : cur.color;
+    applyStrokeStyle(ctx, cur.tool, cur.color, cur.opacity);
     ctx.lineWidth = cur.rawWidth;
     ctx.beginPath();
     ctx.moveTo(pts[fromIndex].x, pts[fromIndex].y);
     for (let i = fromIndex + 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
     ctx.stroke();
-    ctx.globalAlpha = 1;
+    resetCompositeMode(ctx);
   }
 
   function getPosImage(e) {
