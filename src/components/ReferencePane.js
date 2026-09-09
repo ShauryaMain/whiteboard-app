@@ -364,6 +364,23 @@ export default function ReferencePane({
     setScrollRootEl(scrollRef.current);
   }, []);
 
+  const lastLayoutWidthRef = useRef(0);
+  const imageAspectRef = useRef(null); // width/height, set once an image loads
+
+  async function computePageLayout(pdfDocProxy, containerWidth) {
+    const pages = [];
+    for (let pageNum = 1; pageNum <= pdfDocProxy.numPages; pageNum++) {
+      const page = await pdfDocProxy.getPage(pageNum);
+      const baseViewport = page.getViewport({ scale: 1 });
+      const scale = containerWidth / baseViewport.width;
+      const pageWidth = containerWidth;
+      const pageHeight = baseViewport.height * scale;
+      const margin = Math.round(pageWidth * 0.02);
+      pages.push({ pageNum, width: pageWidth, height: pageHeight, margin });
+    }
+    return pages;
+  }
+
   useEffect(() => {
     if (!doc) return;
     let cancelled = false;
@@ -388,12 +405,13 @@ export default function ReferencePane({
         });
         if (cancelled) return;
         content.appendChild(img);
+        imageAspectRef.current =
+          img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : null;
         setContentSize({
           width: content.clientWidth,
-          height: img.naturalHeight
-            ? (content.clientWidth / img.naturalWidth) * img.naturalHeight
-            : content.scrollHeight,
+          height: imageAspectRef.current ? content.clientWidth / imageAspectRef.current : content.scrollHeight,
         });
+        lastLayoutWidthRef.current = content.clientWidth;
         setStatus("ready");
         return;
       }
@@ -409,21 +427,12 @@ export default function ReferencePane({
         loadedProxy = pdfDocProxy;
 
         const containerWidth = contentRef.current?.clientWidth || 600;
-        const pages = [];
-        for (let pageNum = 1; pageNum <= pdfDocProxy.numPages; pageNum++) {
-          if (cancelled) return;
-          const page = await pdfDocProxy.getPage(pageNum);
-          const baseViewport = page.getViewport({ scale: 1 });
-          const scale = containerWidth / baseViewport.width;
-          const pageWidth = containerWidth;
-          const pageHeight = baseViewport.height * scale;
-          const margin = Math.round(pageWidth * 0.02);
-          pages.push({ pageNum, width: pageWidth, height: pageHeight, margin });
-        }
+        const pages = await computePageLayout(pdfDocProxy, containerWidth);
 
         if (cancelled) return;
         setPdfDoc(pdfDocProxy);
         setPageLayout(pages);
+        lastLayoutWidthRef.current = containerWidth;
         setStatus("ready");
       } catch (err) {
         console.error("Error loading reference document:", err);
@@ -437,6 +446,43 @@ export default function ReferencePane({
       if (loadedProxy && typeof loadedProxy.destroy === "function") loadedProxy.destroy();
     };
   }, [doc]);
+
+  // Reflows the document when the pane's available width actually
+  // changes — rotating a tablet between portrait/landscape, or resizing
+  // the window — instead of leaving pages locked at whatever width they
+  // first loaded at. Debounced so a live window drag doesn't trigger a
+  // re-layout (and, for PDFs, a fresh getPage() call per page) on every
+  // intermediate pixel.
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || status !== "ready") return;
+
+    let debounceTimer = null;
+    const observer = new ResizeObserver((entries) => {
+      const newWidth = entries[0].contentRect.width;
+      if (!newWidth || Math.abs(newWidth - lastLayoutWidthRef.current) < 12) return;
+
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        lastLayoutWidthRef.current = newWidth;
+        if (doc?.fileType === "application/pdf") {
+          if (!pdfDoc) return;
+          computePageLayout(pdfDoc, newWidth).then((pages) => {
+            setPageLayout(pages);
+          });
+        } else if (imageAspectRef.current) {
+          setContentSize({ width: newWidth, height: newWidth / imageAspectRef.current });
+        }
+      }, 250);
+    });
+
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      clearTimeout(debounceTimer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, pdfDoc, doc]);
 
   // --- Image-only annotation path below (unchanged) ---
 
@@ -651,23 +697,24 @@ export default function ReferencePane({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "8px 12px",
+          gap: 10,
+          padding: "10px 12px",
           background: "#fff",
           borderTop: "1px solid #eee",
           flexWrap: "wrap",
+          touchAction: "manipulation",
         }}
       >
         <ToolBtn active={tool === "pen"} onClick={() => setTool("pen")} label="Pen">
-          <Pencil size={16} />
+          <Pencil size={18} />
         </ToolBtn>
         <ToolBtn active={tool === "highlighter"} onClick={() => setTool("highlighter")} label="Highlighter">
-          <Highlighter size={16} />
+          <Highlighter size={18} />
         </ToolBtn>
         <ToolBtn active={tool === "eraser"} onClick={() => setTool("eraser")} label="Eraser">
-          <Eraser size={16} />
+          <Eraser size={18} />
         </ToolBtn>
-        <div style={{ width: 1, height: 20, background: "#e5e5e5" }} />
+        <div style={{ width: 1, height: 24, background: "#e5e5e5", flexShrink: 0 }} />
         {PRESET_COLORS.map((c) => (
           <button
             key={c}
@@ -677,21 +724,35 @@ export default function ReferencePane({
             }}
             aria-label={`Color ${c}`}
             style={{
-              width: 18,
-              height: 18,
-              borderRadius: "50%",
-              background: c,
-              border: color === c ? "2px solid #1a1a1a" : "2px solid transparent",
-              boxShadow: "0 0 0 1px #ddd",
+              width: 44,
+              height: 44,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "none",
+              background: "transparent",
               cursor: "pointer",
               padding: 0,
               flexShrink: 0,
+              touchAction: "manipulation",
             }}
-          />
+          >
+            <span
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: "50%",
+                background: c,
+                border: color === c ? "2px solid #1a1a1a" : "2px solid transparent",
+                boxShadow: "0 0 0 1px #ddd",
+                display: "block",
+              }}
+            />
+          </button>
         ))}
-        <div style={{ width: 1, height: 20, background: "#e5e5e5" }} />
+        <div style={{ width: 1, height: 24, background: "#e5e5e5", flexShrink: 0 }} />
         <ToolBtn active={false} disabled={!canUndo} onClick={onUndo} label="Undo">
-          <Undo2 size={16} />
+          <Undo2 size={18} />
         </ToolBtn>
       </div>
     </div>
@@ -709,14 +770,15 @@ function ToolBtn({ children, active, disabled, onClick, label }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        width: 30,
-        height: 30,
+        width: 44,
+        height: 44,
         border: "none",
-        borderRadius: 6,
+        borderRadius: 10,
         background: active ? "#E3F2FD" : "transparent",
         color: disabled ? "#ccc" : "#333",
         cursor: disabled ? "default" : "pointer",
         flexShrink: 0,
+        touchAction: "manipulation",
       }}
     >
       {children}

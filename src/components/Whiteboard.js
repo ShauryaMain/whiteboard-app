@@ -244,7 +244,7 @@ export default function Whiteboard({ boardId }) {
   // rotating a tablet or resizing a browser window updates it live.
   useEffect(() => {
     function checkWidth() {
-      setCanUseReferencePane(window.innerWidth >= 800);
+      setCanUseReferencePane(window.innerWidth >= 680);
     }
     checkWidth();
     window.addEventListener("resize", checkWidth);
@@ -1709,7 +1709,7 @@ export default function Whiteboard({ boardId }) {
       {showReferencePane && (
         <div
           style={{
-          width: "clamp(320px, 45%, 560px)",
+          width: "clamp(340px, 42%, 600px)",
             height: "100%",
             flexShrink: 0,
             borderRight: "1px solid #ddd",
