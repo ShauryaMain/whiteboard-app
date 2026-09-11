@@ -7,6 +7,7 @@ import RulerOverlay from "./RulerOverlay";
 import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import ReferencePane from "./ReferencePane";
+import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 
@@ -211,6 +212,8 @@ export default function Whiteboard({ boardId }) {
   const [compassCenter, setCompassCenter] = useState({ x: 300, y: 300 });
   const [compassRadius, setCompassRadius] = useState(100);
   const [compassAngle, setCompassAngle] = useState(-Math.PI / 2);
+  const [calculatorActive, setCalculatorActive] = useState(false);
+  const [calculatorPos, setCalculatorPos] = useState({ x: 300, y: 200 });
   const [zoomPercent, setZoomPercent] = useState(100);
   const [gridToolActive, setGridToolActive] = useState(false);
   const [canUseReferencePane, setCanUseReferencePane] = useState(false);
@@ -625,6 +628,17 @@ export default function Whiteboard({ boardId }) {
         setRulerActive(false);
         setCompassActive(false);
         setGridToolActive(false);
+      }
+      return next;
+    });
+  }
+
+  function handleToggleCalculator() {
+    setCalculatorActive((prev) => {
+      const next = !prev;
+      if (next) {
+        const { width, height } = getPaneSize();
+        setCalculatorPos({ x: Math.max(20, width / 2 - 150), y: Math.max(20, height / 2 - 220) });
       }
       return next;
     });
@@ -1862,6 +1876,13 @@ export default function Whiteboard({ boardId }) {
             setAngle={setCompassAngle}
           />
         )}
+        {calculatorActive && (
+          <Calculator
+            position={calculatorPos}
+            setPosition={setCalculatorPos}
+            onClose={() => setCalculatorActive(false)}
+          />
+        )}
         {isOwner && (
           <input
             ref={referenceFileInputRef}
@@ -1945,6 +1966,8 @@ export default function Whiteboard({ boardId }) {
           hasReferenceDoc={!!referenceDoc}
           onReferenceToolClick={handleReferenceToolClick}
           referenceUploadStatus={referenceUploadStatus}
+          calculatorActive={calculatorActive}
+          onToggleCalculator={handleToggleCalculator}
         />
       </div>
     </div>

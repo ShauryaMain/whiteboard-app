@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Pencil, Highlighter, Eraser, Type, MousePointer2, Ruler, Compass, Grid3x3, Hand, X, Home,
-  FileText, Undo2, Redo2, Trash2, Link2, CheckCircle2,
+  FileText, Calculator, Undo2, Redo2, Trash2, Link2, CheckCircle2,
 } from "lucide-react";
 
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
@@ -18,6 +18,7 @@ export default function Toolbar({
   gridToolActive, onToggleGrid, onRemoveGrid,
   panToolActive, onTogglePan,
   canUseReferencePane, hasReferenceDoc, onReferenceToolClick, referenceUploadStatus,
+  calculatorActive, onToggleCalculator,
 }) {
   const [openPopup, setOpenPopup] = useState(null); // null | "pen" | "highlighter" | "eraser"
   const [popupAnchor, setPopupAnchor] = useState(null); // {x, y} in viewport pixels
@@ -158,6 +159,9 @@ export default function Toolbar({
               <FileText size={19} strokeWidth={2} />
             </IconButton>
           )}
+          <IconButton active={calculatorActive} onClick={onToggleCalculator} label="Calculator">
+            <Calculator size={19} strokeWidth={2} />
+          </IconButton>
         </div>
 
         <Divider />
