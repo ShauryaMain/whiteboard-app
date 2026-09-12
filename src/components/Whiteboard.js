@@ -2124,7 +2124,7 @@ export default function Whiteboard({ boardId }) {
   const showReferencePane = canUseReferencePane && !!referenceDoc;
 
   return (
-    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", display: "flex" }}>
+    <div style={{ width: "100dvw", height: "100dvh", overflow: "hidden", display: "flex" }}>
       {showReferencePane && (
         <div
           style={{
