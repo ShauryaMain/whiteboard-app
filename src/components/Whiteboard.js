@@ -17,6 +17,12 @@ const ERASER_MAX_BOOST = 2;
 const ERASER_SENSITIVITY = 0.6;
 const ERASER_SMOOTHING = 0.25;
 const INTERP_MAX_STEP = 6;
+// A "world unit" is a CSS pixel at 100% zoom. Browsers define a CSS pixel
+// as 1/96 inch regardless of a device's actual physical pixel density —
+// there's no reliable way to know a screen's true DPI from a browser, so
+// this is the most accurate basis available (the same one print-to-PDF
+// and other browser-native "physical size" features use).
+const WORLD_UNITS_PER_CM = 96 / 2.54;
 
 function opacityForTool(t) {
   return t === "highlighter" ? 0.35 : 1;
@@ -147,6 +153,8 @@ export default function Whiteboard({ boardId }) {
   const gridConfigRef = useRef(null);
   const gridDragMode = useRef(null);
   const gridDragStart = useRef(null);
+  const gridCellSizeCmRef = useRef(10);
+  const toolBeforeGridRef = useRef("pen");
 
   const panToolActiveRef = useRef(false);
   const panDragActive = useRef(false);
@@ -223,6 +231,7 @@ export default function Whiteboard({ boardId }) {
   const [calculatorPos, setCalculatorPos] = useState({ x: 300, y: 200 });
   const [zoomPercent, setZoomPercent] = useState(100);
   const [gridToolActive, setGridToolActive] = useState(false);
+  const [gridCellSizeCm, setGridCellSizeCm] = useState(10);
   const [canUseReferencePane, setCanUseReferencePane] = useState(false);
   const [panToolActive, setPanToolActive] = useState(false);
   const [showPencilTip, setShowPencilTip] = useState(false);
@@ -256,6 +265,7 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { compassCenterRef.current = compassCenter; }, [compassCenter]);
   useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
   useEffect(() => { gridToolActiveRef.current = gridToolActive; }, [gridToolActive]);
+  useEffect(() => { gridCellSizeCmRef.current = gridCellSizeCm; }, [gridCellSizeCm]);
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
   useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
 
@@ -781,6 +791,7 @@ export default function Whiteboard({ boardId }) {
     setGridToolActive((prev) => {
       const next = !prev;
       if (next) {
+        toolBeforeGridRef.current = tool;
         setRulerActive(false);
         setCompassActive(false);
         setPanToolActive(false);
@@ -817,9 +828,37 @@ export default function Whiteboard({ boardId }) {
   function handleRemoveGrid() {
     if (!gridConfigRef.current) return;
     gridConfigRef.current = null;
+    setGridCellSizeCm(10);
     fullRedraw();
     channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: null } });
     saveGrid();
+  }
+
+  function handleSetGridCellSize(cm) {
+    if (!cm || cm <= 0) return;
+    const isNewGrid = !gridConfigRef.current;
+    const cols = gridConfigRef.current?.cols || 10;
+    const newSize = cm * WORLD_UNITS_PER_CM * cols;
+
+    let updated;
+    if (gridConfigRef.current) {
+      updated = { ...gridConfigRef.current, size: newSize };
+    } else {
+      const { width, height } = getPaneSize();
+      const centerWorld = screenToWorld({ x: width / 2, y: height / 2 });
+      updated = { x: centerWorld.x - newSize / 2, y: centerWorld.y - newSize / 2, size: newSize, cols };
+    }
+
+    gridConfigRef.current = updated;
+    setGridCellSizeCm(cm);
+    fullRedraw();
+    channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: updated } });
+    saveGrid();
+
+    if (isNewGrid) {
+      setGridToolActive(false);
+      setTool(toolBeforeGridRef.current || "pen");
+    }
   }
 
   async function handleReferenceFileSelected(e) {
@@ -1110,6 +1149,9 @@ export default function Whiteboard({ boardId }) {
 
     channel.on("broadcast", { event: "grid-set" }, ({ payload }) => {
       gridConfigRef.current = payload.grid;
+      if (payload.grid) {
+        setGridCellSizeCm(payload.grid.size / payload.grid.cols / WORLD_UNITS_PER_CM);
+      }
       fullRedraw();
     });
 
@@ -1523,16 +1565,19 @@ export default function Whiteboard({ boardId }) {
 
       if (!grid) {
         const worldPos = screenToWorld(pos);
-        const defaultWorldSize = 300 / scaleRef.current;
+        const cols = 10;
+        const defaultWorldSize = gridCellSizeCmRef.current * WORLD_UNITS_PER_CM * cols;
         const newGrid = {
           x: worldPos.x - defaultWorldSize / 2,
           y: worldPos.y - defaultWorldSize / 2,
           size: defaultWorldSize,
-          cols: 10,
+          cols,
         };
         gridConfigRef.current = newGrid;
         fullRedraw();
         scheduleGridBroadcast(newGrid);
+        setGridToolActive(false);
+        setTool(toolBeforeGridRef.current || "pen");
         return;
       }
 
@@ -1563,6 +1608,7 @@ export default function Whiteboard({ boardId }) {
       } else {
         const newSize = Math.max(40 / scaleRef.current, orig.size + Math.max(dxWorld, dyWorld));
         updated = { ...orig, size: newSize };
+        setGridCellSizeCm(newSize / updated.cols / WORLD_UNITS_PER_CM);
       }
       gridConfigRef.current = updated;
       fullRedraw();
@@ -2378,6 +2424,8 @@ export default function Whiteboard({ boardId }) {
           onToggleCompass={handleToggleCompass}
           gridToolActive={gridToolActive}
           onToggleGrid={handleToggleGrid}
+          gridCellSizeCm={gridCellSizeCm}
+          onSetGridCellSize={handleSetGridCellSize}
           onRemoveGrid={handleRemoveGrid}
           panToolActive={panToolActive}
           onTogglePan={handleTogglePan}

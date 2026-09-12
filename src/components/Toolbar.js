@@ -8,6 +8,14 @@ import {
 } from "lucide-react";
 
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
+const GRID_PRESETS = [
+  { label: "5mm", cm: 0.5 },
+  { label: "1cm", cm: 1 },
+  { label: "2cm", cm: 2 },
+  { label: "5cm", cm: 5 },
+  { label: "10cm", cm: 10 },
+  { label: "1in", cm: 2.54 },
+];
 
 export default function Toolbar({
   tool, setTool, color, setColor, strokeWidth, setStrokeWidth,
@@ -15,7 +23,7 @@ export default function Toolbar({
   isOwner, onCopyLink, onEndSession, saveStatus,
   rulerActive, onToggleRuler, onResetView,
   compassActive, onToggleCompass,
-  gridToolActive, onToggleGrid, onRemoveGrid,
+  gridToolActive, onToggleGrid, onRemoveGrid, gridCellSizeCm, onSetGridCellSize,
   panToolActive, onTogglePan,
   canUseReferencePane, hasReferenceDoc, onReferenceToolClick, referenceUploadStatus,
   calculatorActive, onToggleCalculator,
@@ -34,6 +42,10 @@ export default function Toolbar({
     return () => document.removeEventListener("pointerdown", handleOutside);
   }, [openPopup]);
 
+  useEffect(() => {
+    if (!gridToolActive && openPopup === "grid") setOpenPopup(null);
+  }, [gridToolActive, openPopup]);
+
   function handleToolClick(name, e) {
     // Measured here and used with position:fixed on a portaled element —
     // both are genuinely viewport-relative in that combination, since the
@@ -51,6 +63,14 @@ export default function Toolbar({
     }
   }
 
+  function handleGridClick(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopupAnchor({ x: rect.left + rect.width / 2, y: rect.top });
+    const wasActive = gridToolActive;
+    onToggleGrid();
+    setOpenPopup(wasActive ? null : "grid");
+  }
+
   const popoverContent = openPopup && popupAnchor && (
     <div
       ref={popoverRef}
@@ -61,59 +81,104 @@ export default function Toolbar({
         transform: "translate(-50%, -100%)",
       }}
     >
-      {(openPopup === "pen" || openPopup === "highlighter") && (
+      {openPopup === "grid" ? (
         <>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-            {PRESET_COLORS.map((c) => (
+          <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>1 box equals:</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, width: 220 }}>
+            {GRID_PRESETS.map((p) => (
               <button
-                key={c}
-                onClick={() => setColor(c)}
-                aria-label={`Color ${c}`}
+                key={p.label}
+                onClick={() => onSetGridCellSize(p.cm)}
                 style={{
-                  width: 26, height: 26, borderRadius: "50%", background: c,
-                  border: color === c ? "3px solid #1a1a1a" : "2px solid transparent",
-                  boxShadow: "0 0 0 1px #ddd", cursor: "pointer", padding: 0, flexShrink: 0,
+                  padding: "6px 10px",
+                  borderRadius: 8,
+                  border: Math.abs(gridCellSizeCm - p.cm) < 0.001 ? "2px solid #1E88E5" : "1px solid #ddd",
+                  background: Math.abs(gridCellSizeCm - p.cm) < 0.001 ? "#E3F2FD" : "#fff",
+                  color: "#333",
+                  fontSize: 13,
+                  cursor: "pointer",
                 }}
-              />
+              >
+                {p.label}
+              </button>
             ))}
-            <label
-              style={{
-                width: 26, height: 26, borderRadius: "50%", overflow: "hidden",
-                border: "2px solid #ddd", cursor: "pointer", display: "block",
-                position: "relative", flexShrink: 0,
-              }}
-            >
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
-              />
-              <div style={{ width: "100%", height: "100%", background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }} />
-            </label>
           </div>
           <Divider horizontal />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+            <input
+              type="number"
+              min={0.1}
+              step={0.1}
+              defaultValue={gridCellSizeCm}
+              key={gridCellSizeCm}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  const v = parseFloat(e.target.value);
+                  if (v > 0) onSetGridCellSize(v);
+                }
+              }}
+              style={{ width: 64, padding: "6px 8px", borderRadius: 8, border: "1px solid #ddd", fontSize: 13 }}
+            />
+            <span style={{ fontSize: 12, color: "#666" }}>cm (custom, press Enter)</span>
+          </div>
+        </>
+      ) : (
+        <>
+          {(openPopup === "pen" || openPopup === "highlighter") && (
+            <>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                {PRESET_COLORS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setColor(c)}
+                    aria-label={`Color ${c}`}
+                    style={{
+                      width: 26, height: 26, borderRadius: "50%", background: c,
+                      border: color === c ? "3px solid #1a1a1a" : "2px solid transparent",
+                      boxShadow: "0 0 0 1px #ddd", cursor: "pointer", padding: 0, flexShrink: 0,
+                    }}
+                  />
+                ))}
+                <label
+                  style={{
+                    width: 26, height: 26, borderRadius: "50%", overflow: "hidden",
+                    border: "2px solid #ddd", cursor: "pointer", display: "block",
+                    position: "relative", flexShrink: 0,
+                  }}
+                >
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+                  />
+                  <div style={{ width: "100%", height: "100%", background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }} />
+                </label>
+              </div>
+              <Divider horizontal />
+            </>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
+            <span
+              style={{
+                width: Math.max(6, Math.min(strokeWidth, 22)),
+                height: Math.max(6, Math.min(strokeWidth, 22)),
+                borderRadius: "50%",
+                background: openPopup === "eraser" ? "#ccc" : color,
+                flexShrink: 0,
+              }}
+            />
+            <input
+              type="range"
+              min={1}
+              max={40}
+              value={strokeWidth}
+              onChange={(e) => setStrokeWidth(Number(e.target.value))}
+              style={{ flex: 1, height: 36 }}
+            />
+          </div>
         </>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-        <span
-          style={{
-            width: Math.max(6, Math.min(strokeWidth, 22)),
-            height: Math.max(6, Math.min(strokeWidth, 22)),
-            borderRadius: "50%",
-            background: openPopup === "eraser" ? "#ccc" : color,
-            flexShrink: 0,
-          }}
-        />
-        <input
-          type="range"
-          min={1}
-          max={40}
-          value={strokeWidth}
-          onChange={(e) => setStrokeWidth(Number(e.target.value))}
-          style={{ flex: 1, height: 36 }}
-        />
-      </div>
     </div>
   );
 
@@ -147,9 +212,11 @@ export default function Toolbar({
           <IconButton active={compassActive} onClick={onToggleCompass} label="Compass">
             <Compass size={19} strokeWidth={2} />
           </IconButton>
-          <IconButton active={gridToolActive} onClick={onToggleGrid} label="Grid">
-            <Grid3x3 size={19} strokeWidth={2} />
-          </IconButton>
+          <div style={{ position: "relative" }}>
+            <IconButton active={gridToolActive} onClick={handleGridClick} label="Grid" dataAttr>
+              <Grid3x3 size={19} strokeWidth={2} />
+            </IconButton>
+          </div>
           {canUseReferencePane && isOwner && (
             <IconButton
               active={hasReferenceDoc}
