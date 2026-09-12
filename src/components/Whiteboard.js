@@ -259,6 +259,43 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
   useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
 
+  // Locks the actual page/body from scrolling for as long as the
+  // whiteboard is open — restored when navigating away. The canvas
+  // already handles all panning internally via its own transform; a
+  // scrollable page underneath it is what causes mobile Chrome's
+  // fixed-position toolbar to glitch or briefly vanish during a scroll.
+  useEffect(() => {
+    const body = document.body;
+    const html = document.documentElement;
+    const prev = {
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyWidth: body.style.width,
+      bodyHeight: body.style.height,
+      bodyOverscroll: body.style.overscrollBehavior,
+      htmlOverflow: html.style.overflow,
+      htmlOverscroll: html.style.overscrollBehavior,
+    };
+
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.width = "100%";
+    body.style.height = "100%";
+    body.style.overscrollBehavior = "none";
+    html.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+
+    return () => {
+      body.style.overflow = prev.bodyOverflow;
+      body.style.position = prev.bodyPosition;
+      body.style.width = prev.bodyWidth;
+      body.style.height = prev.bodyHeight;
+      body.style.overscrollBehavior = prev.bodyOverscroll;
+      html.style.overflow = prev.htmlOverflow;
+      html.style.overscrollBehavior = prev.htmlOverscroll;
+    };
+  }, []);
+
   // Reference docs are desktop/tablet only for now — a true side-by-side
   // split isn't usable on a narrow phone screen. Re-checked on resize so
   // rotating a tablet or resizing a browser window updates it live.
