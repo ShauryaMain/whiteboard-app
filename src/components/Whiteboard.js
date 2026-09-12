@@ -188,8 +188,14 @@ export default function Whiteboard({ boardId }) {
   const editingTextRef = useRef(null);
   const textareaElRef = useRef(null);
   const movingTextRef = useRef(null);
+  const resizingTextRef = useRef(null);
+  const rotatingTextRef = useRef(null);
+  const lastTextTapRef = useRef(null);
   const pendingTextMoveUpdate = useRef(null);
   const textMoveRafId = useRef(null);
+  const pendingTextTransformUpdate = useRef(null);
+  const textTransformRafId = useRef(null);
+  const selectedTextIdRef = useRef(null);
 
   // Mirrors referenceDoc state so the channel-setup effect (which only
   // runs once on mount) can always read the current value when responding
@@ -224,12 +230,22 @@ export default function Whiteboard({ boardId }) {
   const [referenceColor, setReferenceColor] = useState("#E53935");
   const [myReferenceUndoAvailable, setMyReferenceUndoAvailable] = useState(false);
   const [editingText, setEditingText] = useState(null);
+  const [selectedTextId, setSelectedTextId] = useState(null);
   const [referenceDoc, setReferenceDoc] = useState(null);
   const [referenceUploadStatus, setReferenceUploadStatus] = useState("");
   const referenceFileInputRef = useRef(null);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { textsRef.current = texts; }, [texts]);
+  useEffect(() => { selectedTextIdRef.current = selectedTextId; }, [selectedTextId]);
+  useEffect(() => {
+    if (tool !== "select") setSelectedTextId(null);
+  }, [tool]);
+  useEffect(() => {
+    if (selectedTextId && !texts.some((t) => t.id === selectedTextId)) {
+      setSelectedTextId(null);
+    }
+  }, [texts, selectedTextId]);
   useEffect(() => { toolRef.current = tool; }, [tool]);
   useEffect(() => { colorRef.current = color; }, [color]);
   useEffect(() => { widthRef.current = strokeWidth; }, [strokeWidth]);
@@ -284,6 +300,7 @@ export default function Whiteboard({ boardId }) {
     const screenPos = worldToScreen({ x: info.x, y: info.y });
     el.style.left = screenPos.x + "px";
     el.style.top = screenPos.y + "px";
+    el.style.width = info.width * scaleRef.current + "px";
     el.style.fontSize = info.fontSize * scaleRef.current + "px";
   }
 
@@ -300,53 +317,147 @@ export default function Whiteboard({ boardId }) {
     }
   }
 
-  function drawTexts(ctx, textsArr, showBounds) {
+  // Word-wraps text within maxWidth, respecting explicit line breaks too
+  // — shared by rendering, hit-testing, and box-height calculations so
+  // they all agree on exactly the same layout.
+  function wrapTextLines(ctx, textContent, fontSize, maxWidth) {
+    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+    const paragraphs = String(textContent).split("\n");
+    const lines = [];
+    for (const para of paragraphs) {
+      if (para === "") {
+        lines.push("");
+        continue;
+      }
+      const words = para.split(" ");
+      let currentLine = "";
+      for (const word of words) {
+        const testLine = currentLine ? currentLine + " " + word : word;
+        const testWidth = ctx.measureText(testLine).width;
+        if (testWidth > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      lines.push(currentLine);
+    }
+    return lines;
+  }
+
+  function getTextLineHeight(t) {
+    return t.fontSize * 1.3;
+  }
+
+  function getTextBoxHeight(ctx, t) {
+    const lines = wrapTextLines(ctx, t.text, t.fontSize, t.width);
+    return lines.length * getTextLineHeight(t);
+  }
+
+  function getTextCenter(ctx, t) {
+    return { x: t.x + t.width / 2, y: t.y + getTextBoxHeight(ctx, t) / 2 };
+  }
+
+  // Un-rotates a world point around a text box's own center, so a
+  // rotated box can still be hit-tested with ordinary axis-aligned math
+  // — the standard technique for interacting with rotated shapes.
+  function toLocalUnrotated(worldPos, center, rotation) {
+    if (!rotation) return worldPos;
+    const dx = worldPos.x - center.x;
+    const dy = worldPos.y - center.y;
+    const cos = Math.cos(-rotation);
+    const sin = Math.sin(-rotation);
+    return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
+  }
+
+  function getTextHandlePositions(t, boxHeight) {
+    const scale = scaleRef.current;
+    return {
+      resize: { x: t.x + t.width, y: t.y + boxHeight },
+      rotate: { x: t.x + t.width / 2, y: t.y - 30 / scale },
+    };
+  }
+
+  function drawTexts(ctx, textsArr, selectedId) {
     for (const t of textsArr) {
+      const lines = wrapTextLines(ctx, t.text, t.fontSize, t.width);
+      const lineHeight = getTextLineHeight(t);
+      const boxHeight = lines.length * lineHeight;
+      const center = { x: t.x + t.width / 2, y: t.y + boxHeight / 2 };
+      const rotation = t.rotation || 0;
+
       ctx.save();
+      if (rotation) {
+        ctx.translate(center.x, center.y);
+        ctx.rotate(rotation);
+        ctx.translate(-center.x, -center.y);
+      }
+
       ctx.fillStyle = t.color;
       ctx.font = `${t.fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
       ctx.textBaseline = "top";
-      const lines = String(t.text).split("\n");
-      const lineHeight = t.fontSize * 1.3;
-      let maxWidth = 0;
-      lines.forEach((line) => {
-        maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
-      });
       lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + i * lineHeight));
 
-      if (showBounds) {
+      if (t.id === selectedId) {
         const scale = scaleRef.current;
-        ctx.strokeStyle = "rgba(30,136,229,0.55)";
-        ctx.lineWidth = 1 / scale;
+        ctx.strokeStyle = "rgba(30,136,229,0.7)";
+        ctx.lineWidth = 1.5 / scale;
         ctx.setLineDash([4 / scale, 3 / scale]);
-        ctx.strokeRect(t.x - 4, t.y - 4, maxWidth + 8, lines.length * lineHeight + 8);
+        ctx.strokeRect(t.x - 4, t.y - 4, t.width + 8, boxHeight + 8);
         ctx.setLineDash([]);
+
+        const handles = getTextHandlePositions(t, boxHeight);
+
+        ctx.strokeStyle = "rgba(30,136,229,0.7)";
+        ctx.lineWidth = 1.5 / scale;
+        ctx.beginPath();
+        ctx.moveTo(t.x + t.width / 2, t.y);
+        ctx.lineTo(handles.rotate.x, handles.rotate.y);
+        ctx.stroke();
+
+        ctx.fillStyle = "#1E88E5";
+        ctx.beginPath();
+        ctx.arc(handles.resize.x, handles.resize.y, 7 / scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(handles.rotate.x, handles.rotate.y, 7 / scale, 0, Math.PI * 2);
+        ctx.fill();
       }
+
       ctx.restore();
     }
   }
 
-  // Finds the topmost existing text box under a world-space point, if any
-  // — used to decide whether a tap with the Text tool should start
-  // dragging an existing box instead of creating a new one.
+  // Checks whether a tap landed on the selected text's resize or rotate
+  // handle specifically — checked before the general body hit-test.
+  function hitTestTextHandle(ctx, t, worldPos) {
+    const boxHeight = getTextBoxHeight(ctx, t);
+    const center = getTextCenter(ctx, t);
+    const local = toLocalUnrotated(worldPos, center, t.rotation || 0);
+    const handles = getTextHandlePositions(t, boxHeight);
+    const hitRadius = 14 / scaleRef.current;
+
+    if (distance(local, handles.resize) < hitRadius) return "resize";
+    if (distance(local, handles.rotate) < hitRadius) return "rotate";
+    return null;
+  }
+
+  // Finds the topmost existing text box under a world-space point, if
+  // any — accounts for rotation by un-rotating the tap point first.
   function hitTestText(worldPos) {
     const ctx = ctxRef.current;
     if (!ctx) return null;
     const arr = textsRef.current;
     for (let i = arr.length - 1; i >= 0; i--) {
       const t = arr[i];
-      ctx.font = `${t.fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-      const lines = String(t.text).split("\n");
-      const lineHeight = t.fontSize * 1.3;
-      let maxWidth = 0;
-      lines.forEach((line) => {
-        maxWidth = Math.max(maxWidth, ctx.measureText(line).width);
-      });
-      const height = lines.length * lineHeight;
+      const boxHeight = getTextBoxHeight(ctx, t);
+      const center = getTextCenter(ctx, t);
+      const local = toLocalUnrotated(worldPos, center, t.rotation || 0);
       const pad = 6;
       if (
-        worldPos.x >= t.x - pad && worldPos.x <= t.x + maxWidth + pad &&
-        worldPos.y >= t.y - pad && worldPos.y <= t.y + height + pad
+        local.x >= t.x - pad && local.x <= t.x + t.width + pad &&
+        local.y >= t.y - pad && local.y <= t.y + boxHeight + pad
       ) {
         return t;
       }
@@ -420,7 +531,7 @@ export default function Whiteboard({ boardId }) {
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
 
-    drawTexts(ctx, textsRef.current, toolRef.current === "select");
+    drawTexts(ctx, textsRef.current, selectedTextIdRef.current);
     drawGrid(ctx, gridConfigRef.current);
 
     repositionEditingTextarea();
@@ -472,6 +583,8 @@ export default function Whiteboard({ boardId }) {
       text: t.text,
       color: t.color,
       font_size: t.fontSize,
+      width: t.width,
+      rotation: t.rotation || 0,
     });
     if (error) console.error("Error saving text:", error);
   }
@@ -508,11 +621,27 @@ export default function Whiteboard({ boardId }) {
       const { error: joinError } = await supabase.rpc("join_board_via_link", { board_id: boardId });
       if (joinError) console.error("Error joining board:", joinError);
 
-      const { data: boardRow, error: boardError } = await supabase
-        .from("boards")
-        .select("grid_config, owner_id")
-        .eq("id", boardId)
-        .single();
+      // .maybeSingle() (not .single()) so an empty result comes back as
+      // null instead of throwing — a genuinely empty result can happen
+      // transiently right after the access-grant RPC above, especially
+      // under React's dev-mode double-effect invocation. One short retry
+      // covers that without surfacing a scary error for what's usually
+      // just a timing blip.
+      async function fetchBoardRow() {
+        const { data, error } = await supabase
+          .from("boards")
+          .select("grid_config, owner_id")
+          .eq("id", boardId)
+          .maybeSingle();
+        return { data, error };
+      }
+
+      let { data: boardRow, error: boardError } = await fetchBoardRow();
+      if (!boardError && !boardRow) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        ({ data: boardRow, error: boardError } = await fetchBoardRow());
+      }
+
       if (!boardError && boardRow) {
         gridConfigRef.current = boardRow.grid_config || null;
         setIsOwner(user.id === boardRow.owner_id);
@@ -533,7 +662,7 @@ export default function Whiteboard({ boardId }) {
 
       const { data: textRows, error: textsError } = await supabase
         .from("texts")
-        .select("id, x, y, text, color, font_size")
+        .select("id, x, y, text, color, font_size, width, rotation")
         .eq("board_id", boardId)
         .order("created_at", { ascending: true });
       if (!textsError && textRows) {
@@ -545,6 +674,8 @@ export default function Whiteboard({ boardId }) {
             text: r.text,
             color: r.color,
             fontSize: r.font_size,
+            width: r.width || 240,
+            rotation: r.rotation || 0,
           }))
         );
       } else if (textsError) {
@@ -771,18 +902,51 @@ export default function Whiteboard({ boardId }) {
 
   function handleTextBlur(e) {
     const info = editingTextRef.current;
-    const value = e.target.value.trim();
+    const rawValue = e.target.value;
+    const trimmedForCheck = rawValue.trim();
     editingTextRef.current = null;
     setEditingText(null);
-    if (!info || !value) return;
+    if (!info) return;
+
+    if (info.isEditingExisting) {
+      if (!trimmedForCheck) {
+        // Cleared out entirely while editing — treat that as deleting it.
+        setTexts((prev) => prev.filter((t) => t.id !== info.id));
+        setSelectedTextId(null);
+        channelRef.current?.send({ type: "broadcast", event: "text-remove", payload: { textId: info.id } });
+        supabase.from("texts").delete().eq("id", info.id).then(({ error }) => {
+          if (error) console.error("Error deleting text:", error);
+        });
+        return;
+      }
+      const updated = {
+        id: info.id,
+        x: info.x,
+        y: info.y,
+        text: rawValue,
+        color: info.color,
+        fontSize: info.fontSize,
+        width: info.width,
+        rotation: info.rotation,
+      };
+      setTexts((prev) => prev.map((t) => (t.id === info.id ? updated : t)));
+      channelRef.current?.send({ type: "broadcast", event: "text-add", payload: { text: updated } });
+      insertText(updated);
+      fullRedraw();
+      return;
+    }
+
+    if (!trimmedForCheck) return;
 
     const textObj = {
       id: info.id,
       x: info.x,
       y: info.y,
-      text: value,
+      text: rawValue,
       color: info.color,
       fontSize: info.fontSize,
+      width: info.width,
+      rotation: info.rotation,
     };
     setTexts((prev) => [...prev, textObj]);
     myStrokeStack.current.push({ kind: "text", id: textObj.id });
@@ -798,13 +962,29 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => {
     if (!editingText) return;
     repositionEditingTextarea();
+
+    if (editingText.isEditingExisting) {
+      const existing = textsRef.current.find((t) => t.id === editingText.id);
+      const el = textareaElRef.current;
+      if (existing && el) {
+        el.value = existing.text;
+        el.style.height = "auto";
+        el.style.height = el.scrollHeight + "px";
+      }
+    }
+
     // The click that created this text box is still being resolved by the
     // browser (mousedown -> mouseup -> click) when this effect first runs.
     // Focusing synchronously here loses the race against the browser's own
     // default focus handling for that click, which blurs us again almost
     // immediately. Deferring to the next tick lets that resolve first.
     const timerId = setTimeout(() => {
-      textareaElRef.current?.focus();
+      const el = textareaElRef.current;
+      el?.focus();
+      if (editingText.isEditingExisting && el) {
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
     }, 0);
     return () => clearTimeout(timerId);
   }, [editingText]);
@@ -866,7 +1046,12 @@ export default function Whiteboard({ boardId }) {
     });
 
     channel.on("broadcast", { event: "text-add" }, ({ payload }) => {
-      setTexts((prev) => (prev.some((t) => t.id === payload.text.id) ? prev : [...prev, payload.text]));
+      setTexts((prev) => {
+        const exists = prev.some((t) => t.id === payload.text.id);
+        return exists
+          ? prev.map((t) => (t.id === payload.text.id ? payload.text : t))
+          : [...prev, payload.text];
+      });
     });
 
     channel.on("broadcast", { event: "text-remove" }, ({ payload }) => {
@@ -877,6 +1062,11 @@ export default function Whiteboard({ boardId }) {
       setTexts((prev) =>
         prev.map((t) => (t.id === payload.textId ? { ...t, x: payload.x, y: payload.y } : t))
       );
+    });
+
+    channel.on("broadcast", { event: "text-transform" }, ({ payload }) => {
+      const { textId, ...partial } = payload;
+      setTexts((prev) => prev.map((t) => (t.id === textId ? { ...t, ...partial } : t)));
     });
 
     channel.on("broadcast", { event: "grid-set" }, ({ payload }) => {
@@ -1054,6 +1244,18 @@ export default function Whiteboard({ boardId }) {
         const payload = pendingTextMoveUpdate.current;
         pendingTextMoveUpdate.current = null;
         channelRef.current?.send({ type: "broadcast", event: "text-move", payload });
+      });
+    }
+
+    function scheduleTextTransformBroadcast(textId, partial) {
+      pendingTextTransformUpdate.current = { textId, ...partial };
+      if (textTransformRafId.current) return;
+      textTransformRafId.current = requestAnimationFrame(() => {
+        textTransformRafId.current = null;
+        if (!pendingTextTransformUpdate.current) return;
+        const payload = pendingTextTransformUpdate.current;
+        pendingTextTransformUpdate.current = null;
+        channelRef.current?.send({ type: "broadcast", event: "text-transform", payload });
       });
     }
 
@@ -1292,7 +1494,31 @@ export default function Whiteboard({ boardId }) {
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
           : Math.random().toString(36).slice(2);
-      const info = { id, x: worldPos.x, y: worldPos.y, color: colorRef.current, fontSize: 24 };
+      const info = {
+        id,
+        x: worldPos.x,
+        y: worldPos.y,
+        color: colorRef.current,
+        fontSize: 24,
+        width: 240,
+        rotation: 0,
+        isEditingExisting: false,
+      };
+      editingTextRef.current = info;
+      setEditingText(info);
+    }
+
+    function openTextEditorForEdit(existingText) {
+      const info = {
+        id: existingText.id,
+        x: existingText.x,
+        y: existingText.y,
+        color: existingText.color,
+        fontSize: existingText.fontSize,
+        width: existingText.width,
+        rotation: existingText.rotation || 0,
+        isEditingExisting: true,
+      };
       editingTextRef.current = info;
       setEditingText(info);
     }
@@ -1332,13 +1558,60 @@ export default function Whiteboard({ boardId }) {
 
       if (toolRef.current === "select") {
         const worldPos = screenToWorld(pos);
+
+        if (selectedTextIdRef.current) {
+          const selectedText = textsRef.current.find((t) => t.id === selectedTextIdRef.current);
+          if (selectedText) {
+            const handleHit = hitTestTextHandle(ctxRef.current, selectedText, worldPos);
+            if (handleHit === "resize") {
+              const center = getTextCenter(ctxRef.current, selectedText);
+              resizingTextRef.current = {
+                id: selectedText.id,
+                center,
+                startDistance: Math.max(1, distance(center, worldPos)),
+                origWidth: selectedText.width,
+                origFontSize: selectedText.fontSize,
+              };
+              canvas.setPointerCapture(e.pointerId);
+              return;
+            }
+            if (handleHit === "rotate") {
+              const center = getTextCenter(ctxRef.current, selectedText);
+              rotatingTextRef.current = {
+                id: selectedText.id,
+                center,
+                startAngle: Math.atan2(worldPos.y - center.y, worldPos.x - center.x),
+                origRotation: selectedText.rotation || 0,
+              };
+              canvas.setPointerCapture(e.pointerId);
+              return;
+            }
+          }
+        }
+
         const hit = hitTestText(worldPos);
+
+        const now = Date.now();
+        const isDoubleTap =
+          hit &&
+          lastTextTapRef.current &&
+          lastTextTapRef.current.id === hit.id &&
+          now - lastTextTapRef.current.time < 400;
+        lastTextTapRef.current = hit ? { id: hit.id, time: now } : null;
+
+        if (isDoubleTap) {
+          setSelectedTextId(hit.id);
+          openTextEditorForEdit(hit);
+          return;
+        }
+
         if (hit) {
+          setSelectedTextId(hit.id);
           movingTextRef.current = { id: hit.id, startScreenPos: pos, origX: hit.x, origY: hit.y };
           canvas.setPointerCapture(e.pointerId);
+        } else {
+          setSelectedTextId(null);
         }
-        // Tapping empty space with Select active intentionally does
-        // nothing — no stroke, no new text, just deselects.
         return;
       }
 
@@ -1468,6 +1741,37 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
+      if (resizingTextRef.current) {
+        const pos = getPos(e);
+        const worldPos = screenToWorld(pos);
+        const r = resizingTextRef.current;
+        const currentDistance = distance(r.center, worldPos);
+        const scaleFactor = Math.max(0.25, Math.min(6, currentDistance / r.startDistance));
+        const newWidth = Math.max(60, r.origWidth * scaleFactor);
+        const newFontSize = Math.max(8, r.origFontSize * scaleFactor);
+        r.lastWidth = newWidth;
+        r.lastFontSize = newFontSize;
+        const textId = r.id;
+        setTexts((prev) =>
+          prev.map((t) => (t.id === textId ? { ...t, width: newWidth, fontSize: newFontSize } : t))
+        );
+        scheduleTextTransformBroadcast(textId, { width: newWidth, fontSize: newFontSize });
+        return;
+      }
+
+      if (rotatingTextRef.current) {
+        const pos = getPos(e);
+        const worldPos = screenToWorld(pos);
+        const r = rotatingTextRef.current;
+        const currentAngle = Math.atan2(worldPos.y - r.center.y, worldPos.x - r.center.x);
+        const newRotation = r.origRotation + (currentAngle - r.startAngle);
+        r.lastRotation = newRotation;
+        const textId = r.id;
+        setTexts((prev) => prev.map((t) => (t.id === textId ? { ...t, rotation: newRotation } : t)));
+        scheduleTextTransformBroadcast(textId, { rotation: newRotation });
+        return;
+      }
+
       if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current || !currentStroke.current) return;
 
@@ -1581,6 +1885,33 @@ export default function Whiteboard({ boardId }) {
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
         supabase.from("texts").update({ x: finalX, y: finalY }).eq("id", id).then(({ error }) => {
           if (error) console.error("Error saving text position:", error);
+        });
+        return;
+      }
+
+      if (resizingTextRef.current) {
+        const r = resizingTextRef.current;
+        const finalWidth = r.lastWidth ?? r.origWidth;
+        const finalFontSize = r.lastFontSize ?? r.origFontSize;
+        resizingTextRef.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        supabase
+          .from("texts")
+          .update({ width: finalWidth, font_size: finalFontSize })
+          .eq("id", r.id)
+          .then(({ error }) => {
+            if (error) console.error("Error saving text size:", error);
+          });
+        return;
+      }
+
+      if (rotatingTextRef.current) {
+        const r = rotatingTextRef.current;
+        const finalRotation = r.lastRotation ?? r.origRotation;
+        rotatingTextRef.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        supabase.from("texts").update({ rotation: finalRotation }).eq("id", r.id).then(({ error }) => {
+          if (error) console.error("Error saving text rotation:", error);
         });
         return;
       }
