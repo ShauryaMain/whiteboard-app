@@ -150,6 +150,7 @@ export default function Whiteboard({ boardId }) {
 
   const panToolActiveRef = useRef(false);
   const panDragActive = useRef(false);
+  const toolBeforePanRef = useRef("pen");
   const panDragStart = useRef(null);
 
   const clientId = useRef(
@@ -756,6 +757,7 @@ export default function Whiteboard({ boardId }) {
     setPanToolActive((prev) => {
       const next = !prev;
       if (next) {
+        toolBeforePanRef.current = tool;
         setRulerActive(false);
         setCompassActive(false);
         setGridToolActive(false);
@@ -1533,6 +1535,12 @@ export default function Whiteboard({ boardId }) {
       if (touchPoints.current.size >= 2) {
         cancelActiveDrawing();
         movingTextRef.current = null;
+        if (panDragActive.current) {
+          panDragActive.current = false;
+          panDragStart.current = null;
+          setPanToolActive(false);
+          setTool(toolBeforePanRef.current || "pen");
+        }
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         beginPanZoom();
         return;
@@ -1866,6 +1874,8 @@ export default function Whiteboard({ boardId }) {
         panDragActive.current = false;
         panDragStart.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        setPanToolActive(false);
+        setTool(toolBeforePanRef.current || "pen");
         return;
       }
 
