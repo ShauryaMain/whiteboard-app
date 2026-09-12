@@ -1402,14 +1402,41 @@ export default function Whiteboard({ boardId }) {
       fullRedraw();
     }
 
+    // Browsers don't actually expose whether a wheel event came from a
+    // mouse or a trackpad — this is the same practical heuristic most
+    // canvas apps rely on in its place: a traditional wheel reports one
+    // big, fixed-size "tick" per notch (often exactly 100, or line/page
+    // mode entirely), while a trackpad reports lots of small, continuous,
+    // often-fractional movement with no fixed step. Not literally
+    // guaranteed on every device, but correct for the vast majority.
+    function isLikelyMouseWheel(e) {
+      if (e.deltaMode !== 0) return true;
+      return e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 50;
+    }
+
     function handleWheel(e) {
       e.preventDefault();
       const screenPos = getPos(e);
+      const worldPos = screenToWorld(screenPos);
+
+      let newScale = null;
 
       if (e.ctrlKey) {
+        // Trackpad pinch (or explicit Ctrl+scroll) — deltaY is small and
+        // continuous, so a proportional exponential step feels smooth.
         const zoomFactor = Math.exp(-e.deltaY * 0.01);
-        const worldPos = screenToWorld(screenPos);
-        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scaleRef.current * zoomFactor));
+        newScale = scaleRef.current * zoomFactor;
+      } else if (isLikelyMouseWheel(e)) {
+        // A plain mouse wheel tick — a fixed percentage step per tick
+        // feels natural here; reusing the trackpad's proportional
+        // formula against a wheel's much larger delta would produce a
+        // jarring, oversized jump instead of a gentle zoom step.
+        const step = 0.1;
+        newScale = scaleRef.current * (e.deltaY < 0 ? 1 + step : 1 - step);
+      }
+
+      if (newScale !== null) {
+        newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, newScale));
         panRef.current = {
           x: screenPos.x - worldPos.x * newScale,
           y: screenPos.y - worldPos.y * newScale,
