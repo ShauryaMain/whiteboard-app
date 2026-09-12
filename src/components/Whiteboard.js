@@ -1205,9 +1205,23 @@ export default function Whiteboard({ boardId }) {
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     }
 
+    // Every throttled broadcast in this file shares this interval. It was
+    // previously requestAnimationFrame-based, which ties message rate to
+    // display refresh rate — up to ~120/sec on newer high-refresh-rate
+    // iPads/phones, not just the ~60/sec a normal screen implies. That
+    // was the dominant source of Supabase Realtime message volume: a
+    // single sustained stroke could generate hundreds of messages by
+    // itself. A fixed, lower interval cuts that by roughly 3.5-7x
+    // depending on the device, while still looking live to whoever's
+    // watching — their OWN drawing is never affected, since local
+    // rendering never goes through the network at all, and incoming
+    // points are already smoothed into curves on arrival regardless of
+    // how large a batch they come in.
+    const BROADCAST_THROTTLE_MS = 60;
+
     function scheduleBroadcastFlush() {
       if (rafId.current) return;
-      rafId.current = requestAnimationFrame(() => {
+      rafId.current = setTimeout(() => {
         rafId.current = null;
         if (pendingBroadcastPoints.current.length === 0) return;
         const pointsToSend = pendingBroadcastPoints.current;
@@ -1220,13 +1234,13 @@ export default function Whiteboard({ boardId }) {
             points: pointsToSend,
           },
         });
-      });
+      }, BROADCAST_THROTTLE_MS);
     }
 
     function scheduleStraightBroadcast(worldStart, worldEnd) {
       pendingStraightUpdate.current = { start: worldStart, end: worldEnd };
       if (rafId.current) return;
-      rafId.current = requestAnimationFrame(() => {
+      rafId.current = setTimeout(() => {
         rafId.current = null;
         if (!pendingStraightUpdate.current) return;
         const { start, end } = pendingStraightUpdate.current;
@@ -1240,13 +1254,13 @@ export default function Whiteboard({ boardId }) {
             end,
           },
         });
-      });
+      }, BROADCAST_THROTTLE_MS);
     }
 
     function scheduleShapeBroadcast(worldPoints) {
       pendingShapeUpdate.current = worldPoints;
       if (rafId.current) return;
-      rafId.current = requestAnimationFrame(() => {
+      rafId.current = setTimeout(() => {
         rafId.current = null;
         if (!pendingShapeUpdate.current) return;
         const points = pendingShapeUpdate.current;
@@ -1259,48 +1273,48 @@ export default function Whiteboard({ boardId }) {
             points,
           },
         });
-      });
+      }, BROADCAST_THROTTLE_MS);
     }
 
     function scheduleGridBroadcast(grid) {
       pendingGridUpdate.current = grid;
       if (gridRafId.current) return;
-      gridRafId.current = requestAnimationFrame(() => {
+      gridRafId.current = setTimeout(() => {
         gridRafId.current = null;
         if (!pendingGridUpdate.current) return;
         const g = pendingGridUpdate.current;
         pendingGridUpdate.current = null;
         channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: g } });
-      });
+      }, BROADCAST_THROTTLE_MS);
     }
 
     function scheduleTextMoveBroadcast(textId, x, y) {
       pendingTextMoveUpdate.current = { textId, x, y };
       if (textMoveRafId.current) return;
-      textMoveRafId.current = requestAnimationFrame(() => {
+      textMoveRafId.current = setTimeout(() => {
         textMoveRafId.current = null;
         if (!pendingTextMoveUpdate.current) return;
         const payload = pendingTextMoveUpdate.current;
         pendingTextMoveUpdate.current = null;
         channelRef.current?.send({ type: "broadcast", event: "text-move", payload });
-      });
+      }, BROADCAST_THROTTLE_MS);
     }
 
     function scheduleTextTransformBroadcast(textId, partial) {
       pendingTextTransformUpdate.current = { textId, ...partial };
       if (textTransformRafId.current) return;
-      textTransformRafId.current = requestAnimationFrame(() => {
+      textTransformRafId.current = setTimeout(() => {
         textTransformRafId.current = null;
         if (!pendingTextTransformUpdate.current) return;
         const payload = pendingTextTransformUpdate.current;
         pendingTextTransformUpdate.current = null;
         channelRef.current?.send({ type: "broadcast", event: "text-transform", payload });
-      });
+      }, BROADCAST_THROTTLE_MS);
     }
 
     function finalizeStroke(strokeId) {
       if (rafId.current) {
-        cancelAnimationFrame(rafId.current);
+        clearTimeout(rafId.current);
         rafId.current = null;
       }
       if (pendingBroadcastPoints.current.length > 0 && strokeId) {
