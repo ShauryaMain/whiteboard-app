@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Pencil, Highlighter, Eraser, Type, MousePointer2, Ruler, Compass, Grid3x3, Hand, X, Home,
-  FileText, Calculator, Undo2, Redo2, Trash2, Link2, CheckCircle2,
+  FileText, Calculator, Users, Undo2, Redo2, Trash2, Link2, CheckCircle2,
 } from "lucide-react";
 
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
@@ -26,7 +26,7 @@ export default function Toolbar({
   gridToolActive, onToggleGrid, onRemoveGrid, gridCellSizeCm, onSetGridCellSize,
   panToolActive, onTogglePan,
   canUseReferencePane, hasReferenceDoc, onReferenceToolClick, referenceUploadStatus,
-  calculatorActive, onToggleCalculator,
+  calculatorActive, onToggleCalculator, onStartLiveClass,
 }) {
   const [openPopup, setOpenPopup] = useState(null); // null | "pen" | "highlighter" | "eraser"
   const [popupAnchor, setPopupAnchor] = useState(null); // {x, y} in viewport pixels
@@ -274,6 +274,9 @@ export default function Toolbar({
           {saveStatus && <span style={statusStyle}>{saveStatus}</span>}
           <IconButton onClick={onCopyLink} label="Copy student link" pill>
             <Link2 size={16} strokeWidth={2} />
+          </IconButton>
+          <IconButton onClick={onStartLiveClass} label="Live class" pill>
+            <Users size={16} strokeWidth={2} />
           </IconButton>
           <IconButton onClick={onEndSession} label="End session & save" pill primary>
             <CheckCircle2 size={16} strokeWidth={2} />

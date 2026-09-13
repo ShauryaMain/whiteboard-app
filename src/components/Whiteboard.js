@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import Toolbar from "./Toolbar";
 import RulerOverlay from "./RulerOverlay";
@@ -116,6 +117,7 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
 
 export default function Whiteboard({ boardId }) {
   const { user } = useAuth();
+  const router = useRouter();
   const [isOwner, setIsOwner] = useState(false);
 
   const canvasRef = useRef(null);
@@ -755,6 +757,10 @@ export default function Whiteboard({ boardId }) {
     navigator.clipboard.writeText(window.location.href);
     setSaveStatus("Link copied");
     setTimeout(() => setSaveStatus(""), 2000);
+  }
+
+  function handleStartLiveClass() {
+    router.push(`/board/${boardId}/live`);
   }
 
   function handleToggleRuler() {
@@ -2435,6 +2441,7 @@ export default function Whiteboard({ boardId }) {
           referenceUploadStatus={referenceUploadStatus}
           calculatorActive={calculatorActive}
           onToggleCalculator={handleToggleCalculator}
+          onStartLiveClass={handleStartLiveClass}
         />
       </div>
     </div>
