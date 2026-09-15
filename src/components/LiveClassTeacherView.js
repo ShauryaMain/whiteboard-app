@@ -3,14 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { generateClassCode } from "@/lib/classroomCode";
+import { generateClassCode, getStoredClassCode, storeClassCode } from "@/lib/classroomCode";
 
 // Phase 1: just the lobby — generate a code, show who's joined via
 // Presence. Phase 2 will replace the "waiting" panel below with the
 // actual master board once a session is under way.
 export default function LiveClassTeacherView({ boardId }) {
   const router = useRouter();
-  const [code] = useState(() => generateClassCode());
+  const [code] = useState(() => {
+    const existing = getStoredClassCode(boardId);
+    if (existing) return existing;
+    const fresh = generateClassCode();
+    storeClassCode(boardId, fresh);
+    return fresh;
+  });
   const [roster, setRoster] = useState([]); // [{studentId, name}]
   const channelRef = useRef(null);
 
@@ -45,6 +51,14 @@ export default function LiveClassTeacherView({ boardId }) {
 
   const joinUrl =
     typeof window !== "undefined" ? `${window.location.origin}/join` : "/join";
+
+  function handleStart() {
+    // Students ask "has this started?" themselves the moment they
+    // connect (with retries) — no need to also fire a broadcast here,
+    // which would race against this immediate navigation tearing the
+    // connection down before the message finishes sending.
+    router.push(`/board/${boardId}`);
+  }
 
   return (
     <div
@@ -116,6 +130,24 @@ export default function LiveClassTeacherView({ boardId }) {
           </div>
         ))}
       </div>
+
+      <button
+        onClick={handleStart}
+        style={{
+          marginTop: 20,
+          border: "none",
+          background: "#1E88E5",
+          color: "#fff",
+          borderRadius: 12,
+          padding: "14px 32px",
+          fontSize: 16,
+          fontWeight: 600,
+          cursor: "pointer",
+          boxShadow: "0 2px 10px rgba(30,136,229,0.35)",
+        }}
+      >
+        Start Class
+      </button>
     </div>
   );
 }

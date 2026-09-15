@@ -11,6 +11,7 @@ import ReferencePane from "./ReferencePane";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
+import { getStoredClassCode, clearClassCode } from "@/lib/classroomCode";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -119,6 +120,8 @@ export default function Whiteboard({ boardId }) {
   const { user } = useAuth();
   const router = useRouter();
   const [isOwner, setIsOwner] = useState(false);
+  const [liveClassCode, setLiveClassCode] = useState(null);
+  const liveClassChannelRef = useRef(null);
 
   const canvasRef = useRef(null);
   const boardPaneRef = useRef(null);
@@ -212,6 +215,7 @@ export default function Whiteboard({ boardId }) {
   // runs once on mount) can always read the current value when responding
   // to a late-joiner's "is anything loaded?" request.
   const referenceDocRef = useRef(null);
+  const referenceStrokesRef = useRef([]);
   const myReferenceStrokeStack = useRef([]);
 
   const [strokes, setStrokes] = useState([]);
@@ -270,6 +274,36 @@ export default function Whiteboard({ boardId }) {
   useEffect(() => { gridCellSizeCmRef.current = gridCellSizeCm; }, [gridCellSizeCm]);
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
   useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
+  useEffect(() => { referenceStrokesRef.current = referenceStrokes; }, [referenceStrokes]);
+
+  useEffect(() => {
+    if (!boardId) return;
+    setLiveClassCode(getStoredClassCode(boardId));
+  }, [boardId]);
+
+  // Kept open for the whole time a class is live, rather than opened
+  // fresh for each individual action — this is what lets a rejoining
+  // student reliably ask "has this already started?" and get an answer,
+  // and what makes the End button's broadcast land reliably instead of
+  // racing a connection that's still settling.
+  useEffect(() => {
+    if (!liveClassCode) return;
+    console.log("[teacher] setting up persistent channel for", liveClassCode);
+    const channel = supabase.channel(`classroom-${liveClassCode}`);
+    channel.on("broadcast", { event: "request-session-status" }, () => {
+      console.log("[teacher] got request-session-status, replying with boardId", boardId);
+      channel.send({ type: "broadcast", event: "session-started", payload: { boardId } });
+    });
+    channel.subscribe((status) => {
+      console.log("[teacher] persistent channel status:", status);
+    });
+    liveClassChannelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+      liveClassChannelRef.current = null;
+    };
+  }, [liveClassCode, boardId]);
 
   // Locks the actual page/body from scrolling for as long as the
   // whiteboard is open — restored when navigating away. The canvas
@@ -763,6 +797,18 @@ export default function Whiteboard({ boardId }) {
     router.push(`/board/${boardId}/live`);
   }
 
+  async function handleEndLiveClass() {
+    if (!liveClassCode) return;
+    if (!window.confirm("End the live class? Students currently watching will be disconnected.")) return;
+
+    if (liveClassChannelRef.current) {
+      await liveClassChannelRef.current.send({ type: "broadcast", event: "class-ended", payload: {} });
+    }
+
+    clearClassCode(boardId);
+    setLiveClassCode(null);
+  }
+
   function handleToggleRuler() {
     setRulerActive((prev) => {
       const next = !prev;
@@ -1203,6 +1249,25 @@ export default function Whiteboard({ boardId }) {
 
     channel.on("broadcast", { event: "reference-stroke-remove" }, ({ payload }) => {
       setReferenceStrokes((prev) => prev.filter((s) => s.id !== payload.strokeId));
+    });
+
+    // Classroom Mode: a read-only student viewer has no database access
+    // (they never logged in), so it asks over this same channel for the
+    // board's current state instead. This board just answers with
+    // whatever it already has in memory — no new state, no new tracking,
+    // reusing refs that are already kept current for other reasons.
+    channel.on("broadcast", { event: "classroom-state-request" }, () => {
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "classroom-state-snapshot",
+        payload: {
+          strokes: strokesRef.current,
+          texts: textsRef.current,
+          grid: gridConfigRef.current,
+          referenceDoc: referenceDocRef.current,
+          referenceStrokes: referenceStrokesRef.current,
+        },
+      });
     });
 
     channel.subscribe((status) => {
@@ -2286,6 +2351,63 @@ export default function Whiteboard({ boardId }) {
         >
           <ArrowLeft size={18} />
         </a>
+        {liveClassCode && (
+          <>
+            <style>{`
+              @keyframes liveDotPulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.25; }
+              }
+            `}</style>
+            <div
+              style={{
+                position: "fixed",
+                top: "max(16px, env(safe-area-inset-top))",
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 10,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                background: "#1a1a1a",
+                color: "#fff",
+                borderRadius: 999,
+                padding: "8px 10px 8px 14px",
+                boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
+                fontSize: 13,
+              }}
+            >
+              <span
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: "50%",
+                  background: "#E53935",
+                  animation: "liveDotPulse 1.4s ease-in-out infinite",
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontWeight: 600 }}>LIVE</span>
+              <span style={{ opacity: 0.5 }}>·</span>
+              <span style={{ letterSpacing: 2, fontWeight: 600 }}>{liveClassCode}</span>
+              <button
+                onClick={handleEndLiveClass}
+                style={{
+                  border: "none",
+                  background: "rgba(255,255,255,0.15)",
+                  color: "#fff",
+                  borderRadius: 999,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  marginLeft: 4,
+                }}
+              >
+                End
+              </button>
+            </div>
+          </>
+        )}
         <canvas
           ref={canvasRef}
           onContextMenu={(e) => e.preventDefault()}

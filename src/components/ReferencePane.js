@@ -60,7 +60,7 @@ const RENDER_BUFFER_PX = 1000;
 // what was causing real per-stroke latency on long/complex documents.
 function PdfPage({
   pdfDoc, pageNum, width, height, margin, scrollRoot,
-  strokes, onStrokeComplete, tool, color,
+  strokes, onStrokeComplete, tool, color, readOnly,
 }) {
   const wrapperRef = useRef(null);
   const pageCanvasRef = useRef(null);
@@ -282,10 +282,10 @@ function PdfPage({
       {isNear && (
         <canvas
           ref={annotationRef}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
+          onPointerDown={readOnly ? undefined : handlePointerDown}
+          onPointerMove={readOnly ? undefined : handlePointerMove}
+          onPointerUp={readOnly ? undefined : handlePointerUp}
+          onPointerCancel={readOnly ? undefined : handlePointerUp}
           onContextMenu={(e) => e.preventDefault()}
           style={{
             position: "absolute",
@@ -294,6 +294,7 @@ function PdfPage({
             width: "100%",
             height: "100%",
             touchAction: "none",
+            pointerEvents: readOnly ? "none" : "auto",
             WebkitUserSelect: "none",
             userSelect: "none",
             WebkitTouchCallout: "none",
@@ -330,6 +331,7 @@ export default function ReferencePane({
   setColor,
   canUndo,
   onUndo,
+  readOnly = false,
 }) {
   const scrollRef = useRef(null);
   const contentRef = useRef(null);
@@ -664,6 +666,7 @@ export default function ReferencePane({
                   onStrokeComplete={onStrokeComplete}
                   tool={tool}
                   color={color}
+                  readOnly={readOnly}
                 />
               ))}
           </div>
@@ -673,16 +676,17 @@ export default function ReferencePane({
             {status === "ready" && contentSize.width > 0 && (
               <canvas
                 ref={annotationCanvasRef}
-                onPointerDown={handleImagePointerDown}
-                onPointerMove={handleImagePointerMove}
-                onPointerUp={handleImagePointerUp}
-                onPointerCancel={handleImagePointerUp}
+                onPointerDown={readOnly ? undefined : handleImagePointerDown}
+                onPointerMove={readOnly ? undefined : handleImagePointerMove}
+                onPointerUp={readOnly ? undefined : handleImagePointerUp}
+                onPointerCancel={readOnly ? undefined : handleImagePointerUp}
                 onContextMenu={(e) => e.preventDefault()}
                 style={{
                   position: "absolute",
                   top: 0,
                   left: 0,
                   touchAction: "none",
+                  pointerEvents: readOnly ? "none" : "auto",
                   WebkitUserSelect: "none",
                   userSelect: "none",
                   WebkitTouchCallout: "none",
@@ -693,6 +697,7 @@ export default function ReferencePane({
         )}
       </div>
 
+      {!readOnly && (
       <div
         style={{
           display: "flex",
@@ -755,6 +760,7 @@ export default function ReferencePane({
           <Undo2 size={18} />
         </ToolBtn>
       </div>
+      )}
     </div>
   );
 }

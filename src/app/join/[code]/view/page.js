@@ -11,6 +11,7 @@ import { getOrCreateStudentId } from "@/lib/classroomCode";
 // board + this student's own mini-board once those exist.
 
 const JOIN_TIMEOUT_MS = 4000;
+const STATUS_REQUEST_RETRY_MS = 2000;
 
 export default function JoinCodePage() {
   const { code } = useParams();
@@ -32,6 +33,7 @@ export default function JoinCodePage() {
     channelRef.current = channel;
 
     let timedOut = false;
+    let navigated = false;
     const timeoutId = setTimeout(() => {
       timedOut = true;
       setStatus((prev) => (prev === "connecting" ? "not_found" : prev));
@@ -45,8 +47,13 @@ export default function JoinCodePage() {
       }
     });
 
+    // Covers a rejoin after the class already started — the original
+    // "session-started" broadcast only ever fires once, at the moment
+    // Start was pressed, so anyone arriving after that moment needs to
+    // actively ask instead of waiting for a message that already passed.
     channel.on("broadcast", { event: "session-started" }, ({ payload }) => {
-      if (payload?.boardId) {
+      if (payload?.boardId && !navigated) {
+        navigated = true;
         router.push(`/join/${normalizedCode}/view?board=${payload.boardId}`);
       }
     });
@@ -54,11 +61,19 @@ export default function JoinCodePage() {
     channel.subscribe(async (subStatus) => {
       if (subStatus === "SUBSCRIBED") {
         await channel.track({ studentId, name, joinedAt: Date.now() });
+        channel.send({ type: "broadcast", event: "request-session-status", payload: {} });
       }
     });
 
+    const retryInterval = setInterval(() => {
+      if (!navigated) {
+        channel.send({ type: "broadcast", event: "request-session-status", payload: {} });
+      }
+    }, STATUS_REQUEST_RETRY_MS);
+
     return () => {
       clearTimeout(timeoutId);
+      clearInterval(retryInterval);
       supabase.removeChannel(channel);
     };
   }, [code]);
