@@ -288,15 +288,11 @@ export default function Whiteboard({ boardId }) {
   // racing a connection that's still settling.
   useEffect(() => {
     if (!liveClassCode) return;
-    console.log("[teacher] setting up persistent channel for", liveClassCode);
     const channel = supabase.channel(`classroom-${liveClassCode}`);
     channel.on("broadcast", { event: "request-session-status" }, () => {
-      console.log("[teacher] got request-session-status, replying with boardId", boardId);
       channel.send({ type: "broadcast", event: "session-started", payload: { boardId } });
     });
-    channel.subscribe((status) => {
-      console.log("[teacher] persistent channel status:", status);
-    });
+    channel.subscribe();
     liveClassChannelRef.current = channel;
 
     return () => {
