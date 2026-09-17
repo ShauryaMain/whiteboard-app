@@ -12,6 +12,7 @@ import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { getStoredClassCode, clearClassCode } from "@/lib/classroomCode";
+import TeacherStudentBoardView from "./TeacherStudentBoardView";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -122,6 +123,9 @@ export default function Whiteboard({ boardId }) {
   const [isOwner, setIsOwner] = useState(false);
   const [liveClassCode, setLiveClassCode] = useState(null);
   const liveClassChannelRef = useRef(null);
+  const [classRoster, setClassRoster] = useState([]); // [{studentId, name, joinedAt}]
+  const [viewingStudent, setViewingStudent] = useState(null); // {studentId, name} | null
+  const [showRoster, setShowRoster] = useState(false);
 
   const canvasRef = useRef(null);
   const boardPaneRef = useRef(null);
@@ -288,16 +292,40 @@ export default function Whiteboard({ boardId }) {
   // racing a connection that's still settling.
   useEffect(() => {
     if (!liveClassCode) return;
-    const channel = supabase.channel(`classroom-${liveClassCode}`);
+    const channel = supabase.channel(`classroom-${liveClassCode}`, {
+      config: { presence: { key: "teacher" } },
+    });
     channel.on("broadcast", { event: "request-session-status" }, () => {
       channel.send({ type: "broadcast", event: "session-started", payload: { boardId } });
     });
-    channel.subscribe();
+
+    // Live roster: students track their own presence on this same
+    // channel for as long as they're on the join/view pages, so the
+    // teacher can always see who's currently in class and open their
+    // mini-board — not just during the pre-Start waiting room.
+    channel.on("presence", { event: "sync" }, () => {
+      const state = channel.presenceState();
+      const students = [];
+      for (const key in state) {
+        if (key === "teacher") continue;
+        const presence = state[key]?.[0];
+        if (presence) students.push(presence);
+      }
+      students.sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+      setClassRoster(students);
+    });
+
+    channel.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        await channel.track({ role: "teacher" });
+      }
+    });
     liveClassChannelRef.current = channel;
 
     return () => {
       supabase.removeChannel(channel);
       liveClassChannelRef.current = null;
+      setClassRoster([]);
     };
   }, [liveClassCode, boardId]);
 
@@ -803,6 +831,8 @@ export default function Whiteboard({ boardId }) {
 
     clearClassCode(boardId);
     setLiveClassCode(null);
+    setShowRoster(false);
+    setViewingStudent(null);
   }
 
   function handleToggleRuler() {
@@ -2387,6 +2417,20 @@ export default function Whiteboard({ boardId }) {
               <span style={{ opacity: 0.5 }}>·</span>
               <span style={{ letterSpacing: 2, fontWeight: 600 }}>{liveClassCode}</span>
               <button
+                onClick={() => setShowRoster((v) => !v)}
+                style={{
+                  border: "none",
+                  background: showRoster ? "#1E88E5" : "rgba(255,255,255,0.15)",
+                  color: "#fff",
+                  borderRadius: 999,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Students{classRoster.length > 0 ? ` (${classRoster.length})` : ""}
+              </button>
+              <button
                 onClick={handleEndLiveClass}
                 style={{
                   border: "none",
@@ -2402,7 +2446,67 @@ export default function Whiteboard({ boardId }) {
                 End
               </button>
             </div>
+
+            {showRoster && (
+              <div
+                style={{
+                  position: "fixed",
+                  top: "max(64px, calc(env(safe-area-inset-top) + 48px))",
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  zIndex: 10,
+                  width: "min(320px, calc(100vw - 32px))",
+                  maxHeight: "50vh",
+                  overflowY: "auto",
+                  background: "#fff",
+                  borderRadius: 14,
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+                  padding: 10,
+                }}
+              >
+                {classRoster.length === 0 ? (
+                  <div style={{ fontSize: 13, color: "#999", padding: "10px 8px" }}>
+                    Waiting for students to join…
+                  </div>
+                ) : (
+                  classRoster.map((s) => (
+                    <button
+                      key={s.studentId}
+                      onClick={() => {
+                        setViewingStudent(s);
+                        setShowRoster(false);
+                      }}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        border: "none",
+                        background: "none",
+                        textAlign: "left",
+                        padding: "10px 8px",
+                        borderRadius: 8,
+                        fontSize: 14,
+                        color: "#1a1a1a",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#43A047", flexShrink: 0 }} />
+                      {s.name}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
           </>
+        )}
+
+        {viewingStudent && liveClassCode && (
+          <TeacherStudentBoardView
+            code={liveClassCode}
+            student={viewingStudent}
+            onBack={() => setViewingStudent(null)}
+          />
         )}
         <canvas
           ref={canvasRef}
