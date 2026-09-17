@@ -165,12 +165,52 @@ export default function StudentMiniBoard({ code, studentId }) {
       config: { broadcast: { self: false } },
     });
 
+    // Replies to the teacher's catch-up request when they open this
+    // student's tab. This used to send the WHOLE stroke history as one
+    // giant "state-snapshot" broadcast — but Supabase Realtime caps
+    // broadcast payloads (256KB on the free plan), and a board with a
+    // decent amount of drawing easily produces a JSON payload bigger than
+    // that, so the message was silently dropped and the teacher's view
+    // stayed blank even though the student really had drawn something.
+    //
+    // Fix: send a small ack first (just the comments, always tiny), then
+    // REPLAY each existing stroke using the exact same incremental
+    // stroke-start/stroke-points/stroke-end protocol already used for
+    // live drawing, chunked to a bounded number of points per message.
+    // Every message this sends is now small regardless of how much the
+    // student has drawn, and the teacher's existing live-stroke handling
+    // reassembles the replayed strokes with no changes needed there.
     channel.on("broadcast", { event: "state-request" }, () => {
       channel.send({
         type: "broadcast",
         event: "state-snapshot",
-        payload: { strokes: strokesRef.current, comments: commentsRef.current },
+        payload: { comments: commentsRef.current },
       });
+
+      const REPLAY_CHUNK_SIZE = 150;
+      for (const stroke of strokesRef.current) {
+        if (!stroke.points || stroke.points.length === 0) continue;
+        channel.send({
+          type: "broadcast",
+          event: "stroke-start",
+          payload: {
+            strokeId: stroke.id,
+            tool: stroke.tool,
+            color: stroke.color,
+            width: stroke.width,
+            opacity: stroke.opacity,
+            point: stroke.points[0],
+          },
+        });
+        for (let i = 1; i < stroke.points.length; i += REPLAY_CHUNK_SIZE) {
+          channel.send({
+            type: "broadcast",
+            event: "stroke-points",
+            payload: { strokeId: stroke.id, points: stroke.points.slice(i, i + REPLAY_CHUNK_SIZE) },
+          });
+        }
+        channel.send({ type: "broadcast", event: "stroke-end", payload: { strokeId: stroke.id } });
+      }
     });
 
     channel.on("broadcast", { event: "teacher-comment-add" }, ({ payload }) => {

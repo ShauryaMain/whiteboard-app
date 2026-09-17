@@ -83,6 +83,7 @@ function drawCommentPins(ctx, pins) {
 function toPixelStroke(stroke, size) {
   return {
     ...stroke,
+    width: stroke.width * size.width,
     points: stroke.points.map((p) => ({ x: p.x * size.width, y: p.y * size.height, w: p.w != null ? p.w * size.width : undefined })),
   };
 }
@@ -143,9 +144,16 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
       channel.send({ type: "broadcast", event: "state-request", payload: {} });
     }
 
+    // Small ack from the student, always tiny (just comments) — the
+    // student's actual stroke history now arrives separately as a
+    // chunked replay over stroke-start/stroke-points/stroke-end (the
+    // same events used for live drawing), so this handler no longer
+    // touches `strokes` at all. See StudentMiniBoard.js's state-request
+    // handler for why: a single big snapshot message could exceed
+    // Supabase Realtime's broadcast payload cap and get silently
+    // dropped, which is why the teacher used to see a blank board.
     channel.on("broadcast", { event: "state-snapshot" }, ({ payload }) => {
       hasReceivedSnapshot.current = true;
-      setStrokes(payload.strokes || []);
       setComments(payload.comments || []);
       setConnectionStatus("live");
       fullRedraw();
@@ -173,7 +181,13 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
       const s = remoteStrokes.current[payload.strokeId];
       if (!s) return;
       delete remoteStrokes.current[payload.strokeId];
-      if (s.points.length > 1) setStrokes((prev) => [...prev, s]);
+      // Guard against a stroke being appended twice — e.g. the retry
+      // timer re-requesting a replay that had actually already landed —
+      // since the same strokeId could otherwise show up in `strokes`
+      // more than once.
+      if (s.points.length > 1) {
+        setStrokes((prev) => (prev.some((existing) => existing.id === s.id) ? prev : [...prev, s]));
+      }
     });
 
     channel.on("broadcast", { event: "stroke-remove" }, ({ payload }) => {
