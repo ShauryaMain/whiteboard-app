@@ -133,9 +133,6 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
     if (!code || !student?.studentId) return;
     hasReceivedSnapshot.current = false;
     remoteStrokes.current = {};
-    setStrokes([]);
-    setComments([]);
-    setConnectionStatus("connecting");
 
     const channel = supabase.channel(`student-board-${code}-${student.studentId}`, {
       config: { broadcast: { self: false } },
@@ -288,7 +285,7 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
         >
           <ArrowLeft size={15} /> Roster
         </button>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>{student?.name || "Student"}'s board</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>{`${student?.name || "Student"}'s board`}</div>
         {connectionStatus !== "live" && (
           <span style={{ fontSize: 12, color: "#999" }}>Connecting…</span>
         )}

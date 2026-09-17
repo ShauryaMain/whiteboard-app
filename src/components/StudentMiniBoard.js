@@ -97,6 +97,7 @@ function drawCommentPins(ctx, pins) {
 function toPixelStroke(stroke, size) {
   return {
     ...stroke,
+    width: stroke.width * size.width,
     points: stroke.points.map((p) => ({ x: p.x * size.width, y: p.y * size.height, w: p.w != null ? p.w * size.width : undefined })),
   };
 }
