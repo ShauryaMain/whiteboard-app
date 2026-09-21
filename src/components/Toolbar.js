@@ -4,18 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Pencil, Highlighter, Eraser, Type, MousePointer2, Ruler, Compass, Grid3x3, Hand, X, Home,
-  FileText, Calculator, Users, Undo2, Redo2, Trash2, Link2, CheckCircle2,
+  FileText, Calculator, Users, Undo2, Redo2, Trash2, Link2, CheckCircle2, Atom,
 } from "lucide-react";
 
 const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
-const GRID_PRESETS = [
-  { label: "5mm", cm: 0.5 },
-  { label: "1cm", cm: 1 },
-  { label: "2cm", cm: 2 },
-  { label: "5cm", cm: 5 },
-  { label: "10cm", cm: 10 },
-  { label: "1in", cm: 2.54 },
-];
 
 export default function Toolbar({
   tool, setTool, color, setColor, strokeWidth, setStrokeWidth,
@@ -23,10 +15,10 @@ export default function Toolbar({
   isOwner, onCopyLink, onEndSession, saveStatus,
   rulerActive, onToggleRuler, onResetView,
   compassActive, onToggleCompass,
-  gridToolActive, onToggleGrid, onRemoveGrid, gridCellSizeCm, onSetGridCellSize,
+  gridToolActive, onToggleGrid, onOpenGridModal, onRemoveGrid, gridCellSizeCm, onSetGridCellSize,
   panToolActive, onTogglePan,
   canUseReferencePane, hasReferenceDoc, onReferenceToolClick, referenceUploadStatus,
-  calculatorActive, onToggleCalculator, onStartLiveClass,
+  calculatorActive, onToggleCalculator, onStartLiveClass, onOpenSimModal,
 }) {
   const [openPopup, setOpenPopup] = useState(null); // null | "pen" | "highlighter" | "eraser"
   const [popupAnchor, setPopupAnchor] = useState(null); // {x, y} in viewport pixels
@@ -41,10 +33,6 @@ export default function Toolbar({
     if (openPopup) document.addEventListener("pointerdown", handleOutside);
     return () => document.removeEventListener("pointerdown", handleOutside);
   }, [openPopup]);
-
-  useEffect(() => {
-    if (!gridToolActive && openPopup === "grid") setOpenPopup(null);
-  }, [gridToolActive, openPopup]);
 
   function handleToolClick(name, e) {
     // Measured here and used with position:fixed on a portaled element —
@@ -63,12 +51,10 @@ export default function Toolbar({
     }
   }
 
-  function handleGridClick(e) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setPopupAnchor({ x: rect.left + rect.width / 2, y: rect.top });
+  function handleGridClick() {
     const wasActive = gridToolActive;
     onToggleGrid();
-    setOpenPopup(wasActive ? null : "grid");
+    if (!wasActive) onOpenGridModal();
   }
 
   const popoverContent = openPopup && popupAnchor && (
@@ -81,50 +67,8 @@ export default function Toolbar({
         transform: "translate(-50%, -100%)",
       }}
     >
-      {openPopup === "grid" ? (
-        <>
-          <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>1 box equals:</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, width: 220 }}>
-            {GRID_PRESETS.map((p) => (
-              <button
-                key={p.label}
-                onClick={() => onSetGridCellSize(p.cm)}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 8,
-                  border: Math.abs(gridCellSizeCm - p.cm) < 0.001 ? "2px solid #1E88E5" : "1px solid #ddd",
-                  background: Math.abs(gridCellSizeCm - p.cm) < 0.001 ? "#E3F2FD" : "#fff",
-                  color: "#333",
-                  fontSize: 13,
-                  cursor: "pointer",
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <Divider horizontal />
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
-            <input
-              type="number"
-              min={0.1}
-              step={0.1}
-              defaultValue={gridCellSizeCm}
-              key={gridCellSizeCm}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  const v = parseFloat(e.target.value);
-                  if (v > 0) onSetGridCellSize(v);
-                }
-              }}
-              style={{ width: 64, padding: "6px 8px", borderRadius: 8, border: "1px solid #ddd", fontSize: 13 }}
-            />
-            <span style={{ fontSize: 12, color: "#666" }}>cm (custom, press Enter)</span>
-          </div>
-        </>
-      ) : (
-        <>
-          {(openPopup === "pen" || openPopup === "highlighter") && (
+      <>
+        {(openPopup === "pen" || openPopup === "highlighter") && (
             <>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
                 {PRESET_COLORS.map((c) => (
@@ -177,8 +121,7 @@ export default function Toolbar({
               style={{ flex: 1, height: 36 }}
             />
           </div>
-        </>
-      )}
+      </>
     </div>
   );
 
@@ -228,6 +171,9 @@ export default function Toolbar({
           )}
           <IconButton active={calculatorActive} onClick={onToggleCalculator} label="Calculator">
             <Calculator size={19} strokeWidth={2} />
+          </IconButton>
+          <IconButton onClick={onOpenSimModal} label="Embed a simulation (e.g. PhET)">
+            <Atom size={19} strokeWidth={2} />
           </IconButton>
         </div>
 

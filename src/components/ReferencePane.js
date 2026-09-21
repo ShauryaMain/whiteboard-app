@@ -37,6 +37,22 @@ function resetCompositeMode(ctx) {
   ctx.globalAlpha = 1;
 }
 
+// Shift-to-draw-straight-lines: while Shift is held, the stroke from
+// wherever it was when Shift was first pressed to the current pointer
+// position is snapped to the nearest 15° so horizontal/vertical/diagonal
+// lines land exactly on-angle (matches the usual "hold shift" behavior in
+// most drawing apps). Shared by both the PDF-page and single-image
+// annotation paths below.
+const STRAIGHT_LINE_SNAP_STEP = Math.PI / 12; // 15°
+function snapStraightLine(from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist === 0) return { x: to.x, y: to.y };
+  const angle = Math.round(Math.atan2(dy, dx) / STRAIGHT_LINE_SNAP_STEP) * STRAIGHT_LINE_SNAP_STEP;
+  return { x: from.x + Math.cos(angle) * dist, y: from.y + Math.sin(angle) * dist };
+}
+
 // Uncapped devicePixelRatio can be 3+ on some phones/tablets — rendering
 // every page and the annotation overlay at that resolution multiplies the
 // pixel count (and the cost of compositing all those layers together on
@@ -225,6 +241,7 @@ function PdfPage({
       opacity: opacityForTool(toolRef.current),
       rawWidth: widthForTool(toolRef.current, 3),
       localPoints: [pos],
+      straightAnchorIndex: null,
     };
     try {
       annotationRef.current.setPointerCapture(e.pointerId);
@@ -233,11 +250,25 @@ function PdfPage({
 
   function handlePointerMove(e) {
     if (!isDrawing.current || !currentStroke.current) return;
+    const cur = currentStroke.current;
     const coalesced = e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : [];
     const events = coalesced.length > 0 ? coalesced : [e.nativeEvent];
-    const before = currentStroke.current.localPoints.length;
+
+    if (e.shiftKey) {
+      if (cur.straightAnchorIndex == null) cur.straightAnchorIndex = cur.localPoints.length - 1;
+      const rawPos = getPos(events[events.length - 1]);
+      const anchor = cur.localPoints[cur.straightAnchorIndex];
+      cur.localPoints = cur.localPoints
+        .slice(0, cur.straightAnchorIndex + 1)
+        .concat([snapStraightLine(anchor, rawPos)]);
+      redrawAnnotations();
+      return;
+    }
+    cur.straightAnchorIndex = null;
+
+    const before = cur.localPoints.length;
     for (const ev of events) {
-      currentStroke.current.localPoints.push(getPos(ev));
+      cur.localPoints.push(getPos(ev));
     }
     drawLive(Math.max(0, before - 1));
   }
@@ -587,6 +618,7 @@ export default function ReferencePane({
       opacity: opacityForTool(toolRef.current),
       rawWidth: widthForTool(toolRef.current, 3),
       localPoints: [pos],
+      straightAnchorIndex: null,
     };
     try {
       annotationCanvasRef.current.setPointerCapture(e.pointerId);
@@ -595,11 +627,25 @@ export default function ReferencePane({
 
   function handleImagePointerMove(e) {
     if (!isDrawing.current || !currentStroke.current) return;
+    const cur = currentStroke.current;
     const coalesced = e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : [];
     const events = coalesced.length > 0 ? coalesced : [e.nativeEvent];
-    const before = currentStroke.current.localPoints.length;
+
+    if (e.shiftKey) {
+      if (cur.straightAnchorIndex == null) cur.straightAnchorIndex = cur.localPoints.length - 1;
+      const rawPos = getPosImage(events[events.length - 1]);
+      const anchor = cur.localPoints[cur.straightAnchorIndex];
+      cur.localPoints = cur.localPoints
+        .slice(0, cur.straightAnchorIndex + 1)
+        .concat([snapStraightLine(anchor, rawPos)]);
+      redrawAllImage();
+      return;
+    }
+    cur.straightAnchorIndex = null;
+
+    const before = cur.localPoints.length;
     for (const ev of events) {
-      currentStroke.current.localPoints.push(getPosImage(ev));
+      cur.localPoints.push(getPosImage(ev));
     }
     drawLiveImage(Math.max(0, before - 1));
   }

@@ -13,6 +13,10 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { getStoredClassCode, clearClassCode } from "@/lib/classroomCode";
 import TeacherStudentBoardView from "./TeacherStudentBoardView";
+import GridToolModal from "./GridToolModal";
+import SimEmbed from "./SimEmbed";
+import SimEmbedModal from "./SimEmbedModal";
+import { renderGrid, withDefaults as withGridDefaults } from "@/lib/gridRenderer";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -242,6 +246,20 @@ export default function Whiteboard({ boardId }) {
   const [zoomPercent, setZoomPercent] = useState(100);
   const [gridToolActive, setGridToolActive] = useState(false);
   const [gridCellSizeCm, setGridCellSizeCm] = useState(10);
+  const [gridModalOpen, setGridModalOpen] = useState(false);
+  const [gridModalInitialConfig, setGridModalInitialConfig] = useState(null);
+
+  // Embedded simulations (e.g. PhET links) placed on the board. `sims`
+  // (state) only tracks WHICH boxes exist, so add/remove re-renders the
+  // list — each box's actual on-screen position/size is driven
+  // imperatively (see repositionSimEmbeds), same reasoning as the pan/zoom
+  // system and the text-editing overlay: pan/scale are refs, not state.
+  const [sims, setSims] = useState([]);
+  const simsRef = useRef([]);
+  const simNodesRef = useRef({});
+  const pendingSimBroadcast = useRef(null);
+  const simBroadcastTimer = useRef(null);
+  const [simModalOpen, setSimModalOpen] = useState(false);
   const [canUseReferencePane, setCanUseReferencePane] = useState(false);
   const [panToolActive, setPanToolActive] = useState(false);
   const [showPencilTip, setShowPencilTip] = useState(false);
@@ -412,6 +430,24 @@ export default function Whiteboard({ boardId }) {
     el.style.fontSize = info.fontSize * scaleRef.current + "px";
   }
 
+  // Keeps every embedded-simulation box's on-screen position/size in sync
+  // with the current pan/zoom (and with its own world x/y/width/height,
+  // e.g. right after a drag). Called from fullRedraw() (every pan/zoom
+  // tick) and directly during a sim's own move/resize drag for instant
+  // feedback.
+  function repositionSimEmbeds() {
+    const scale = scaleRef.current;
+    for (const sim of simsRef.current) {
+      const el = simNodesRef.current[sim.id];
+      if (!el) continue;
+      const screenPos = worldToScreen({ x: sim.x, y: sim.y });
+      el.style.left = screenPos.x + "px";
+      el.style.top = screenPos.y + "px";
+      el.style.width = sim.width * scale + "px";
+      el.style.height = sim.height * scale + "px";
+    }
+  }
+
   function drawStroke(ctx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
     ctx.globalAlpha = stroke.opacity ?? 1;
@@ -579,38 +615,11 @@ export default function Whiteboard({ boardId }) {
     const cell = size / cols;
     const scale = scaleRef.current;
 
-    ctx.save();
-    ctx.strokeStyle = "#cfd8e3";
-    ctx.lineWidth = 1 / scale;
-    for (let i = 0; i <= cols; i++) {
-      const gx = x + i * cell;
-      ctx.beginPath();
-      ctx.moveTo(gx, y);
-      ctx.lineTo(gx, y + size);
-      ctx.stroke();
-    }
-    for (let j = 0; j <= cols; j++) {
-      const gy = y + j * cell;
-      ctx.beginPath();
-      ctx.moveTo(x, gy);
-      ctx.lineTo(x + size, gy);
-      ctx.stroke();
-    }
-
-    const mid = cols / 2;
-    ctx.strokeStyle = "#9aa7b8";
-    ctx.lineWidth = 1.5 / scale;
-    const midX = x + mid * cell;
-    const midY = y + mid * cell;
-    ctx.beginPath();
-    ctx.moveTo(midX, y);
-    ctx.lineTo(midX, y + size);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, midY);
-    ctx.lineTo(x + size, midY);
-    ctx.stroke();
-    ctx.restore();
+    // The actual grid/graph-paper drawing (lines, axes, numbers, polar
+    // rings/spokes, unit circle...) is shared with the customization
+    // dialog's live preview — see gridRenderer.js — so what you configure
+    // there is guaranteed to be exactly what lands on the board.
+    renderGrid(ctx, grid, { cellPx: cell, originXPx: x, originYPx: y, lineScale: 1 / scale });
 
     if (gridToolActiveRef.current) {
       ctx.save();
@@ -643,6 +652,7 @@ export default function Whiteboard({ boardId }) {
     drawGrid(ctx, gridConfigRef.current);
 
     repositionEditingTextarea();
+    repositionSimEmbeds();
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
@@ -790,6 +800,24 @@ export default function Whiteboard({ boardId }) {
         console.error("Error loading texts:", textsError);
       }
 
+      // Kept as a separate, failure-tolerant query: `sim_embeds` is a new
+      // column and older boards' Supabase projects may not have it yet
+      // (needs a one-time `alter table boards add column sim_embeds
+      // jsonb;`). Failing quietly here just means embedded sims start
+      // empty until that column exists, instead of breaking the whole
+      // board load the way including it in the query above would.
+      const { data: simRow, error: simError } = await supabase
+        .from("boards")
+        .select("sim_embeds")
+        .eq("id", boardId)
+        .maybeSingle();
+      if (!simError && simRow) {
+        simsRef.current = simRow.sim_embeds || [];
+        setSims(simsRef.current);
+      } else if (simError) {
+        console.warn("Could not load embedded simulations (has the sim_embeds column been added yet?):", simError);
+      }
+
       fullRedraw();
     }
     loadBoard();
@@ -801,6 +829,16 @@ export default function Whiteboard({ boardId }) {
       .from("boards")
       .update({ grid_config: gridConfigRef.current })
       .eq("id", boardId);
+    return !error;
+  }
+
+  async function saveSimEmbeds() {
+    if (!boardId) return;
+    const { error } = await supabase
+      .from("boards")
+      .update({ sim_embeds: simsRef.current })
+      .eq("id", boardId);
+    if (error) console.warn("Could not save embedded simulations (has the sim_embeds column been added yet?):", error);
     return !error;
   }
 
@@ -937,6 +975,104 @@ export default function Whiteboard({ boardId }) {
       setGridToolActive(false);
       setTool(toolBeforeGridRef.current || "pen");
     }
+  }
+
+  function handleOpenGridModal() {
+    setGridModalInitialConfig(gridConfigRef.current);
+    setGridModalOpen(true);
+  }
+
+  function handleCloseGridModal() {
+    setGridModalOpen(false);
+  }
+
+  // Applies the "ultimate grid tool" dialog's configuration. An existing
+  // grid keeps its current position/physical size (still adjustable by
+  // dragging its body/corner on the canvas as before) and just picks up
+  // the new type/labeling/appearance fields; a brand new grid is placed
+  // centered in the current view, same default physical size the old
+  // simple grid used.
+  function handleApplyGridConfig(config) {
+    let updated;
+    if (gridConfigRef.current) {
+      updated = { ...gridConfigRef.current, ...config };
+    } else {
+      const cols = config.cols || 10;
+      const defaultWorldSize = gridCellSizeCmRef.current * WORLD_UNITS_PER_CM * cols;
+      const { width, height } = getPaneSize();
+      const centerWorld = screenToWorld({ x: width / 2, y: height / 2 });
+      updated = {
+        ...config,
+        cols,
+        x: centerWorld.x - defaultWorldSize / 2,
+        y: centerWorld.y - defaultWorldSize / 2,
+        size: defaultWorldSize,
+      };
+    }
+    gridConfigRef.current = updated;
+    fullRedraw();
+    channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: updated } });
+    saveGrid();
+    setGridModalOpen(false);
+  }
+
+  function scheduleSimBroadcast() {
+    pendingSimBroadcast.current = true;
+    if (simBroadcastTimer.current) return;
+    simBroadcastTimer.current = setTimeout(() => {
+      simBroadcastTimer.current = null;
+      if (!pendingSimBroadcast.current) return;
+      pendingSimBroadcast.current = null;
+      channelRef.current?.send({ type: "broadcast", event: "sim-embeds-set", payload: { sims: simsRef.current } });
+    }, 60);
+  }
+
+  function handleOpenSimModal() {
+    setSimModalOpen(true);
+  }
+
+  function handleCloseSimModal() {
+    setSimModalOpen(false);
+  }
+
+  function handleAddSimEmbed({ url, title }) {
+    const { width, height } = getPaneSize();
+    const centerWorld = screenToWorld({ x: width / 2, y: height / 2 });
+    const boxW = 480;
+    const boxH = 360;
+    const id = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+    const sim = { id, url, title, x: centerWorld.x - boxW / 2, y: centerWorld.y - boxH / 2, width: boxW, height: boxH };
+    simsRef.current = [...simsRef.current, sim];
+    setSims(simsRef.current);
+    channelRef.current?.send({ type: "broadcast", event: "sim-embeds-set", payload: { sims: simsRef.current } });
+    saveSimEmbeds();
+    setSimModalOpen(false);
+  }
+
+  function handleRemoveSimEmbed(id) {
+    simsRef.current = simsRef.current.filter((s) => s.id !== id);
+    delete simNodesRef.current[id];
+    setSims(simsRef.current);
+    channelRef.current?.send({ type: "broadcast", event: "sim-embeds-set", payload: { sims: simsRef.current } });
+    saveSimEmbeds();
+  }
+
+  function handleMoveSimEmbed(id, x, y) {
+    simsRef.current = simsRef.current.map((s) => (s.id === id ? { ...s, x, y } : s));
+    repositionSimEmbeds();
+    scheduleSimBroadcast();
+  }
+
+  function handleResizeSimEmbed(id, width, height) {
+    simsRef.current = simsRef.current.map((s) => (s.id === id ? { ...s, width, height } : s));
+    repositionSimEmbeds();
+    scheduleSimBroadcast();
+  }
+
+  function handleCommitSimEmbed() {
+    setSims(simsRef.current);
+    channelRef.current?.send({ type: "broadcast", event: "sim-embeds-set", payload: { sims: simsRef.current } });
+    saveSimEmbeds();
   }
 
   async function handleReferenceFileSelected(e) {
@@ -1145,6 +1281,12 @@ export default function Whiteboard({ boardId }) {
     return () => clearTimeout(timerId);
   }, [editingText]);
 
+  // Registers new sim boxes' DOM nodes right after they mount / re-syncs
+  // all of them after the list itself changes (add/remove).
+  useEffect(() => {
+    repositionSimEmbeds();
+  }, [sims]);
+
   useEffect(() => {
     if (!boardId) return;
     const channel = supabase.channel(`board-${boardId}`, {
@@ -1231,6 +1373,11 @@ export default function Whiteboard({ boardId }) {
         setGridCellSizeCm(payload.grid.size / payload.grid.cols / WORLD_UNITS_PER_CM);
       }
       fullRedraw();
+    });
+
+    channel.on("broadcast", { event: "sim-embeds-set" }, ({ payload }) => {
+      simsRef.current = payload.sims || [];
+      setSims(simsRef.current);
     });
 
     channel.on("broadcast", { event: "clear" }, () => {
@@ -2576,6 +2723,29 @@ export default function Whiteboard({ boardId }) {
             onClose={() => setCalculatorActive(false)}
           />
         )}
+        {gridModalOpen && (
+          <GridToolModal
+            initialConfig={gridModalInitialConfig}
+            onApply={handleApplyGridConfig}
+            onClose={handleCloseGridModal}
+          />
+        )}
+        {sims.map((sim) => (
+          <SimEmbed
+            key={sim.id}
+            sim={sim}
+            scaleRef={scaleRef}
+            onMove={handleMoveSimEmbed}
+            onResize={handleResizeSimEmbed}
+            onCommit={handleCommitSimEmbed}
+            onRemove={handleRemoveSimEmbed}
+            registerNode={(el) => {
+              if (el) simNodesRef.current[sim.id] = el;
+              else delete simNodesRef.current[sim.id];
+            }}
+          />
+        ))}
+        {simModalOpen && <SimEmbedModal onAdd={handleAddSimEmbed} onClose={handleCloseSimModal} />}
         {isOwner && (
           <input
             ref={referenceFileInputRef}
@@ -2652,6 +2822,7 @@ export default function Whiteboard({ boardId }) {
           onToggleCompass={handleToggleCompass}
           gridToolActive={gridToolActive}
           onToggleGrid={handleToggleGrid}
+          onOpenGridModal={handleOpenGridModal}
           gridCellSizeCm={gridCellSizeCm}
           onSetGridCellSize={handleSetGridCellSize}
           onRemoveGrid={handleRemoveGrid}
@@ -2664,6 +2835,7 @@ export default function Whiteboard({ boardId }) {
           calculatorActive={calculatorActive}
           onToggleCalculator={handleToggleCalculator}
           onStartLiveClass={handleStartLiveClass}
+          onOpenSimModal={handleOpenSimModal}
         />
       </div>
     </div>
