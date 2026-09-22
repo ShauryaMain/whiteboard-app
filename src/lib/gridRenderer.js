@@ -24,6 +24,18 @@
 //
 // A config with no `type` (every grid created before this feature existed)
 // is treated as a legacy plain grid — same look as before, no axis numbers.
+//
+// `rows` (cartesian only) is optional and defaults to `cols` — a grid with
+// no `rows` is a square, exactly like before this field existed. Setting
+// `rows` independently from `cols` is how the grid "stretches" into a
+// rectangle: cell size is always `size / cols` (kept constant by the
+// caller — see Whiteboard.js's handleApplyGridConfig) so adding more
+// columns/rows always repeats the SAME-size cell outward rather than
+// shrinking existing cells to fit a fixed footprint.
+
+// Real-world physical scale used across the app (rulers, compass, and now
+// the grid tool) so "1cm" means the same thing everywhere.
+export const WORLD_UNITS_PER_CM = 96 / 2.54;
 
 export function withDefaults(config) {
   if (!config) return config;
@@ -87,21 +99,29 @@ function drawLine(ctx, x1, y1, x2, y2) {
 function renderCartesianGrid(ctx, config, geom) {
   const { cellPx, originXPx, originYPx, lineScale = 1 } = geom;
   const cols = config.cols;
-  const size = cellPx * cols;
-  const midIndex = cols / 2;
-  const originAxisX = originXPx + midIndex * cellPx;
-  const originAxisY = originYPx + midIndex * cellPx;
+  // rows defaults to cols (a plain square) so every grid saved before this
+  // field existed renders exactly as before. cellPx is always the caller's
+  // fixed per-cell size (see Whiteboard.js) - it never shrinks just because
+  // rows/cols grew, which is what makes "add more sections" repeat the
+  // same-size cell outward instead of squeezing existing cells smaller.
+  const rows = config.rows || cols;
+  const sizeX = cellPx * cols;
+  const sizeY = cellPx * rows;
+  const midIndexX = cols / 2;
+  const midIndexY = rows / 2;
+  const originAxisX = originXPx + midIndexX * cellPx;
+  const originAxisY = originYPx + midIndexY * cellPx;
 
   ctx.save();
   ctx.strokeStyle = config.color || "#cfd8e3";
   ctx.lineWidth = 1 * lineScale;
   for (let i = 0; i <= cols; i++) {
     const gx = originXPx + i * cellPx;
-    drawLine(ctx, gx, originYPx, gx, originYPx + size);
+    drawLine(ctx, gx, originYPx, gx, originYPx + sizeY);
   }
-  for (let j = 0; j <= cols; j++) {
+  for (let j = 0; j <= rows; j++) {
     const gy = originYPx + j * cellPx;
-    drawLine(ctx, originXPx, gy, originXPx + size, gy);
+    drawLine(ctx, originXPx, gy, originXPx + sizeX, gy);
   }
   ctx.restore();
 
@@ -109,8 +129,8 @@ function renderCartesianGrid(ctx, config, geom) {
     ctx.save();
     ctx.strokeStyle = "#5b6b80";
     ctx.lineWidth = 1.5 * lineScale;
-    drawLine(ctx, originAxisX, originYPx, originAxisX, originYPx + size);
-    drawLine(ctx, originXPx, originAxisY, originXPx + size, originAxisY);
+    drawLine(ctx, originAxisX, originYPx, originAxisX, originYPx + sizeY);
+    drawLine(ctx, originXPx, originAxisY, originXPx + sizeX, originAxisY);
     ctx.restore();
   }
 
@@ -127,12 +147,16 @@ function renderCartesianGrid(ctx, config, geom) {
   if (config.showNumbers) {
     ctx.save();
     ctx.fillStyle = "#5b6b80";
-    const fontPx = Math.max(9, Math.min(13, cellPx * 0.32));
+    // A constant ON-SCREEN size regardless of zoom (mirrors the hairline
+    // gridlines above, which use the same lineScale trick) - previously
+    // this was sized off cellPx directly, so it shrank right along with
+    // the rest of the world when zoomed out and became unreadable.
+    const fontPx = 15 * lineScale;
     ctx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     for (let i = 0; i <= cols; i++) {
-      const n = i - midIndex;
+      const n = i - midIndexX;
       if (n === 0) continue;
       const label = config.trig
         ? formatPiFraction(n, config.trigStep)
@@ -142,8 +166,8 @@ function renderCartesianGrid(ctx, config, geom) {
     }
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
-    for (let j = 0; j <= cols; j++) {
-      const n = midIndex - j;
+    for (let j = 0; j <= rows; j++) {
+      const n = midIndexY - j;
       if (n === 0) continue;
       const label = config.trig
         ? formatPiFraction(n, config.trigStep)
@@ -202,7 +226,8 @@ function renderPolarGrid(ctx, config, geom) {
   if (config.showNumbers) {
     ctx.save();
     ctx.fillStyle = "#5b6b80";
-    const fontPx = Math.max(9, Math.min(13, (maxRadius / cols) * 0.4));
+    // Same constant on-screen size treatment as the cartesian labels above.
+    const fontPx = 15 * lineScale;
     ctx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, sans-serif`;
     ctx.textAlign = "left";
     ctx.textBaseline = "bottom";

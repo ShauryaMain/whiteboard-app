@@ -16,7 +16,7 @@ import TeacherStudentBoardView from "./TeacherStudentBoardView";
 import GridToolModal from "./GridToolModal";
 import SimEmbed from "./SimEmbed";
 import SimEmbedModal from "./SimEmbedModal";
-import { renderGrid, withDefaults as withGridDefaults } from "@/lib/gridRenderer";
+import { renderGrid, withDefaults as withGridDefaults, WORLD_UNITS_PER_CM } from "@/lib/gridRenderer";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -29,7 +29,6 @@ const INTERP_MAX_STEP = 6;
 // there's no reliable way to know a screen's true DPI from a browser, so
 // this is the most accurate basis available (the same one print-to-PDF
 // and other browser-native "physical size" features use).
-const WORLD_UNITS_PER_CM = 96 / 2.54;
 
 function opacityForTool(t) {
   return t === "highlighter" ? 0.35 : 1;
@@ -248,6 +247,11 @@ export default function Whiteboard({ boardId }) {
   const [gridCellSizeCm, setGridCellSizeCm] = useState(10);
   const [gridModalOpen, setGridModalOpen] = useState(false);
   const [gridModalInitialConfig, setGridModalInitialConfig] = useState(null);
+  // Captured when the dialog opens (never read from a ref during render) so
+  // the dialog can show/derive its "cell size" in terms of the zoom level
+  // you're actually looking at right now, instead of an absolute physical
+  // unit that has no relationship to what's comfortably visible.
+  const [gridModalZoomScale, setGridModalZoomScale] = useState(1);
 
   // Embedded simulations (e.g. PhET links) placed on the board. `sims`
   // (state) only tracks WHICH boxes exist, so add/remove re-renders the
@@ -612,7 +616,11 @@ export default function Whiteboard({ boardId }) {
   function drawGrid(ctx, grid) {
     if (!grid) return;
     const { x, y, size, cols } = grid;
+    // rows is cartesian-only and defaults to cols (a square) - see
+    // gridRenderer.js. Polar grids are always radially symmetric.
+    const rows = grid.type === "polar" ? cols : grid.rows || cols;
     const cell = size / cols;
+    const height = cell * rows;
     const scale = scaleRef.current;
 
     // The actual grid/graph-paper drawing (lines, axes, numbers, polar
@@ -625,7 +633,7 @@ export default function Whiteboard({ boardId }) {
       ctx.save();
       ctx.fillStyle = "#1E88E5";
       ctx.beginPath();
-      ctx.arc(x + size, y + size, 8 / scale, 0, Math.PI * 2);
+      ctx.arc(x + size, y + height, 8 / scale, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -979,6 +987,7 @@ export default function Whiteboard({ boardId }) {
 
   function handleOpenGridModal() {
     setGridModalInitialConfig(gridConfigRef.current);
+    setGridModalZoomScale(scaleRef.current);
     setGridModalOpen(true);
   }
 
@@ -986,30 +995,46 @@ export default function Whiteboard({ boardId }) {
     setGridModalOpen(false);
   }
 
-  // Applies the "ultimate grid tool" dialog's configuration. An existing
-  // grid keeps its current position/physical size (still adjustable by
-  // dragging its body/corner on the canvas as before) and just picks up
-  // the new type/labeling/appearance fields; a brand new grid is placed
-  // centered in the current view, same default physical size the old
-  // simple grid used.
+  // Applies the "ultimate grid tool" dialog's configuration. The dialog's
+  // `cellSizePx` field (a target ON-SCREEN size, not a physical unit) is
+  // the one source of truth for the grid's scale, converted to world units
+  // through the CURRENT zoom level (scaleRef.current) — that's what makes
+  // "more columns/rows/rings" REPEAT the same-size cell outward (stretching
+  // the grid, like resizing an image while keeping its resolution) instead
+  // of squeezing a fixed-size box into finer slices (which is what used to
+  // make cells shrink to invisibility whenever the division count went
+  // up), while ALSO keeping the grid's total footprint reasonable relative
+  // to whatever you're currently looking at — since the cell size is tied
+  // to zoom rather than a fixed real-world measurement, adding a lot more
+  // sections can't balloon the grid into something "massive" that no
+  // longer fits your view. An existing grid keeps its current top-left
+  // corner as the anchor it grows/shrinks from (matching the on-canvas
+  // corner-drag gesture); a brand new grid is centered in the current view.
   function handleApplyGridConfig(config) {
+    const cols = config.cols || 10;
+    const rows = config.type === "polar" ? cols : config.rows || cols;
+    const cellScreenPx = Math.max(4, config.cellSizePx || 48);
+    const cellWorldSize = cellScreenPx / scaleRef.current;
+    const newSize = cellWorldSize * cols;
+
     let updated;
     if (gridConfigRef.current) {
-      updated = { ...gridConfigRef.current, ...config };
+      updated = { ...gridConfigRef.current, ...config, cols, rows, size: newSize };
     } else {
-      const cols = config.cols || 10;
-      const defaultWorldSize = gridCellSizeCmRef.current * WORLD_UNITS_PER_CM * cols;
+      const newHeight = cellWorldSize * rows;
       const { width, height } = getPaneSize();
       const centerWorld = screenToWorld({ x: width / 2, y: height / 2 });
       updated = {
         ...config,
         cols,
-        x: centerWorld.x - defaultWorldSize / 2,
-        y: centerWorld.y - defaultWorldSize / 2,
-        size: defaultWorldSize,
+        rows,
+        x: centerWorld.x - newSize / 2,
+        y: centerWorld.y - newHeight / 2,
+        size: newSize,
       };
     }
     gridConfigRef.current = updated;
+    setGridCellSizeCm(cellWorldSize / WORLD_UNITS_PER_CM);
     fullRedraw();
     channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: updated } });
     saveGrid();
@@ -1810,7 +1835,10 @@ export default function Whiteboard({ boardId }) {
       if (!grid) {
         const worldPos = screenToWorld(pos);
         const cols = 10;
-        const defaultWorldSize = gridCellSizeCmRef.current * WORLD_UNITS_PER_CM * cols;
+        // Same zoom-relative sizing as the dialog (see handleApplyGridConfig)
+        // so a grid placed directly with the armed tool looks just as
+        // reasonable at your current zoom as one placed via the dialog.
+        const defaultWorldSize = (48 / scaleRef.current) * cols;
         const newGrid = {
           x: worldPos.x - defaultWorldSize / 2,
           y: worldPos.y - defaultWorldSize / 2,
@@ -1825,8 +1853,10 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
+      const rows = grid.type === "polar" ? grid.cols : grid.rows || grid.cols;
+      const height = (grid.size / grid.cols) * rows;
       const topLeftScreen = worldToScreen({ x: grid.x, y: grid.y });
-      const bottomRightScreen = worldToScreen({ x: grid.x + grid.size, y: grid.y + grid.size });
+      const bottomRightScreen = worldToScreen({ x: grid.x + grid.size, y: grid.y + height });
       const nearCorner = distance(pos, bottomRightScreen) < 24;
       const inBounds =
         pos.x >= topLeftScreen.x - 10 && pos.x <= bottomRightScreen.x + 10 &&
@@ -2726,6 +2756,7 @@ export default function Whiteboard({ boardId }) {
         {gridModalOpen && (
           <GridToolModal
             initialConfig={gridModalInitialConfig}
+            currentZoomScale={gridModalZoomScale}
             onApply={handleApplyGridConfig}
             onClose={handleCloseGridModal}
           />

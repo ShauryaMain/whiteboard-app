@@ -24,11 +24,23 @@ const PREVIEW_SIZE = 300;
 // board (or re-customizing one that's already there). The preview and
 // the actual board rendering share the exact same drawing code
 // (gridRenderer.js), so what you see here is exactly what you get.
-export default function GridToolModal({ initialConfig, onApply, onClose }) {
+export default function GridToolModal({ initialConfig, currentZoomScale, onApply, onClose }) {
   const existing = withDefaults(initialConfig);
+  const zoomScale = currentZoomScale || 1;
   const [config, setConfig] = useState(() => ({
     type: existing?.type || "cartesian",
     cols: existing?.cols || 10,
+    rows: existing?.rows || existing?.cols || 10,
+    // The grid's scale, as a target ON-SCREEN size (not a physical unit).
+    // This is what stays constant when you change how many columns/rows/
+    // rings there are, so adding more of them repeats the SAME-size cell
+    // outward (stretching the grid) instead of shrinking every cell to
+    // cram the same count into a fixed footprint. It's tied to your
+    // CURRENT zoom level rather than a fixed real-world measurement, so a
+    // grid always looks like a reasonable size on screen no matter how
+    // zoomed in or out you are, and adding a lot of sections can't balloon
+    // it into something bigger than your view.
+    cellSizePx: existing ? Math.round((existing.size / existing.cols) * zoomScale) : 48,
     unitsPerCell: existing?.unitsPerCell ?? 1,
     unitLabel: existing?.unitLabel ?? "",
     trig: existing?.trig ?? false,
@@ -45,17 +57,39 @@ export default function GridToolModal({ initialConfig, onApply, onClose }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // The preview canvas itself is resized to the grid's actual aspect
+    // ratio (rather than staying a fixed square and rendering a smaller
+    // rectangle inside it) so a stretched grid never leaves dead white
+    // space in the box - the canvas simply IS the shape of the grid.
+    // Bounded so an extreme ratio can't make the dialog unusably huge or
+    // a sliver too thin to read.
+    const rows = config.type === "polar" ? config.cols : config.rows || config.cols;
+    const cols = config.cols;
+    const MIN_DIM = 90;
+    const MAX_DIM = 460;
+    let cellPx = PREVIEW_SIZE / Math.max(cols, rows);
+    let boxW = cellPx * cols;
+    let boxH = cellPx * rows;
+    if (Math.max(boxW, boxH) > MAX_DIM) {
+      const s = MAX_DIM / Math.max(boxW, boxH);
+      cellPx *= s; boxW *= s; boxH *= s;
+    }
+    if (Math.min(boxW, boxH) < MIN_DIM) {
+      const s = Math.min(MIN_DIM / Math.min(boxW, boxH), MAX_DIM / Math.max(boxW, boxH));
+      cellPx *= s; boxW *= s; boxH *= s;
+    }
+
     const ratio = window.devicePixelRatio || 1;
-    canvas.width = PREVIEW_SIZE * ratio;
-    canvas.height = PREVIEW_SIZE * ratio;
-    canvas.style.width = PREVIEW_SIZE + "px";
-    canvas.style.height = PREVIEW_SIZE + "px";
+    canvas.width = boxW * ratio;
+    canvas.height = boxH * ratio;
+    canvas.style.width = boxW + "px";
+    canvas.style.height = boxH + "px";
     const ctx = canvas.getContext("2d");
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(0, 0, PREVIEW_SIZE, PREVIEW_SIZE);
+    ctx.clearRect(0, 0, boxW, boxH);
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, PREVIEW_SIZE, PREVIEW_SIZE);
-    const cellPx = PREVIEW_SIZE / config.cols;
+    ctx.fillRect(0, 0, boxW, boxH);
     renderGrid(ctx, config, { cellPx, originXPx: 0, originYPx: 0, lineScale: 1 });
   }, [config]);
 
@@ -109,14 +143,48 @@ export default function GridToolModal({ initialConfig, onApply, onClose }) {
               </div>
             </Field>
 
-            <Field label={isPolar ? "Rings" : "Divisions"}>
-              <NumberInput
-                value={config.cols}
-                min={2}
-                max={40}
-                onChange={(v) => set({ cols: v })}
-              />
+            <Field label="Cell size (scales with your zoom)">
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <NumberInput
+                  value={config.cellSizePx}
+                  min={10}
+                  max={200}
+                  step={2}
+                  onChange={(v) => set({ cellSizePx: v })}
+                />
+                <span style={{ fontSize: 13, color: "#666" }}>px per {isPolar ? "ring" : "square"}, at current zoom</span>
+              </div>
             </Field>
+
+            {isPolar ? (
+              <Field label="Rings">
+                <NumberInput
+                  value={config.cols}
+                  min={2}
+                  max={60}
+                  onChange={(v) => set({ cols: v })}
+                />
+              </Field>
+            ) : (
+              <Field label="Sections (stretch the grid by repeating cells outward)">
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <NumberInput
+                    value={config.cols}
+                    min={2}
+                    max={60}
+                    onChange={(v) => set({ cols: v })}
+                  />
+                  <span style={{ fontSize: 12, color: "#999" }}>columns</span>
+                  <NumberInput
+                    value={config.rows}
+                    min={2}
+                    max={60}
+                    onChange={(v) => set({ rows: v })}
+                  />
+                  <span style={{ fontSize: 12, color: "#999" }}>rows</span>
+                </div>
+              </Field>
+            )}
 
             {isPolar && (
               <Field label="Spokes (angle divisions)">
