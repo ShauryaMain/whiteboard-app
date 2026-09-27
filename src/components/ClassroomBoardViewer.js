@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import ReferencePane from "./ReferencePane";
+import { renderGrid } from "@/lib/gridRenderer";
+import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
+import { translateStroke, translateText, translateImage } from "@/lib/boardObjects";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -48,11 +51,17 @@ function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
 
 function drawStroke(ctx, stroke) {
   if (!stroke || !stroke.points || stroke.points.length < 2) return;
-  ctx.globalAlpha = stroke.opacity ?? 1;
-  ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
   if (stroke.tool === "eraser") {
+    // Punch a transparent hole (like the teacher's board) so the page
+    // background shows through instead of a white smear.
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.strokeStyle = "#000000";
     drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
+    ctx.globalCompositeOperation = "source-over";
   } else {
+    ctx.globalAlpha = stroke.opacity ?? 1;
+    ctx.strokeStyle = stroke.color;
     ctx.lineWidth = stroke.width;
     ctx.lineCap = "round";
     smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
@@ -108,43 +117,12 @@ function drawTexts(ctx, textsArr) {
   }
 }
 
+// Same graph renderer as the teacher's board (and the graph dialog's
+// preview), so students see exactly the graph the teacher placed.
 function drawGrid(ctx, grid, scale) {
   if (!grid) return;
   const { x, y, size, cols } = grid;
-  const cell = size / cols;
-
-  ctx.save();
-  ctx.strokeStyle = "#cfd8e3";
-  ctx.lineWidth = 1 / scale;
-  for (let i = 0; i <= cols; i++) {
-    const gx = x + i * cell;
-    ctx.beginPath();
-    ctx.moveTo(gx, y);
-    ctx.lineTo(gx, y + size);
-    ctx.stroke();
-  }
-  for (let j = 0; j <= cols; j++) {
-    const gy = y + j * cell;
-    ctx.beginPath();
-    ctx.moveTo(x, gy);
-    ctx.lineTo(x + size, gy);
-    ctx.stroke();
-  }
-
-  const mid = cols / 2;
-  ctx.strokeStyle = "#9aa7b8";
-  ctx.lineWidth = 1.5 / scale;
-  const midX = x + mid * cell;
-  const midY = y + mid * cell;
-  ctx.beginPath();
-  ctx.moveTo(midX, y);
-  ctx.lineTo(midX, y + size);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(x, midY);
-  ctx.lineTo(x + size, midY);
-  ctx.stroke();
-  ctx.restore();
+  renderGrid(ctx, grid, { cellPx: size / cols, originXPx: x, originYPx: y, lineScale: 1 / scale });
 }
 
 export default function ClassroomBoardViewer({ boardId }) {
@@ -159,6 +137,9 @@ export default function ClassroomBoardViewer({ boardId }) {
   const strokesRef = useRef([]);
   const textsRef = useRef([]);
   const gridConfigRef = useRef(null);
+  const backgroundRef = useRef("blank");
+  const backgroundCssKeyRef = useRef("");
+  const pageBgRef = useRef(null);
   const touchPoints = useRef(new Map());
   const panZoomState = useRef(null);
   const panDragActive = useRef(false);
@@ -167,12 +148,16 @@ export default function ClassroomBoardViewer({ boardId }) {
 
   const [strokes, setStrokes] = useState([]);
   const [texts, setTexts] = useState([]);
+  const [images, setImages] = useState([]);
+  const imagesRef = useRef([]);
+  const imageNodesRef = useRef({});
   const [connectionStatus, setConnectionStatus] = useState("connecting"); // connecting | live | waiting
   const [referenceDoc, setReferenceDoc] = useState(null);
   const [referenceStrokes, setReferenceStrokes] = useState([]);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { textsRef.current = texts; }, [texts]);
+  useEffect(() => { imagesRef.current = images; }, [images]);
 
   function getPaneSize() {
     const el = boardPaneRef.current;
@@ -186,6 +171,19 @@ export default function ClassroomBoardViewer({ boardId }) {
       x: (p.x - panRef.current.x) / scaleRef.current,
       y: (p.y - panRef.current.y) / scaleRef.current,
     };
+  }
+
+  function repositionImages() {
+    const scale = scaleRef.current;
+    const pan = panRef.current;
+    for (const img of imagesRef.current) {
+      const el = imageNodesRef.current[img.id];
+      if (!el) continue;
+      el.style.left = img.x * scale + pan.x + "px";
+      el.style.top = img.y * scale + pan.y + "px";
+      el.style.width = img.width * scale + "px";
+      el.style.height = img.height * scale + "px";
+    }
   }
 
   function fullRedraw() {
@@ -204,6 +202,8 @@ export default function ClassroomBoardViewer({ boardId }) {
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
     drawTexts(ctx, textsRef.current);
     drawGrid(ctx, gridConfigRef.current, scale);
+    applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
+    repositionImages();
   }
 
   // Realtime: connects to the board's own existing channel (the exact
@@ -226,6 +226,8 @@ export default function ClassroomBoardViewer({ boardId }) {
       setStrokes(payload.strokes || []);
       setTexts(payload.texts || []);
       gridConfigRef.current = payload.grid || null;
+      backgroundRef.current = normalizeBackground(payload.background);
+      setImages(payload.images || []);
       setReferenceDoc(payload.referenceDoc || null);
       setReferenceStrokes(payload.referenceStrokes || []);
       setConnectionStatus("live");
@@ -304,9 +306,42 @@ export default function ClassroomBoardViewer({ boardId }) {
       fullRedraw();
     });
 
+    // Selection / copy-paste / image events from the teacher's board.
+    const mergeById = (prev, added) => {
+      const ids = new Set(added.map((o) => o.id));
+      return [...prev.filter((o) => !ids.has(o.id)), ...added];
+    };
+    channel.on("broadcast", { event: "objects-add" }, ({ payload }) => {
+      if (payload.strokes?.length) setStrokes((prev) => mergeById(prev, payload.strokes));
+      if (payload.texts?.length) setTexts((prev) => mergeById(prev, payload.texts));
+      if (payload.images?.length) setImages((prev) => mergeById(prev, payload.images));
+    });
+    channel.on("broadcast", { event: "objects-remove" }, ({ payload }) => {
+      const s = new Set(payload.strokes || []), t = new Set(payload.texts || []), i = new Set(payload.images || []);
+      if (s.size) setStrokes((prev) => prev.filter((x) => !s.has(x.id)));
+      if (t.size) setTexts((prev) => prev.filter((x) => !t.has(x.id)));
+      if (i.size) setImages((prev) => prev.filter((x) => !i.has(x.id)));
+    });
+    channel.on("broadcast", { event: "objects-move" }, ({ payload }) => {
+      const { dx, dy } = payload;
+      const s = new Set(payload.strokes || []), t = new Set(payload.texts || []), i = new Set(payload.images || []);
+      if (s.size) setStrokes((prev) => prev.map((x) => (s.has(x.id) ? translateStroke(x, dx, dy) : x)));
+      if (t.size) setTexts((prev) => prev.map((x) => (t.has(x.id) ? translateText(x, dx, dy) : x)));
+      if (i.size) setImages((prev) => prev.map((x) => (i.has(x.id) ? translateImage(x, dx, dy) : x)));
+    });
+    channel.on("broadcast", { event: "image-update" }, ({ payload }) => {
+      if (payload.image) setImages((prev) => prev.map((x) => (x.id === payload.image.id ? payload.image : x)));
+    });
+
+    channel.on("broadcast", { event: "background-set" }, ({ payload }) => {
+      backgroundRef.current = normalizeBackground(payload.background);
+      fullRedraw();
+    });
+
     channel.on("broadcast", { event: "clear" }, () => {
       setStrokes([]);
       setTexts([]);
+      setImages([]);
     });
 
     channel.on("broadcast", { event: "reference-set" }, ({ payload }) => {
@@ -495,7 +530,7 @@ export default function ClassroomBoardViewer({ boardId }) {
 
   useEffect(() => {
     fullRedraw();
-  }, [strokes, texts]);
+  }, [strokes, texts, images]);
 
   const showReferencePane = !!referenceDoc;
 
@@ -522,7 +557,28 @@ export default function ClassroomBoardViewer({ boardId }) {
         </div>
       )}
 
-      <div ref={boardPaneRef} style={{ position: "relative", flex: 1, height: "100%", overflow: "hidden" }}>
+      <div ref={boardPaneRef} style={{ position: "relative", flex: 1, height: "100%", overflow: "hidden", isolation: "isolate" }}>
+        {/* Page pattern layer behind the transparent ink canvas. */}
+        <div
+          ref={pageBgRef}
+          aria-hidden="true"
+          style={{ position: "absolute", inset: 0, zIndex: -1, backgroundColor: "#ffffff", pointerEvents: "none" }}
+        />
+        {images.map((img) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={img.id}
+            ref={(el) => {
+              if (el) imageNodesRef.current[img.id] = el;
+              else delete imageNodesRef.current[img.id];
+            }}
+            src={img.src}
+            alt=""
+            draggable={false}
+            onLoad={repositionImages}
+            style={{ position: "absolute", left: 0, top: 0, zIndex: -1, maxWidth: "none", pointerEvents: "none", userSelect: "none" }}
+          />
+        ))}
         <button
           onClick={() => router.push("/join")}
           style={{
@@ -567,7 +623,6 @@ export default function ClassroomBoardViewer({ boardId }) {
           style={{
             display: "block",
             touchAction: "none",
-            background: "#ffffff",
             WebkitUserSelect: "none",
             userSelect: "none",
             WebkitTouchCallout: "none",

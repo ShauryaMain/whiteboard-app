@@ -3,20 +3,22 @@
 import { useState, useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import d from "./Dialog.module.css";
 
-export default function ShareModal({ onClose, onShare }) {
+// Share a board with other signed-in people by email. Shows who already
+// has it, and lets the owner take someone off.
+export default function ShareModal({ board, onClose, onShare, onRemove }) {
   const [email, setEmail] = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const debounceRef = useRef(null);
+  const people = (board && board.shared_with) || [];
+  const peopleKey = people.join(",");
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const query = email.trim();
-    if (query.length < 2) {
-      setSuggestions([]);
-      return;
-    }
+    if (query.length < 2) return undefined;
     debounceRef.current = setTimeout(async () => {
       const { data, error } = await supabase
         .from("profiles")
@@ -25,109 +27,107 @@ export default function ShareModal({ onClose, onShare }) {
         .limit(5);
       if (!error && data) {
         setSuggestions(
-          data.map((d) => d.email).filter((e) => e.toLowerCase() !== query.toLowerCase())
+          data
+            .map((row) => row.email)
+            .filter((e) => e && e.toLowerCase() !== query.toLowerCase() && !peopleKey.split(",").includes(e.toLowerCase()))
         );
       }
     }, 250);
     return () => clearTimeout(debounceRef.current);
-  }, [email]);
+  }, [email, peopleKey]);
+
+  const trimmed = email.trim();
+  const visibleSuggestions = showSuggestions && trimmed.length >= 2 ? suggestions : [];
 
   function handleSubmit(e) {
     e.preventDefault();
-    const trimmed = email.trim();
     if (!trimmed) return;
     onShare(trimmed);
+    setEmail("");
+    setSuggestions([]);
   }
 
-  function handleSelectSuggestion(suggestedEmail) {
+  function handlePick(suggested) {
     setSuggestions([]);
     setShowSuggestions(false);
-    onShare(suggestedEmail);
+    setEmail("");
+    onShare(suggested);
   }
 
   return (
-    <div onClick={onClose} style={overlayStyle}>
-      <div onClick={(e) => e.stopPropagation()} style={modalStyle}>
-        <div style={headerStyle}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: 0, color: "#1a1a1a" }}>Share board</h2>
-          <button onClick={onClose} style={closeBtnStyle}>
-            <X size={18} color="#666" />
+    <div className={d.overlay} onClick={onClose}>
+      <form
+        className={d.card}
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-title"
+      >
+        <div className={d.header}>
+          <div className={d.titleBlock}>
+            <h2 id="share-title" className={d.title}>Share “{(board && board.name) || "Untitled board"}”</h2>
+            <p className={d.subtitle}>
+              People you add can open this board from their own boards list and draw on it with you.
+            </p>
+          </div>
+          <button type="button" className={d.close} onClick={onClose} aria-label="Close">
+            <X size={18} />
           </button>
         </div>
-        <form onSubmit={handleSubmit} style={{ position: "relative" }}>
+
+        <label className={d.label}>
+          Email address
           <input
             autoFocus
             type="email"
+            className={d.input}
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
               setShowSuggestions(true);
             }}
             onFocus={() => setShowSuggestions(true)}
-            placeholder="student@gmail.com"
+            placeholder="name@example.com"
             autoComplete="off"
-            style={inputStyle}
           />
+        </label>
 
-          {showSuggestions && suggestions.length > 0 && (
-            <div style={dropdownStyle}>
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => handleSelectSuggestion(s)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = "#F0F6FC")}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                  style={suggestionStyle}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
+        {visibleSuggestions.length > 0 && (
+          <div className={d.suggestions} role="listbox" aria-label="Matching people">
+            {visibleSuggestions.map((s) => (
+              <button key={s} type="button" role="option" aria-selected="false" className={d.suggestion} onClick={() => handlePick(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
 
-          <button type="submit" style={submitBtnStyle}>
+        <div className={d.actions}>
+          <button type="submit" className={`${d.btn} ${d.btnPrimary}`} disabled={!trimmed}>
             Share
           </button>
-        </form>
-      </div>
+        </div>
+
+        <div className={d.people}>
+          <div className={d.peopleHeading}>Who has access</div>
+          {people.length === 0 ? (
+            <div className={d.note}>Only you so far. Students joining a live class don&apos;t need to be added here — they use the class code.</div>
+          ) : (
+            people.map((p) => (
+              <div key={p} className={d.person}>
+                <span className={d.avatar}>{p.charAt(0)}</span>
+                <span className={d.personEmail}>{p}</span>
+                {onRemove && (
+                  <button type="button" className={d.linkBtn} onClick={() => onRemove(p)} aria-label={`Remove ${p}`}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </form>
     </div>
   );
 }
-
-const overlayStyle = {
-  position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)",
-  display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
-};
-
-const modalStyle = {
-  background: "#fff", borderRadius: 14, padding: 24, width: 340,
-  boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
-};
-
-const headerStyle = {
-  display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16,
-};
-
-const closeBtnStyle = { border: "none", background: "none", cursor: "pointer", padding: 4 };
-
-const inputStyle = {
-  width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid #ddd",
-  fontSize: 14, color: "#1a1a1a", background: "#ffffff", boxSizing: "border-box", marginBottom: 8,
-};
-
-const dropdownStyle = {
-  position: "absolute", top: 46, left: 0, right: 0, background: "#fff",
-  border: "1px solid #eee", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-  zIndex: 5, maxHeight: 160, overflowY: "auto",
-};
-
-const suggestionStyle = {
-  display: "block", width: "100%", textAlign: "left", padding: "9px 12px",
-  border: "none", background: "transparent", cursor: "pointer", fontSize: 13.5, color: "#1a1a1a",
-};
-
-const submitBtnStyle = {
-  width: "100%", padding: "10px 0", borderRadius: 8, border: "none",
-  background: "#1E88E5", color: "#fff", fontSize: 14, fontWeight: 500, cursor: "pointer", marginTop: 8,
-};

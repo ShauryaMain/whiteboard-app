@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "./supabaseClient";
+import SignInScreen from "@/components/SignInScreen";
 
 const AuthContext = createContext(null);
 
@@ -45,31 +46,8 @@ export function AuthProvider({ children }) {
     return <AuthContext.Provider value={{ user, signOut }}>{children}</AuthContext.Provider>;
   }
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#1a1a1a" }}>
-        Loading…
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", gap: 20, background: "#F5F6F8" }}>
-        <h1 style={{ fontSize: 24, color: "#1a1a1a", fontWeight: 600 }}>Whiteboard</h1>
-        <button
-          onClick={signInWithGoogle}
-          style={{
-            display: "flex", alignItems: "center", gap: 10, padding: "12px 22px",
-            borderRadius: 8, border: "1px solid #ddd", background: "#fff",
-            fontSize: 15, fontWeight: 500, color: "#1a1a1a", cursor: "pointer",
-            boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-          }}
-        >
-          Sign in with Google
-        </button>
-      </div>
-    );
+  if (loading || !user) {
+    return <SignInScreen loading={loading} onSignIn={signInWithGoogle} />;
   }
 
   return <AuthContext.Provider value={{ user, signOut }}>{children}</AuthContext.Provider>;

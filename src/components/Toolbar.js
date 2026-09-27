@@ -1,322 +1,503 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import {
-  Pencil, Highlighter, Eraser, Type, MousePointer2, Ruler, Compass, Grid3x3, Hand, X, Home,
-  FileText, Calculator, Users, Undo2, Redo2, Trash2, Link2, CheckCircle2, Atom,
+  MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
+  Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
+  Check, ChevronDown, Info, Maximize, NotebookText, ImagePlus, ClipboardPaste, BoxSelect,
 } from "lucide-react";
+import PalmSafeButton from "./PalmSafeButton";
+import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
+import s from "./StudioChrome.module.css";
 
-const PRESET_COLORS = ["#1a1a1a", "#E53935", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00897B"];
+const INK_COLORS = [
+  ["Black", "#1a1a1a"],
+  ["Red", "#E53935"],
+  ["Orange", "#FB8C00"],
+  ["Green", "#43A047"],
+  ["Blue", "#1E88E5"],
+  ["Purple", "#8E24AA"],
+  ["Teal", "#00897B"],
+];
 
-export default function Toolbar({
-  tool, setTool, color, setColor, strokeWidth, setStrokeWidth,
-  onUndo, onRedo, onClear, canUndo, canRedo,
-  isOwner, onCopyLink, onEndSession, saveStatus,
-  rulerActive, onToggleRuler, onResetView,
-  compassActive, onToggleCompass,
-  gridToolActive, onToggleGrid, onOpenGridModal, onRemoveGrid, gridCellSizeCm, onSetGridCellSize,
-  panToolActive, onTogglePan,
-  canUseReferencePane, hasReferenceDoc, onReferenceToolClick, referenceUploadStatus,
-  calculatorActive, onToggleCalculator, onStartLiveClass, onOpenSimModal,
-}) {
-  const [openPopup, setOpenPopup] = useState(null); // null | "pen" | "highlighter" | "eraser"
-  const [popupAnchor, setPopupAnchor] = useState(null); // {x, y} in viewport pixels
-  const popoverRef = useRef(null);
+// Plain-English explanation shown for whatever is active, so every tool
+// explains itself without a manual.
+const TOOL_HINTS = {
+  select: ["Select", "Tap anything, or drag a box around several things. Then drag to move, or use Copy, Cut, Duplicate or Delete."],
+  move: ["Move", "Drag to move around the board. Pinch with two fingers to zoom."],
+  pen: ["Pen", "Draw freehand. For straight lines, turn on the Ruler in Maths."],
+  highlighter: ["Highlight", "See-through ink for marking things up."],
+  eraser: ["Eraser", "Rub out anything you drag across."],
+  text: ["Text", "Tap the board where you want to type."],
+};
+const RULER_HINT = ["Ruler", "Drag it to move, drag its round handle to rotate, then draw along its edge."];
+const COMPASS_HINT = ["Compass", "Drag the pin to set the centre and the pencil end to set the size, then draw to trace the circle."];
+const SELECTED_HINT = ["Selected", "Drag to move it, or use the bar next to it. Tap empty space to deselect."];
+const GRAPH_MOVE_HINT = ["Graph", "Drag the graph to move it, or drag its blue corner dot to resize it."];
+
+const ICON = { size: 22, strokeWidth: 1.8 };
+const SMALL_ICON = { size: 18, strokeWidth: 1.8 };
+
+export default function Toolbar(props) {
+  const {
+    boardName, statusText, isOwner,
+    tool, panToolActive, onSelectTool, onSelectMove,
+    color, setColor, strokeWidth, setStrokeWidth,
+    onUndo, onRedo, onClear, canUndo, canRedo,
+    rulerActive, onToggleRuler, compassActive, onToggleCompass,
+    getHasGrid, gridToolActive, onOpenGraph, onFinishGraphMove, onRemoveGrid,
+    background, onSetBackground,
+    onInsertImage, onPaste, onSelectAll, hasSelection,
+    calculatorActive, onToggleCalculator,
+    canInsertReference, hasReferenceDoc, onReferenceToolClick, onOpenSimModal,
+    onCopyLink, onStartLiveClass, onEndSession,
+    liveClassCode, classRoster, onViewStudent, onEndLiveClass,
+    penSeen, pencilOnly, onSetPencilOnly,
+    zoomPercent, onResetView,
+  } = props;
+
+  // menu: null | { id: "maths" | "insert" | "page" | "roster", left, top, hasGrid }
+  const [menu, setMenu] = useState(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
+    if (!menu) return undefined;
     function handleOutside(e) {
-      if (e.target.closest("[data-tool-trigger]")) return;
-      if (popoverRef.current && popoverRef.current.contains(e.target)) return;
-      setOpenPopup(null);
+      if (e.target.closest && e.target.closest("[data-menu-trigger]")) return;
+      if (menuRef.current && menuRef.current.contains(e.target)) return;
+      setMenu(null);
     }
-    if (openPopup) document.addEventListener("pointerdown", handleOutside);
-    return () => document.removeEventListener("pointerdown", handleOutside);
-  }, [openPopup]);
+    function handleKey(e) {
+      if (e.key === "Escape") setMenu(null);
+    }
+    document.addEventListener("pointerdown", handleOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [menu]);
 
-  function handleToolClick(name, e) {
-    // Measured here and used with position:fixed on a portaled element —
-    // both are genuinely viewport-relative in that combination, since the
-    // portal renders outside the whiteboard pane's transformed container
-    // entirely. This is different from (and safe, unlike) measuring a
-    // rect and applying it to a position:fixed element still nested
-    // inside that transformed pane.
+  function toggleMenu(id, e, width = 320) {
+    if (menu && menu.id === id) {
+      setMenu(null);
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
-    setPopupAnchor({ x: rect.left + rect.width / 2, y: rect.top });
-    if (tool !== name) {
-      setTool(name);
-      setOpenPopup(name);
-    } else {
-      setOpenPopup((prev) => (prev === name ? null : name));
-    }
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    setMenu({ id, left, top: rect.bottom + 6, hasGrid: getHasGrid ? getHasGrid() : false });
   }
 
-  function handleGridClick() {
-    const wasActive = gridToolActive;
-    onToggleGrid();
-    if (!wasActive) onOpenGridModal();
+  function runAndClose(fn) {
+    return () => {
+      setMenu(null);
+      fn?.();
+    };
   }
 
-  const popoverContent = openPopup && popupAnchor && (
-    <div
-      ref={popoverRef}
-      style={{
-        ...popoverStyle,
-        left: popupAnchor.x,
-        top: popupAnchor.y - 8,
-        transform: "translate(-50%, -100%)",
-      }}
-    >
-      <>
-        {(openPopup === "pen" || openPopup === "highlighter") && (
-            <>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                {PRESET_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    onClick={() => setColor(c)}
-                    aria-label={`Color ${c}`}
-                    style={{
-                      width: 26, height: 26, borderRadius: "50%", background: c,
-                      border: color === c ? "3px solid #1a1a1a" : "2px solid transparent",
-                      boxShadow: "0 0 0 1px #ddd", cursor: "pointer", padding: 0, flexShrink: 0,
-                    }}
+  const activeTool = panToolActive ? "move" : tool;
+  const isInk = activeTool === "pen" || activeTool === "highlighter";
+
+  let hint = TOOL_HINTS[activeTool] || TOOL_HINTS.pen;
+  if (gridToolActive) hint = GRAPH_MOVE_HINT;
+  else if (activeTool === "select" && hasSelection) hint = SELECTED_HINT;
+  else if (compassActive && activeTool !== "move") hint = COMPASS_HINT;
+  else if (rulerActive && activeTool !== "move") hint = RULER_HINT;
+
+  const menuPortal =
+    menu && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={menuRef}
+            className={s.menu}
+            style={{ left: menu.left, top: menu.top, width: menu.id === "roster" ? 280 : 320 }}
+            role="menu"
+          >
+            {menu.id === "maths" && (
+              <>
+                <MenuItem
+                  icon={<Ruler {...SMALL_ICON} />}
+                  title="Ruler"
+                  on={rulerActive}
+                  desc="Draw perfectly straight lines and measure lengths."
+                  onPress={runAndClose(onToggleRuler)}
+                />
+                <MenuItem
+                  icon={<DraftingCompass {...SMALL_ICON} />}
+                  title="Compass"
+                  on={compassActive}
+                  desc="Draw circles and arcs around a fixed centre."
+                  onPress={runAndClose(onToggleCompass)}
+                />
+                <MenuItem
+                  icon={<Grid3x3 {...SMALL_ICON} />}
+                  title={menu.hasGrid ? "Edit graph" : "Graph"}
+                  desc={
+                    menu.hasGrid
+                      ? "Change the graph's scale, labels or style, then move it into place."
+                      : "Place axes you can customise — scale, trig labels, polar."
+                  }
+                  onPress={runAndClose(onOpenGraph)}
+                />
+                {menu.hasGrid && (
+                  <MenuItem
+                    danger
+                    icon={<Grid3x3 {...SMALL_ICON} />}
+                    title="Remove graph"
+                    desc="Takes the graph off the board for everyone."
+                    onPress={runAndClose(onRemoveGrid)}
                   />
-                ))}
-                <label
-                  style={{
-                    width: 26, height: 26, borderRadius: "50%", overflow: "hidden",
-                    border: "2px solid #ddd", cursor: "pointer", display: "block",
-                    position: "relative", flexShrink: 0,
-                  }}
-                >
-                  <input
-                    type="color"
-                    value={color}
-                    onChange={(e) => setColor(e.target.value)}
-                    style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }}
+                )}
+                <MenuItem
+                  icon={<Calculator {...SMALL_ICON} />}
+                  title="Calculator"
+                  on={calculatorActive}
+                  desc="A scientific calculator you can drag anywhere."
+                  onPress={runAndClose(onToggleCalculator)}
+                />
+              </>
+            )}
+            {menu.id === "insert" && (
+              <>
+                {canInsertReference && (
+                  <MenuItem
+                    insert={!hasReferenceDoc}
+                    danger={hasReferenceDoc}
+                    icon={hasReferenceDoc ? <FileX {...SMALL_ICON} /> : <FileText {...SMALL_ICON} />}
+                    title={hasReferenceDoc ? "Remove reference document" : "Reference document"}
+                    desc={
+                      hasReferenceDoc
+                        ? "Closes the PDF or image beside the board for everyone."
+                        : "Open a PDF or image beside the board to read and mark up."
+                    }
+                    onPress={runAndClose(onReferenceToolClick)}
                   />
-                  <div style={{ width: "100%", height: "100%", background: "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }} />
-                </label>
-              </div>
-              <Divider horizontal />
-            </>
-          )}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-            <span
-              style={{
-                width: Math.max(6, Math.min(strokeWidth, 22)),
-                height: Math.max(6, Math.min(strokeWidth, 22)),
-                borderRadius: "50%",
-                background: openPopup === "eraser" ? "#ccc" : color,
-                flexShrink: 0,
-              }}
-            />
-            <input
-              type="range"
-              min={1}
-              max={40}
-              value={strokeWidth}
-              onChange={(e) => setStrokeWidth(Number(e.target.value))}
-              style={{ flex: 1, height: 36 }}
-            />
-          </div>
-      </>
-    </div>
-  );
+                )}
+                {onInsertImage && (
+                  <MenuItem
+                    insert
+                    icon={<ImagePlus {...SMALL_ICON} />}
+                    title="Image"
+                    desc="Add a picture or diagram from your files. You can also paste one or drag it in."
+                    onPress={runAndClose(onInsertImage)}
+                  />
+                )}
+                <MenuItem
+                  insert
+                  icon={<Atom {...SMALL_ICON} />}
+                  title="Simulation"
+                  desc="Embed an interactive PhET simulation students can use live."
+                  onPress={runAndClose(onOpenSimModal)}
+                />
+              </>
+            )}
+            {menu.id === "page" && (
+              <>
+                <div className={s.menuHeading}>Page background</div>
+                <div className={s.pageGrid}>
+                  {BOARD_BACKGROUNDS.map((bg) => {
+                    const on = (background || "blank") === bg.id;
+                    return (
+                      <PalmSafeButton
+                        key={bg.id}
+                        role="menuitemradio"
+                        aria-checked={on}
+                        aria-label={`${bg.label} — ${bg.desc}`}
+                        className={`${s.pageTile} ${on ? s.pageTileOn : ""}`}
+                        onPress={runAndClose(() => onSetBackground?.(bg.id))}
+                      >
+                        <span className={s.pagePreview} style={backgroundCss(bg.id, 0.75, { x: 6, y: 6 })} />
+                        <span className={s.pageLabel}>
+                          {bg.label}
+                          {on && <Check size={13} strokeWidth={2.6} />}
+                        </span>
+                      </PalmSafeButton>
+                    );
+                  })}
+                </div>
+                <div className={s.menuFootnote}>Changes the page for everyone on this board. Your drawings stay put.</div>
+              </>
+            )}
+            {menu.id === "roster" && (
+              <>
+                {classRoster.length === 0 ? (
+                  <div className={s.rosterEmpty}>Waiting for students to join…</div>
+                ) : (
+                  classRoster.map((student) => (
+                    <PalmSafeButton
+                      key={student.studentId}
+                      className={s.rosterItem}
+                      onPress={runAndClose(() => onViewStudent(student))}
+                    >
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2E9E5B", flexShrink: 0 }} />
+                      {student.name}
+                    </PalmSafeButton>
+                  ))
+                )}
+              </>
+            )}
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
-    <>
-      {popoverContent && typeof document !== "undefined" && createPortal(popoverContent, document.body)}
+    <div className={s.chrome} onContextMenu={(e) => e.preventDefault()}>
+      {menuPortal}
 
-      <div className="toolbar-scroll" onContextMenu={(e) => e.preventDefault()} style={barStyle}>
-        <div style={groupStyle}>
-          <IconButton active={panToolActive} onClick={onTogglePan} label="Pan">
-            <Hand size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton active={tool === "select"} onClick={() => setTool("select")} label="Select">
-            <MousePointer2 size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton active={tool === "pen"} onClick={(e) => handleToolClick("pen", e)} label="Pen" dataAttr>
-            <Pencil size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton active={tool === "highlighter"} onClick={(e) => handleToolClick("highlighter", e)} label="Highlighter" dataAttr>
-            <Highlighter size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton active={tool === "eraser"} onClick={(e) => handleToolClick("eraser", e)} label="Eraser" dataAttr>
-            <Eraser size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton active={tool === "text"} onClick={() => setTool("text")} label="Text">
-            <Type size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton active={rulerActive} onClick={onToggleRuler} label="Ruler">
-            <Ruler size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton active={compassActive} onClick={onToggleCompass} label="Compass">
-            <Compass size={19} strokeWidth={2} />
-          </IconButton>
-          <div style={{ position: "relative" }}>
-            <IconButton active={gridToolActive} onClick={handleGridClick} label="Grid" dataAttr>
-              <Grid3x3 size={19} strokeWidth={2} />
-            </IconButton>
+      {/* ---------- App bar ---------- */}
+      <div className={s.appBar}>
+        <Link href="/" className={s.homeLink} aria-label="All boards">
+          <House size={18} strokeWidth={1.8} />
+        </Link>
+        <div className={s.titleBlock}>
+          <div className={s.title}>{boardName || "Untitled board"}</div>
+          <div className={s.status}>{statusText}</div>
+        </div>
+        <div className={s.spacer} />
+
+        {liveClassCode && (
+          <div className={s.livePill}>
+            <span className={s.liveDot} />
+            <span style={{ fontWeight: 600 }}>LIVE</span>
+            <span className={s.liveCode}>{liveClassCode}</span>
+            <PalmSafeButton
+              data-menu-trigger="true"
+              aria-expanded={menu?.id === "roster"}
+              className={`${s.livePillBtn} ${menu?.id === "roster" ? s.livePillBtnOn : ""}`}
+              onPress={(e) => toggleMenu("roster", e, 280)}
+            >
+              Students{classRoster.length > 0 ? ` (${classRoster.length})` : ""}
+            </PalmSafeButton>
+            {isOwner && (
+              <PalmSafeButton className={s.livePillBtn} onPress={onEndLiveClass}>
+                End
+              </PalmSafeButton>
+            )}
           </div>
-          {canUseReferencePane && isOwner && (
-            <IconButton
-              active={hasReferenceDoc}
-              onClick={onReferenceToolClick}
-              label={hasReferenceDoc ? "Remove reference doc" : "Add reference PDF/image"}
-            >
-              <FileText size={19} strokeWidth={2} />
-            </IconButton>
-          )}
-          <IconButton active={calculatorActive} onClick={onToggleCalculator} label="Calculator">
-            <Calculator size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton onClick={onOpenSimModal} label="Embed a simulation (e.g. PhET)">
-            <Atom size={19} strokeWidth={2} />
-          </IconButton>
-        </div>
+        )}
 
-        <Divider />
-
-        <IconButton onClick={onRemoveGrid} label="Remove grid">
-          <span style={{ position: "relative", display: "inline-flex" }}>
-            <Grid3x3 size={19} strokeWidth={2} />
-            <span
-              style={{
-                position: "absolute", bottom: -5, right: -5, background: "#fff",
-                borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-              }}
-            >
-              <X size={11} strokeWidth={3.5} color="#d32f2f" />
-            </span>
-          </span>
-        </IconButton>
-
-        <Divider />
-
-        <IconButton onClick={onResetView} label="Reset view">
-          <Home size={19} strokeWidth={2} />
-        </IconButton>
-
-        <Divider />
-
-        <div style={groupStyle}>
-          <IconButton onClick={onUndo} disabled={!canUndo} label="Undo">
-            <Undo2 size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton onClick={onRedo} disabled={!canRedo} label="Redo">
-            <Redo2 size={19} strokeWidth={2} />
-          </IconButton>
-          <IconButton onClick={onClear} label="Clear">
-            <Trash2 size={19} strokeWidth={2} />
-          </IconButton>
-        </div>
+        {isOwner && (
+          <>
+            <PalmSafeButton className={s.appBtn} onPress={onCopyLink}>
+              <Link2 size={16} strokeWidth={1.8} />
+              <span className={s.longLabel}>Copy student link</span>
+              <span className={s.shortLabel}>Link</span>
+            </PalmSafeButton>
+            {!liveClassCode && (
+              <PalmSafeButton className={s.appBtn} onPress={onStartLiveClass}>
+                <Users size={16} strokeWidth={1.8} />
+                <span className={s.longLabel}>Start live class</span>
+                <span className={s.shortLabel}>Live</span>
+              </PalmSafeButton>
+            )}
+            <PalmSafeButton className={`${s.appBtn} ${s.appBtnPrimary}`} onPress={onEndSession}>
+              <Check size={16} strokeWidth={2.2} />
+              <span className={s.longLabel}>Finish &amp; save</span>
+              <span className={s.shortLabel}>Save</span>
+            </PalmSafeButton>
+          </>
+        )}
       </div>
 
-      {isOwner && (
-        <div style={ownerBarStyle}>
-          {referenceUploadStatus && <span style={statusStyle}>{referenceUploadStatus}</span>}
-          {saveStatus && <span style={statusStyle}>{saveStatus}</span>}
-          <IconButton onClick={onCopyLink} label="Copy student link" pill>
-            <Link2 size={16} strokeWidth={2} />
-          </IconButton>
-          <IconButton onClick={onStartLiveClass} label="Live class" pill>
-            <Users size={16} strokeWidth={2} />
-          </IconButton>
-          <IconButton onClick={onEndSession} label="End session & save" pill primary>
-            <CheckCircle2 size={16} strokeWidth={2} />
-          </IconButton>
+      {/* ---------- Tool row ---------- */}
+      <div className={s.toolRow} role="toolbar" aria-label="Board tools">
+        <ToolButton label="Select" active={activeTool === "select"} onPress={() => onSelectTool("select")}>
+          <MousePointer2 {...ICON} />
+        </ToolButton>
+        <ToolButton label="Move" active={activeTool === "move"} onPress={onSelectMove}>
+          <Hand {...ICON} />
+        </ToolButton>
+
+        <div className={s.divider} />
+
+        <ToolButton label="Pen" active={activeTool === "pen"} onPress={() => onSelectTool("pen")}>
+          <Pencil {...ICON} />
+        </ToolButton>
+        <ToolButton label="Highlight" active={activeTool === "highlighter"} onPress={() => onSelectTool("highlighter")}>
+          <Highlighter {...ICON} />
+        </ToolButton>
+        <ToolButton label="Eraser" active={activeTool === "eraser"} onPress={() => onSelectTool("eraser")}>
+          <Eraser {...ICON} />
+        </ToolButton>
+        <ToolButton label="Text" active={activeTool === "text"} onPress={() => onSelectTool("text")}>
+          <Type {...ICON} />
+        </ToolButton>
+
+        <div className={s.divider} />
+
+        <ToolButton
+          wide
+          menu
+          label="Maths"
+          open={menu?.id === "maths"}
+          badge={rulerActive || compassActive || calculatorActive || gridToolActive}
+          onPress={(e) => toggleMenu("maths", e)}
+        >
+          <Ruler {...ICON} />
+        </ToolButton>
+        <ToolButton wide menu label="Insert" open={menu?.id === "insert"} onPress={(e) => toggleMenu("insert", e)}>
+          <SquarePlus {...ICON} />
+        </ToolButton>
+        {onSetBackground && (
+          <ToolButton wide menu label="Page" open={menu?.id === "page"} onPress={(e) => toggleMenu("page", e)}>
+            <NotebookText {...ICON} />
+          </ToolButton>
+        )}
+
+        <div className={s.spacer} />
+
+        <ToolButton label="Undo" disabled={!canUndo} onPress={onUndo}>
+          <Undo2 {...ICON} />
+        </ToolButton>
+        <ToolButton label="Redo" disabled={!canRedo} onPress={onRedo}>
+          <Redo2 {...ICON} />
+        </ToolButton>
+        <ToolButton label="Clear" onPress={onClear}>
+          <Trash2 {...ICON} />
+        </ToolButton>
+      </div>
+
+      {/* ---------- Context bar: options + a plain-English hint ---------- */}
+      <div className={s.contextBar}>
+        {gridToolActive ? (
+          <PalmSafeButton className={`${s.ctxBtn} ${s.ctxBtnPrimary}`} onPress={onFinishGraphMove}>
+            <Check size={15} strokeWidth={2.2} />
+            Done placing graph
+          </PalmSafeButton>
+        ) : (
+          <>
+            {isInk && (
+              <>
+                <div className={s.ctxGroup} role="group" aria-label="Ink colour">
+                  {INK_COLORS.map(([name, hex]) => (
+                    <PalmSafeButton
+                      key={hex}
+                      aria-label={name}
+                      aria-pressed={color === hex}
+                      className={`${s.swatch} ${color === hex ? s.swatchActive : ""}`}
+                      style={{ background: hex }}
+                      onPress={() => setColor(hex)}
+                    />
+                  ))}
+                  <label className={s.customColor} aria-label="Pick any colour">
+                    <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+                  </label>
+                </div>
+                <div className={s.ctxDivider} />
+              </>
+            )}
+            {(isInk || activeTool === "eraser") && (
+              <label className={s.sizeControl}>
+                <span
+                  className={s.sizePreview}
+                  style={{
+                    width: Math.max(6, Math.min(strokeWidth, 22)),
+                    height: Math.max(6, Math.min(strokeWidth, 22)),
+                    background: activeTool === "eraser" ? "#C9C7C1" : color,
+                  }}
+                />
+                {activeTool === "eraser" ? "Eraser size" : "Size"}
+                <input
+                  type="range"
+                  min={1}
+                  max={40}
+                  value={strokeWidth}
+                  onChange={(e) => setStrokeWidth(Number(e.target.value))}
+                />
+              </label>
+            )}
+            {activeTool === "select" && (
+              <>
+                {onPaste && (
+                  <PalmSafeButton className={s.ctxBtn} onPress={onPaste}>
+                    <ClipboardPaste size={15} strokeWidth={1.9} />
+                    Paste
+                  </PalmSafeButton>
+                )}
+                {onSelectAll && (
+                  <PalmSafeButton className={s.ctxBtn} onPress={onSelectAll}>
+                    <BoxSelect size={15} strokeWidth={1.9} />
+                    Select all
+                  </PalmSafeButton>
+                )}
+              </>
+            )}
+            {activeTool === "move" && (
+              <>
+                <PalmSafeButton className={s.ctxBtn} onPress={onResetView}>
+                  <Maximize size={14} strokeWidth={2} />
+                  Reset view
+                </PalmSafeButton>
+                <span style={{ color: "var(--muted)", flexShrink: 0 }}>Zoom {zoomPercent}%</span>
+              </>
+            )}
+            {penSeen && (isInk || activeTool === "eraser") && (
+              <PalmSafeButton
+                aria-pressed={pencilOnly}
+                className={`${s.chip} ${pencilOnly ? s.chipOn : ""}`}
+                onPress={() => onSetPencilOnly(!pencilOnly)}
+              >
+                <span className={`${s.switchTrack} ${pencilOnly ? s.switchTrackOn : ""}`}>
+                  <span className={`${s.switchKnob} ${pencilOnly ? s.switchKnobOn : ""}`} />
+                </span>
+                Pencil only
+              </PalmSafeButton>
+            )}
+          </>
+        )}
+        <div className={s.hint}>
+          <Info size={16} strokeWidth={1.9} className={s.hintIcon} />
+          <span className={s.hintText}>
+            <b>{hint[0]}</b> — {hint[1]}
+          </span>
         </div>
-      )}
-    </>
+      </div>
+    </div>
   );
 }
 
-function IconButton({ children, active, disabled, onClick, label, pill, primary, dataAttr }) {
+function ToolButton({ label, active, open, disabled, wide, menu, badge, onPress, children }) {
+  const classes = [s.toolBtn];
+  if (wide) classes.push(s.toolBtnWide);
+  if (active) classes.push(s.toolBtnActive);
+  if (open) classes.push(s.toolBtnOpen);
   return (
-    <button
-      onClick={onClick}
+    <PalmSafeButton
+      className={classes.join(" ")}
       disabled={disabled}
-      title={label}
-      aria-label={label}
-      data-tool-trigger={dataAttr ? "true" : undefined}
-      style={{
-        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-        border: "none", borderRadius: pill ? 999 : 10,
-        padding: pill ? "11px 16px" : "11px",
-        minWidth: pill ? "auto" : 44,
-        minHeight: 44,
-        background: primary ? "#1E88E5" : active ? "#E3F2FD" : "transparent",
-        color: primary ? "#fff" : disabled ? "#c4c4c4" : "#333",
-        cursor: disabled ? "default" : "pointer", fontSize: 13,
-        boxShadow: pill ? "0 1px 6px rgba(0,0,0,0.12)" : "none",
-        flexShrink: 0,
-        WebkitTouchCallout: "none",
-        WebkitUserSelect: "none",
-        userSelect: "none",
-        WebkitTapHighlightColor: "transparent",
-        touchAction: "manipulation",
-      }}
+      aria-pressed={menu ? undefined : !!active}
+      aria-expanded={menu ? !!open : undefined}
+      aria-haspopup={menu ? "menu" : undefined}
+      data-menu-trigger={menu ? "true" : undefined}
+      onPress={onPress}
     >
       {children}
-      {pill && <span>{label}</span>}
-    </button>
+      <span className={s.toolLabel}>
+        {label}
+        {menu && <ChevronDown size={11} strokeWidth={2.4} />}
+        {badge && <span className={s.badgeDot} />}
+      </span>
+    </PalmSafeButton>
   );
 }
 
-function Divider({ horizontal }) {
-  return horizontal
-    ? <div style={{ height: 1, background: "#e5e5e5", margin: "0 -14px" }} />
-    : <div style={{ width: 1, height: 24, background: "#e5e5e5", flexShrink: 0 }} />;
+function MenuItem({ icon, title, desc, on, insert, danger, onPress }) {
+  const iconClass = [s.menuIcon];
+  if (insert) iconClass.push(s.menuIconInsert);
+  if (danger) iconClass.push(s.menuIconDanger);
+  return (
+    <PalmSafeButton role="menuitem" className={`${s.menuItem} ${on ? s.menuItemOn : ""}`} onPress={onPress}>
+      <span className={iconClass.join(" ")}>{icon}</span>
+      <span className={s.menuText}>
+        <span className={`${s.menuTitle} ${danger ? s.menuDangerTitle : ""}`}>
+          {title}
+          {on && <span className={s.menuBadge}>On</span>}
+        </span>
+        <span className={s.menuDesc}>{desc}</span>
+      </span>
+    </PalmSafeButton>
+  );
 }
-
-const groupStyle = { display: "flex", alignItems: "center", gap: 2, flexShrink: 0 };
-
-const barStyle = {
-  position: "fixed",
-  bottom: "max(16px, env(safe-area-inset-bottom))",
-  left: "50%",
-  transform: "translateX(-50%)",
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  background: "#ffffff",
-  padding: "8px 14px",
-  borderRadius: 999,
-  boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-  zIndex: 10,
-  maxWidth: "calc(100vw - 92px)",
-  overflowX: "auto",
-  WebkitOverflowScrolling: "touch",
-  WebkitUserSelect: "none",
-  userSelect: "none",
-  touchAction: "manipulation",
-};
-
-const popoverStyle = {
-  position: "fixed",
-  background: "#ffffff",
-  borderRadius: 14,
-  padding: 14,
-  boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
-  zIndex: 1000,
-  width: 220,
-  WebkitUserSelect: "none",
-  userSelect: "none",
-};
-
-const ownerBarStyle = {
-  position: "fixed",
-  top: "max(16px, env(safe-area-inset-top))",
-  right: 16,
-  display: "flex",
-  alignItems: "center",
-  gap: 8,
-  zIndex: 10,
-};
-
-const statusStyle = {
-  fontSize: 12, color: "#666", background: "#fff", padding: "4px 10px",
-  borderRadius: 999, boxShadow: "0 1px 6px rgba(0,0,0,0.1)",
-};

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import d from "@/components/Dialog.module.css";
 
 // Save this file as: src/app/join/page.js
 // No auth required to join a class — matches the low-friction,
@@ -28,73 +29,51 @@ export default function JoinPage() {
   return (
     <div
       style={{
-        minHeight: "100dvh",
+        minHeight: "100vh",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#f5f6f8",
-        padding: 24,
+        background: "var(--bg)",
+        padding: 16,
       }}
     >
-      <form
-        onSubmit={handleJoin}
-        style={{
-          width: "100%",
-          maxWidth: 360,
-          background: "#fff",
-          borderRadius: 16,
-          padding: 24,
-          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
-        }}
-      >
-        <h1 style={{ fontSize: 20, marginBottom: 20, textAlign: "center" }}>Join a class</h1>
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          placeholder="Class code"
-          maxLength={6}
-          autoCapitalize="characters"
-          style={{
-            width: "100%",
-            fontSize: 24,
-            textAlign: "center",
-            letterSpacing: 4,
-            padding: "12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            marginBottom: 12,
-            boxSizing: "border-box",
-            textTransform: "uppercase",
-          }}
-        />
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Your name"
-          style={{
-            width: "100%",
-            fontSize: 16,
-            padding: "12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            marginBottom: 16,
-            boxSizing: "border-box",
-          }}
-        />
+      <form onSubmit={handleJoin} className={d.card} style={{ width: 380, padding: 26, gap: 18 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "center" }}>
+          <h1 className={d.title} style={{ fontSize: 22 }}>Join a class</h1>
+          <p className={d.subtitle}>Type the code your teacher is showing, then your name.</p>
+        </div>
+        <label className={d.label}>
+          Class code
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="ABC123"
+            maxLength={6}
+            autoCapitalize="characters"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className={d.input}
+            style={{ height: 56, fontSize: 26, fontWeight: 600, textAlign: "center", letterSpacing: "0.3em", textTransform: "uppercase" }}
+          />
+        </label>
+        <label className={d.label}>
+          Your name
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="First name"
+            maxLength={40}
+            className={d.input}
+          />
+        </label>
         <button
           type="submit"
-          style={{
-            width: "100%",
-            padding: "12px",
-            borderRadius: 10,
-            border: "none",
-            background: "#1E88E5",
-            color: "#fff",
-            fontSize: 16,
-            cursor: "pointer",
-          }}
+          className={`${d.btn} ${d.btnPrimary}`}
+          disabled={!code.trim() || !name.trim()}
+          style={{ width: "100%", height: 48, fontSize: 15 }}
         >
-          Join
+          Join class
         </button>
       </form>
     </div>

@@ -1,187 +1,398 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Share2, Trash2, LogOut } from "lucide-react";
+import { Plus, Search, Users, MoreHorizontal, Pencil, Share2, Trash2, LogOut, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
+import { BOARD_BACKGROUNDS, backgroundCss, normalizeBackground } from "@/lib/boardBackground";
 import NewBoardModal from "@/components/NewBoardModal";
 import ShareModal from "@/components/ShareModal";
+import s from "./Home.module.css";
+import d from "@/components/Dialog.module.css";
 
+const BASE_COLUMNS = "id, name, created_at, owner_id, shared_with";
+const FULL_COLUMNS = BASE_COLUMNS + ", background, thumbnail";
+
+// Loads boards with their preview + paper type when those (newer) columns
+// exist, and without them when they don't, so the list always works.
+async function selectBoards(build) {
+  const full = await build(supabase.from("boards").select(FULL_COLUMNS));
+  if (!full.error) return full;
+  return build(supabase.from("boards").select(BASE_COLUMNS));
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(undefined, sameYear ? { day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+}
+
+function pageLabel(background) {
+  const found = BOARD_BACKGROUNDS.find((b) => b.id === normalizeBackground(background));
+  return found && found.id !== "blank" ? found.label : "";
+}
 
 export default function Home() {
   const router = useRouter();
   const { user, signOut } = useAuth();
   const [myBoards, setMyBoards] = useState([]);
   const [sharedBoards, setSharedBoards] = useState([]);
-  const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [query, setQuery] = useState("");
+  const [showNew, setShowNew] = useState(false);
   const [shareTarget, setShareTarget] = useState(null);
+  const [renameTarget, setRenameTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [menuFor, setMenuFor] = useState(null); // board id whose ⋯ menu is open
+  const [accountOpen, setAccountOpen] = useState(false);
 
   useEffect(() => {
-    if (user) loadBoards();
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const [owned, shared] = await Promise.all([
+        selectBoards((q) => q.eq("owner_id", user.id).order("created_at", { ascending: false })),
+        selectBoards((q) => q.contains("shared_with", [user.email.toLowerCase()]).order("created_at", { ascending: false })),
+      ]);
+      if (cancelled) return;
+      if (owned.error) console.error("Error loading owned boards:", owned.error);
+      if (shared.error) console.error("Error loading shared boards:", shared.error);
+      setLoadError(owned.error ? "Couldn't load your boards. Check your connection and refresh the page." : "");
+      if (!owned.error && owned.data) setMyBoards(owned.data);
+      if (!shared.error && shared.data) setSharedBoards(shared.data.filter((b) => b.owner_id !== user.id));
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
-  async function loadBoards() {
-    const { data: owned, error: ownedError } = await supabase
-      .from("boards")
-      .select("id, name, created_at, owner_id, shared_with")
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false });
+  // Close the ⋯ / account menus when tapping anywhere else.
+  useEffect(() => {
+    if (!menuFor && !accountOpen) return undefined;
+    function handle(e) {
+      if (e.target.closest && e.target.closest("[data-home-menu]")) return;
+      setMenuFor(null);
+      setAccountOpen(false);
+    }
+    function key(e) {
+      if (e.key === "Escape") {
+        setMenuFor(null);
+        setAccountOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handle);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", handle);
+      document.removeEventListener("keydown", key);
+    };
+  }, [menuFor, accountOpen]);
 
-    const { data: shared, error: sharedError } = await supabase
-      .from("boards")
-      .select("id, name, created_at, owner_id, shared_with")
-      .contains("shared_with", [user.email.toLowerCase()])
-      .order("created_at", { ascending: false });
-
-    if (ownedError) console.error("Error loading owned boards:", ownedError);
-    if (sharedError) console.error("Error loading shared boards:", sharedError);
-
-    if (!ownedError && owned) setMyBoards(owned);
-    if (!sharedError && shared) setSharedBoards(shared);
+  function updateBoard(id, patch) {
+    setMyBoards((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   }
 
-  async function handleCreate(name) {
-    const { data, error } = await supabase
-      .from("boards")
-      .insert({ name: name || "Untitled board", owner_id: user.id })
-      .select()
-      .single();
+  async function handleCreate(name, background) {
+    setShowNew(false);
+    const row = { name: name || "Untitled board", owner_id: user.id };
+    let result = await supabase.from("boards").insert({ ...row, background }).select().single();
+    if (result.error) {
+      // Project without the background column yet: create it plain.
+      result = await supabase.from("boards").insert(row).select().single();
+    }
+    if (result.error) {
+      alert("Couldn't create board: " + result.error.message);
+      return;
+    }
+    router.push(`/board/${result.data.id}`);
+  }
 
+  async function handleRename(board, name) {
+    setRenameTarget(null);
+    const next = name.trim() || "Untitled board";
+    if (next === board.name) return;
+    updateBoard(board.id, { name: next });
+    const { error } = await supabase.from("boards").update({ name: next }).eq("id", board.id);
     if (error) {
-      alert("Couldn't create board: " + error.message);
-      return;
+      updateBoard(board.id, { name: board.name });
+      alert("Couldn't rename: " + error.message);
     }
-    router.push(`/board/${data.id}`);
   }
 
-  function openShareModal(board, e) {
-    e.stopPropagation();
-    setShareTarget(board);
-  }
-
-
-  async function handleDeleteBoard(board, e) {
-    e.stopPropagation();
-    if (!window.confirm(`Delete "${board.name || "Untitled board"}"? This can't be undone.`)) {
-      return;
-    }
+  async function handleDelete(board) {
+    setDeleteTarget(null);
     const { error } = await supabase.from("boards").delete().eq("id", board.id);
     if (error) {
       alert("Couldn't delete board: " + error.message);
       return;
     }
-    loadBoards();
+    setMyBoards((prev) => prev.filter((b) => b.id !== board.id));
   }
 
-  async function handleShareSubmit(email) {
-    const board = shareTarget;
-    setShareTarget(null);
-    const updated = Array.from(new Set([...(board.shared_with || []), email.toLowerCase()]));
-    const { error } = await supabase.from("boards").update({ shared_with: updated }).eq("id", board.id);
+  async function saveSharing(board, list) {
+    updateBoard(board.id, { shared_with: list });
+    setShareTarget((prev) => (prev && prev.id === board.id ? { ...prev, shared_with: list } : prev));
+    const { error } = await supabase.from("boards").update({ shared_with: list }).eq("id", board.id);
     if (error) {
-      alert("Couldn't share: " + error.message);
-      return;
+      updateBoard(board.id, { shared_with: board.shared_with });
+      setShareTarget((prev) => (prev && prev.id === board.id ? { ...prev, shared_with: board.shared_with } : prev));
+      alert("Couldn't update sharing: " + error.message);
     }
-    loadBoards();
   }
 
-  return (
-    <div style={{ minHeight: "100vh", background: "#F5F6F8", padding: "48px 24px" }}>
-      <div style={{ maxWidth: 960, margin: "0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 600, color: "#1a1a1a", margin: 0 }}>Boards</h1>
-          <button
-            onClick={signOut}
-            style={{
-              display: "flex", alignItems: "center", gap: 6, border: "none",
-              background: "#fff", padding: "8px 14px", borderRadius: 999,
-              fontSize: 13, color: "#666", cursor: "pointer", boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-            }}
-          >
-            <LogOut size={14} /> Sign out
-          </button>
-        </div>
+  function handleShare(email) {
+    const board = shareTarget;
+    if (!board) return;
+    saveSharing(board, Array.from(new Set([...(board.shared_with || []), email.toLowerCase()])));
+  }
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 20 }}>
-          <button onClick={() => setShowModal(true)} style={cardStyle(true)}>
-            <Plus size={32} strokeWidth={1.5} color="#1E88E5" />
-            <span style={{ marginTop: 10, fontSize: 15, color: "#1E88E5", fontWeight: 500 }}>New board</span>
-          </button>
+  function handleUnshare(email) {
+    const board = shareTarget;
+    if (!board) return;
+    saveSharing(board, (board.shared_with || []).filter((e) => e !== email));
+  }
 
-          {myBoards.map((b) => (
-            <div key={b.id} onClick={() => router.push(`/board/${b.id}`)} style={{ ...cardStyle(false), position: "relative" }}>
-              <button
-                onClick={(e) => openShareModal(b, e)}
-                title="Share"
-                style={{
-                  position: "absolute", top: 10, right: 34, border: "none",
-                  background: "transparent", cursor: "pointer", padding: 4, color: "#999",
-                }}
-              >
-                <Share2 size={15} />
-              </button>
-              <button
-                onClick={(e) => handleDeleteBoard(b, e)}
-                title="Delete"
-                style={{
-                  position: "absolute", top: 10, right: 10, border: "none",
-                  background: "transparent", cursor: "pointer", padding: 4, color: "#999",
-                }}
-              >
-                <Trash2 size={15} />
-              </button>
-              <span style={{ fontSize: 16, fontWeight: 500, color: "#1a1a1a", textAlign: "center" }}>
-                {b.name || "Untitled board"}
+  const q = query.trim().toLowerCase();
+  const matches = (b) => !q || (b.name || "Untitled board").toLowerCase().includes(q);
+  const mine = myBoards.filter(matches);
+  const shared = sharedBoards.filter(matches);
+  const initial = (user?.email || "?").charAt(0);
+
+  function renderThumb(b) {
+    if (b.thumbnail) {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={b.thumbnail} alt="" loading="lazy" draggable={false} />;
+    }
+    return (
+      <span className={s.thumbEmpty} style={backgroundCss(b.background, 0.7, { x: 8, y: 8 })}>
+        {b.background !== undefined && <span className={s.emptyLabel}>Nothing drawn yet</span>}
+      </span>
+    );
+  }
+
+  function renderCard(b, owned) {
+    const meta = [owned ? `Created ${formatDate(b.created_at)}` : "Shared with you", pageLabel(b.background)]
+      .filter(Boolean)
+      .join(" · ");
+    const sharedCount = owned && b.shared_with ? b.shared_with.length : 0;
+    const open = menuFor === b.id;
+    return (
+      <div key={b.id} className={s.card}>
+        <Link href={`/board/${b.id}`} className={s.cardLink}>
+          <span className={s.thumb}>
+            {renderThumb(b)}
+            {sharedCount > 0 && (
+              <span className={s.sharedBadge} title={`Shared with ${sharedCount} ${sharedCount === 1 ? "person" : "people"}`}>
+                <Users size={13} strokeWidth={2} aria-hidden="true" />
+                {`Shared with ${sharedCount}`}
               </span>
-              <span style={{ marginTop: 8, fontSize: 12, color: "#999" }}>
-                {new Date(b.created_at).toLocaleDateString()}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {sharedBoards.length > 0 && (
+            )}
+          </span>
+          <span className={s.cardBody}>
+            <span className={s.cardTitle}>{b.name || "Untitled board"}</span>
+            <span className={s.cardMeta}>{meta}</span>
+          </span>
+        </Link>
+        {owned && (
           <>
-            <h2 style={{ fontSize: 18, fontWeight: 600, color: "#1a1a1a", margin: "36px 0 16px" }}>Shared with me</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 20 }}>
-              {sharedBoards.map((b) => (
-                <div key={b.id} onClick={() => router.push(`/board/${b.id}`)} style={cardStyle(false)}>
-                  <span style={{ fontSize: 16, fontWeight: 500, color: "#1a1a1a", textAlign: "center" }}>
-                    {b.name || "Untitled board"}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <button
+              type="button"
+              data-home-menu="true"
+              className={`${s.moreBtn} ${open ? s.moreBtnOpen : ""}`}
+              aria-label={`More options for ${b.name || "Untitled board"}`}
+              aria-haspopup="menu"
+              aria-expanded={open}
+              onClick={() => setMenuFor(open ? null : b.id)}
+            >
+              <MoreHorizontal size={18} />
+            </button>
+            {open && (
+              <div className={s.cardMenu} role="menu" data-home-menu="true">
+                <button type="button" role="menuitem" className={s.menuItem} onClick={() => { setMenuFor(null); setRenameTarget(b); }}>
+                  <Pencil size={16} /> Rename
+                </button>
+                <button type="button" role="menuitem" className={s.menuItem} onClick={() => { setMenuFor(null); setShareTarget(b); }}>
+                  <Share2 size={16} /> Share
+                </button>
+                <button type="button" role="menuitem" className={`${s.menuItem} ${s.menuItemDanger}`} onClick={() => { setMenuFor(null); setDeleteTarget(b); }}>
+                  <Trash2 size={16} /> Delete
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
+    );
+  }
 
-      {showModal && (
-        <NewBoardModal
-          onClose={() => setShowModal(false)}
-          onCreate={(name) => {
-            setShowModal(false);
-            handleCreate(name);
-          }}
-        />
-      )}
+  return (
+    <div className={s.page}>
+      <header className={s.topBar}>
+        <div className={s.brand}>
+          <span className={s.brandMark} aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />
+            </svg>
+          </span>
+          <span className={s.brandName}>Whiteboard</span>
+        </div>
+        <label className={s.search}>
+          <Search size={16} aria-hidden="true" />
+          <input type="search" placeholder="Search boards" aria-label="Search boards" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </label>
+        <div className={s.spacer} />
+        <Link href="/join" className={s.topBtn} aria-label="Join a class with a code" title="Join a class with a code">
+          <Users size={16} />
+          <span className={s.longLabel}>Join with a class code</span>
+        </Link>
+        <button
+          type="button"
+          data-home-menu="true"
+          className={s.avatarBtn}
+          aria-label="Account"
+          aria-haspopup="menu"
+          aria-expanded={accountOpen}
+          onClick={() => setAccountOpen((v) => !v)}
+        >
+          {initial}
+        </button>
+        {accountOpen && (
+          <div className={s.accountMenu} role="menu" data-home-menu="true">
+            <div className={s.accountEmail}>
+              <b>Signed in</b>
+              {user?.email}
+            </div>
+            <button type="button" role="menuitem" className={`${s.menuItem} ${s.menuItemDanger}`} onClick={signOut}>
+              <LogOut size={16} /> Sign out
+            </button>
+          </div>
+        )}
+      </header>
+
+      <main className={s.main}>
+        <div className={s.headRow}>
+          <div>
+            <h1 className={s.heading}>Your boards</h1>
+            <p className={s.subheading}>
+              {loading ? "Loading…" : q ? `${mine.length} matching “${query.trim()}”` : `${myBoards.length} board${myBoards.length === 1 ? "" : "s"} · newest first`}
+            </p>
+          </div>
+          <div className={s.spacer} />
+          <button type="button" className={s.primaryBtn} onClick={() => setShowNew(true)}>
+            <Plus size={18} strokeWidth={2.2} />
+            New board
+          </button>
+        </div>
+
+        {loadError && <div className={s.errorBox}>{loadError}</div>}
+
+        {loading ? (
+          <div className={s.grid} aria-hidden="true">
+            <div className={s.skeleton} />
+            <div className={s.skeleton} />
+            <div className={s.skeleton} />
+          </div>
+        ) : mine.length === 0 && q ? (
+          <div className={s.empty}>
+            <b>No boards match “{query.trim()}”</b>
+            Try a different word, or clear the search.
+          </div>
+        ) : (
+          <div className={s.grid}>
+            {!q && (
+              <button type="button" className={s.newTile} onClick={() => setShowNew(true)}>
+                <Plus size={26} strokeWidth={1.8} />
+                New board
+                <span className={s.newTileHint}>{myBoards.length === 0 ? "Start your first board" : "Blank, lined, squared or dotted"}</span>
+              </button>
+            )}
+            {mine.map((b) => renderCard(b, true))}
+          </div>
+        )}
+
+        {!loading && shared.length > 0 && (
+          <>
+            <h2 className={s.sectionHeading}>Shared with you</h2>
+            <div className={s.grid}>{shared.map((b) => renderCard(b, false))}</div>
+          </>
+        )}
+      </main>
+
+      {showNew && <NewBoardModal onClose={() => setShowNew(false)} onCreate={handleCreate} />}
 
       {shareTarget && (
-        <ShareModal
-          onClose={() => setShareTarget(null)}
-          onShare={handleShareSubmit}
-        />
+        <ShareModal board={shareTarget} onClose={() => setShareTarget(null)} onShare={handleShare} onRemove={handleUnshare} />
+      )}
+
+      {renameTarget && (
+        <RenameDialog board={renameTarget} onClose={() => setRenameTarget(null)} onSave={(name) => handleRename(renameTarget, name)} />
+      )}
+
+      {deleteTarget && (
+        <div className={d.overlay} onClick={() => setDeleteTarget(null)}>
+          <div className={d.card} onClick={(e) => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-labelledby="delete-title">
+            <div className={d.header}>
+              <div className={d.titleBlock}>
+                <h2 id="delete-title" className={d.title}>Delete “{deleteTarget.name || "Untitled board"}”?</h2>
+                <p className={d.subtitle}>Everything on it is removed for everyone it&apos;s shared with. This can&apos;t be undone.</p>
+              </div>
+            </div>
+            <div className={d.actions}>
+              <button type="button" className={d.btn} onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </button>
+              <button type="button" className={`${d.btn} ${d.btnDanger}`} onClick={() => handleDelete(deleteTarget)}>
+                Delete board
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-function cardStyle(isCreate) {
-  return {
-    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-    height: 140, borderRadius: 14, border: isCreate ? "2px dashed #C7D8EE" : "1px solid #E4E4E7",
-    background: "#ffffff", cursor: "pointer", padding: 16,
-    boxShadow: isCreate ? "none" : "0 1px 3px rgba(0,0,0,0.05)",
-  };
+function RenameDialog({ board, onClose, onSave }) {
+  const [name, setName] = useState(board.name || "");
+  return (
+    <div className={d.overlay} onClick={onClose}>
+      <form
+        className={d.card}
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave(name);
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rename-title"
+      >
+        <div className={d.header}>
+          <div className={d.titleBlock}>
+            <h2 id="rename-title" className={d.title}>Rename board</h2>
+          </div>
+          <button type="button" className={d.close} onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <label className={d.label}>
+          Board name
+          <input autoFocus className={d.input} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} onFocus={(e) => e.target.select()} />
+        </label>
+        <div className={d.actions}>
+          <button type="button" className={d.btn} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className={`${d.btn} ${d.btnPrimary}`}>
+            Save
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }

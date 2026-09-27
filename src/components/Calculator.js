@@ -45,6 +45,7 @@ export default function Calculator({ position, setPosition, onClose }) {
   const mathFieldRef = useRef(null);
   const ceRef = useRef(null);
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [resultText, setResultText] = useState("");
   const [resultValue, setResultValue] = useState(null);
   const [showFraction, setShowFraction] = useState(false);
@@ -60,6 +61,16 @@ export default function Calculator({ position, setPosition, onClose }) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      try {
+        await loadLibraries();
+      } catch (err) {
+        // Most likely an older tablet browser that can't parse the math
+        // libraries (e.g. iPadOS 15) — say so instead of "Loading…" forever.
+        console.error("Calculator failed to load:", err);
+        if (!cancelled) setLoadFailed(true);
+      }
+    }
+    async function loadLibraries() {
       const mathliveModule = await import("mathlive");
       // By default MathLive looks for its font files relative to wherever
       // its own JS chunk ended up after bundling — which doesn't match
@@ -310,7 +321,9 @@ export default function Calculator({ position, setPosition, onClose }) {
               virtual-keyboard-mode="off"
             ></math-field>
           ) : (
-            <span style={{ color: "#999", fontSize: 13 }}>Loading…</span>
+            <span style={{ color: loadFailed ? "#B3261E" : "#999", fontSize: 13 }}>
+              {loadFailed ? "The calculator needs a newer browser than this device has." : "Loading…"}
+            </span>
           )}
         </div>
         <div

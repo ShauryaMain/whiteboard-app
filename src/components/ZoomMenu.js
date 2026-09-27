@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ChevronUp } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 const ZOOM_LEVELS = [25, 50, 75, 100, 150, 200, 300];
 
@@ -33,7 +33,7 @@ export default function ZoomMenu({ zoomPercent, onSelect }) {
               style={{
                 ...optionStyle,
                 fontWeight: zoomPercent === level ? 600 : 400,
-                background: zoomPercent === level ? "#E3F2FD" : "transparent",
+                background: zoomPercent === level ? "var(--accent-soft)" : "transparent",
               }}
             >
               {level}%
@@ -43,7 +43,7 @@ export default function ZoomMenu({ zoomPercent, onSelect }) {
       )}
       <button onClick={() => setOpen((v) => !v)} style={buttonStyle}>
         <span>{zoomPercent}%</span>
-        <ChevronUp
+        <ChevronDown
           size={14}
           strokeWidth={2}
           style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
@@ -53,10 +53,12 @@ export default function ZoomMenu({ zoomPercent, onSelect }) {
   );
 }
 
+// Top-right of the board: the bottom corners are where a writing hand
+// rests, so nothing tappable lives there any more.
 const containerStyle = {
   position: "fixed",
-  bottom: "max(16px, env(safe-area-inset-bottom))",
-  right: "max(16px, env(safe-area-inset-right))",
+  top: 12,
+  right: "max(12px, env(safe-area-inset-right))",
   zIndex: 20,
 };
 
@@ -64,15 +66,15 @@ const buttonStyle = {
   display: "flex",
   alignItems: "center",
   gap: 6,
-  padding: "11px 14px",
-  minHeight: 44,
+  padding: "0 12px",
+  minHeight: 40,
   borderRadius: 999,
-  border: "none",
-  background: "#ffffff",
-  boxShadow: "0 4px 20px rgba(0,0,0,0.15)",
-  fontSize: 13,
+  border: "1px solid var(--border)",
+  background: "rgba(255,255,255,0.94)",
+  boxShadow: "var(--shadow-card)",
+  fontSize: 12.5,
   fontWeight: 500,
-  color: "#333",
+  color: "var(--ink-2)",
   cursor: "pointer",
   WebkitTouchCallout: "none",
   WebkitUserSelect: "none",
@@ -82,7 +84,7 @@ const buttonStyle = {
 
 const dropdownStyle = {
   position: "absolute",
-  bottom: 52,
+  top: 44,
   right: 0,
   background: "#fff",
   borderRadius: 10,

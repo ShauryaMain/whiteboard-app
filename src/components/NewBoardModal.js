@@ -2,80 +2,84 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
+import d from "./Dialog.module.css";
 
+// "New board" dialog: a name and which paper to start on. The paper can be
+// changed any time afterwards from Page ▾ on the board.
 export default function NewBoardModal({ onClose, onCreate }) {
   const [name, setName] = useState("");
+  const [background, setBackground] = useState("blank");
 
   function handleSubmit(e) {
     e.preventDefault();
-    onCreate(name.trim());
+    onCreate(name.trim(), background);
   }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 100,
-      }}
-    >
-      <div
+    <div className={d.overlay} onClick={onClose}>
+      <form
+        className={d.card}
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "#fff",
-          borderRadius: 14,
-          padding: 24,
-          width: 340,
-          boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
-        }}
+        onSubmit={handleSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-board-title"
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h2 style={{ fontSize: 17, fontWeight: 600, margin: 0, color: "#1a1a1a" }}>New board</h2>
-          <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}>
-            <X size={18} color="#666" />
+        <div className={d.header}>
+          <div className={d.titleBlock}>
+            <h2 id="new-board-title" className={d.title}>New board</h2>
+            <p className={d.subtitle}>Give it a name you&apos;ll recognise later, like a student or a topic.</p>
+          </div>
+          <button type="button" className={d.close} onClick={onClose} aria-label="Close">
+            <X size={18} />
           </button>
         </div>
-        <form onSubmit={handleSubmit}>
+
+        <label className={d.label}>
+          Board name
           <input
             autoFocus
+            className={d.input}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Alex - Tuesdays"
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: 8,
-              border: "1px solid #ddd",
-              fontSize: 14,
-              color: "#1a1a1a",
-              background: "#ffffff",
-              boxSizing: "border-box",
-              marginBottom: 16,
-            }}
+            placeholder="e.g. Alex — Tuesdays"
+            maxLength={80}
           />
-          <button
-            type="submit"
-            style={{
-              width: "100%",
-              padding: "10px 0",
-              borderRadius: 8,
-              border: "none",
-              background: "#1E88E5",
-              color: "#fff",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer",
-            }}
-          >
+        </label>
+
+        <div className={d.label} role="radiogroup" aria-label="Page">
+          Page
+          <div className={d.pageGrid}>
+            {BOARD_BACKGROUNDS.map((bg) => {
+              const on = background === bg.id;
+              return (
+                <button
+                  key={bg.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  title={bg.desc}
+                  className={`${d.pageTile} ${on ? d.pageTileOn : ""}`}
+                  onClick={() => setBackground(bg.id)}
+                >
+                  <span className={d.pagePreview} style={backgroundCss(bg.id, 0.6, { x: 4, y: 4 })} />
+                  {bg.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className={d.actions}>
+          <button type="button" className={d.btn} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className={`${d.btn} ${d.btnPrimary}`}>
             Create board
           </button>
-        </form>
-      </div>
+        </div>
+      </form>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { renderGrid, withDefaults } from "@/lib/gridRenderer";
 
@@ -16,7 +17,7 @@ const PI_STEP_PRESETS = [
 
 const GRID_COLORS = ["#cfd8e3", "#90a4ae", "#1E88E5", "#43A047", "#8E24AA", "#1a1a1a"];
 
-const PREVIEW_SIZE = 300;
+const PREVIEW_SIZE = 240;
 
 // The "ultimate grid tool" dialog: fully customize a graph-paper /
 // grid overlay (cartesian or polar, scale, units, trig/radian labeling,
@@ -66,8 +67,8 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
     // a sliver too thin to read.
     const rows = config.type === "polar" ? config.cols : config.rows || config.cols;
     const cols = config.cols;
-    const MIN_DIM = 90;
-    const MAX_DIM = 460;
+    const MIN_DIM = 80;
+    const MAX_DIM = 340;
     let cellPx = PREVIEW_SIZE / Math.max(cols, rows);
     let boxW = cellPx * cols;
     let boxH = cellPx * rows;
@@ -100,42 +101,48 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
   const isPolar = config.type === "polar";
   const isNewGrid = !initialConfig;
 
-  return (
+  // Rendered into <body> (not inside the board pane) so it's centred on the
+  // whole screen and can use its full height. The card never exceeds the
+  // visible screen: the header and the Cancel/Apply buttons stay pinned and
+  // only the settings scroll, so nothing gets cut off on small tablets.
+  return createPortal(
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)",
-        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
       }}
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
+        className="modal-card"
         style={{
-          background: "#fff", borderRadius: 16, width: "min(720px, 100%)", maxHeight: "90vh",
-          overflow: "auto", boxShadow: "0 12px 40px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column",
+          background: "#fff", borderRadius: 16, width: "min(680px, 100%)",
+          overflow: "hidden", boxShadow: "0 12px 40px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #eee" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#1a1a1a", flex: 1 }}>Grid / Graph Paper</div>
+        <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)", flex: 1 }}>Graph</div>
           <button
             onClick={onClose}
             aria-label="Close"
-            style={{ border: "none", background: "#f0f0f0", borderRadius: 8, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            style={{ border: "none", background: "var(--surface-hover)", borderRadius: 8, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
           >
             <X size={16} />
           </button>
         </div>
 
-        <div style={{ display: "flex", gap: 20, padding: 20, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ display: "flex", gap: 16, padding: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div style={{ flex: "0 0 auto" }}>
             <canvas
               ref={canvasRef}
-              style={{ border: "1px solid #eee", borderRadius: 10, display: "block" }}
+              style={{ border: "1px solid var(--border)", borderRadius: 10, display: "block" }}
             />
           </div>
 
-          <div style={{ flex: "1 1 260px", minWidth: 240, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ flex: "1 1 260px", minWidth: 240, display: "flex", flexDirection: "column", gap: 12 }}>
             <Field label="Type">
               <div style={{ display: "flex", gap: 8 }}>
                 <SegButton active={!isPolar} onClick={() => set({ type: "cartesian" })}>Cartesian</SegButton>
@@ -152,7 +159,7 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
                   step={2}
                   onChange={(v) => set({ cellSizePx: v })}
                 />
-                <span style={{ fontSize: 13, color: "#666" }}>px per {isPolar ? "ring" : "square"}, at current zoom</span>
+                <span style={{ fontSize: 12.5, color: "var(--muted)" }}>px per {isPolar ? "ring" : "square"}, at current zoom</span>
               </div>
             </Field>
 
@@ -166,7 +173,7 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
                 />
               </Field>
             ) : (
-              <Field label="Sections (stretch the grid by repeating cells outward)">
+              <Field label="Sections (repeat cells outward)">
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <NumberInput
                     value={config.cols}
@@ -174,14 +181,14 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
                     max={60}
                     onChange={(v) => set({ cols: v })}
                   />
-                  <span style={{ fontSize: 12, color: "#999" }}>columns</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>columns</span>
                   <NumberInput
                     value={config.rows}
                     min={2}
                     max={60}
                     onChange={(v) => set({ rows: v })}
                   />
-                  <span style={{ fontSize: 12, color: "#999" }}>rows</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>rows</span>
                 </div>
               </Field>
             )}
@@ -197,9 +204,11 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
               </Field>
             )}
 
-            <Field label={isPolar ? "Trig labels (radians on spokes)" : "Trig graph (label axes in π)"}>
-              <Toggle checked={config.trig} onChange={(v) => set({ trig: v })} />
-            </Field>
+            <ToggleRow
+              label={isPolar ? "Trig labels (radians on spokes)" : "Trig graph (label axes in π)"}
+              checked={config.trig}
+              onChange={(v) => set({ trig: v })}
+            />
 
             {!isPolar && config.trig && (
               <Field label="Spacing per cell">
@@ -241,15 +250,16 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
               </Field>
             )}
 
-            <Field label="Show axes">
-              <Toggle checked={config.showAxes} onChange={(v) => set({ showAxes: v })} />
-            </Field>
-            <Field label="Show numbers">
-              <Toggle checked={config.showNumbers} onChange={(v) => set({ showNumbers: v })} />
-            </Field>
-            <Field label={isPolar ? "Highlight unit ring" : "Show unit circle"}>
-              <Toggle checked={config.showUnitCircle} onChange={(v) => set({ showUnitCircle: v })} />
-            </Field>
+            <div style={{ display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 10, padding: "2px 12px" }}>
+              <ToggleRow label="Show axes" checked={config.showAxes} onChange={(v) => set({ showAxes: v })} />
+              <ToggleRow label="Show numbers" checked={config.showNumbers} onChange={(v) => set({ showNumbers: v })} divider />
+              <ToggleRow
+                label={isPolar ? "Highlight unit ring" : "Show unit circle"}
+                checked={config.showUnitCircle}
+                onChange={(v) => set({ showUnitCircle: v })}
+                divider
+              />
+            </div>
 
             <Field label="Color">
               <div style={{ display: "flex", gap: 6 }}>
@@ -268,22 +278,39 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
             </Field>
           </div>
         </div>
+        </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid #eee" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 16px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
           <button onClick={onClose} style={secondaryBtnStyle}>Cancel</button>
           <button onClick={() => onApply(config)} style={primaryBtnStyle}>
-            {isNewGrid ? "Add to Board" : "Apply Changes"}
+            {isNewGrid ? "Add to board" : "Apply changes"}
           </button>
         </div>
       </div>
+    </div>,
+    document.body
+  );
+}
+
+function ToggleRow({ label, checked, onChange, divider }) {
+  return (
+    <div
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: 44,
+        borderTop: divider ? "1px solid var(--border)" : "none",
+      }}
+    >
+      <span style={{ fontSize: 13.5, color: "var(--ink)" }}>{label}</span>
+      <Toggle checked={checked} onChange={onChange} />
     </div>
   );
 }
 
+
 function Field({ label, children }) {
   return (
     <div>
-      <div style={{ fontSize: 12, color: "#666", marginBottom: 6, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>{label}</div>
       {children}
     </div>
   );

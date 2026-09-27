@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Pencil, Highlighter, Eraser, Undo2 } from "lucide-react";
+import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
+import { notePenActivity } from "@/lib/penActivity";
+import PalmSafeButton from "./PalmSafeButton";
 
 const PRESET_COLORS = ["#E53935", "#1a1a1a", "#1E88E5", "#43A047", "#FB8C00"];
 
@@ -228,6 +231,7 @@ function PdfPage({
   }
 
   function handlePointerDown(e) {
+    if (e.pointerType === "pen") notePenActivity();
     isDrawing.current = true;
     const pos = getPos(e);
     const id =
@@ -249,6 +253,7 @@ function PdfPage({
   }
 
   function handlePointerMove(e) {
+    if (e.pointerType === "pen") notePenActivity();
     if (!isDrawing.current || !currentStroke.current) return;
     const cur = currentStroke.current;
     const coalesced = e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : [];
@@ -449,9 +454,13 @@ export default function ReferencePane({
         return;
       }
 
+      if (!browserCanOpenPdfs()) {
+        setStatus("unsupported");
+        return;
+      }
+
       try {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+        const pdfjsLib = await loadPdfjs();
         const pdfDocProxy = await pdfjsLib.getDocument({ url: doc.url }).promise;
         if (cancelled) {
           if (typeof pdfDocProxy.destroy === "function") pdfDocProxy.destroy();
@@ -605,6 +614,7 @@ export default function ReferencePane({
   }
 
   function handleImagePointerDown(e) {
+    if (e.pointerType === "pen") notePenActivity();
     isDrawing.current = true;
     const pos = getPosImage(e);
     const id =
@@ -626,6 +636,7 @@ export default function ReferencePane({
   }
 
   function handleImagePointerMove(e) {
+    if (e.pointerType === "pen") notePenActivity();
     if (!isDrawing.current || !currentStroke.current) return;
     const cur = currentStroke.current;
     const coalesced = e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : [];
@@ -680,6 +691,76 @@ export default function ReferencePane({
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column" }}>
+      {!readOnly && (
+      <div
+        // At the top of the pane (not the bottom) so a hand resting on the
+        // screen while annotating doesn't switch tools; buttons also only
+        // react to a clean tap (PalmSafeButton).
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          padding: "4px 8px",
+          background: "var(--surface-2)",
+          borderBottom: "1px solid var(--border)",
+          overflowX: "auto",
+          flexShrink: 0,
+          touchAction: "manipulation",
+          scrollbarWidth: "none",
+        }}
+      >
+        <ToolBtn active={tool === "pen"} onClick={() => setTool("pen")} label="Pen">
+          <Pencil size={18} />
+        </ToolBtn>
+        <ToolBtn active={tool === "highlighter"} onClick={() => setTool("highlighter")} label="Highlighter">
+          <Highlighter size={18} />
+        </ToolBtn>
+        <ToolBtn active={tool === "eraser"} onClick={() => setTool("eraser")} label="Eraser">
+          <Eraser size={18} />
+        </ToolBtn>
+        <div style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0, margin: "0 2px" }} />
+        {PRESET_COLORS.map((c) => (
+          <PalmSafeButton
+            key={c}
+            onPress={() => {
+              setColor(c);
+              if (tool === "eraser") setTool("pen");
+            }}
+            aria-label={`Color ${c}`}
+            aria-pressed={color === c}
+            style={{
+              width: 36,
+              height: 40,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              padding: 0,
+              flexShrink: 0,
+              touchAction: "manipulation",
+            }}
+          >
+            <span
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: "50%",
+                background: c,
+                border: "2px solid #fff",
+                boxShadow: color === c ? "0 0 0 2px var(--accent)" : "0 0 0 1px var(--border-strong)",
+                display: "block",
+              }}
+            />
+          </PalmSafeButton>
+        ))}
+        <div style={{ flex: "1 0 0" }} />
+        <ToolBtn active={false} disabled={!canUndo} onClick={onUndo} label="Undo">
+          <Undo2 size={18} />
+        </ToolBtn>
+      </div>
+      )}
       <div
         ref={scrollRef}
         style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 16, boxSizing: "border-box" }}
@@ -691,7 +772,12 @@ export default function ReferencePane({
         )}
         {status === "error" && (
           <div style={{ textAlign: "center", color: "#c62828", fontSize: 14, marginTop: 40 }}>
-            Couldn't load this document.
+            Couldn&apos;t load this document.
+          </div>
+        )}
+        {status === "unsupported" && (
+          <div style={{ textAlign: "center", color: "#5F5E5A", fontSize: 14, lineHeight: 1.5, margin: "40px auto 0", maxWidth: 320 }}>
+            {PDF_UNSUPPORTED_MESSAGE}
           </div>
         )}
 
@@ -743,97 +829,34 @@ export default function ReferencePane({
         )}
       </div>
 
-      {!readOnly && (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 12px",
-          background: "#fff",
-          borderTop: "1px solid #eee",
-          flexWrap: "wrap",
-          touchAction: "manipulation",
-        }}
-      >
-        <ToolBtn active={tool === "pen"} onClick={() => setTool("pen")} label="Pen">
-          <Pencil size={18} />
-        </ToolBtn>
-        <ToolBtn active={tool === "highlighter"} onClick={() => setTool("highlighter")} label="Highlighter">
-          <Highlighter size={18} />
-        </ToolBtn>
-        <ToolBtn active={tool === "eraser"} onClick={() => setTool("eraser")} label="Eraser">
-          <Eraser size={18} />
-        </ToolBtn>
-        <div style={{ width: 1, height: 24, background: "#e5e5e5", flexShrink: 0 }} />
-        {PRESET_COLORS.map((c) => (
-          <button
-            key={c}
-            onClick={() => {
-              setColor(c);
-              if (tool === "eraser") setTool("pen");
-            }}
-            aria-label={`Color ${c}`}
-            style={{
-              width: 44,
-              height: 44,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              padding: 0,
-              flexShrink: 0,
-              touchAction: "manipulation",
-            }}
-          >
-            <span
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                background: c,
-                border: color === c ? "2px solid #1a1a1a" : "2px solid transparent",
-                boxShadow: "0 0 0 1px #ddd",
-                display: "block",
-              }}
-            />
-          </button>
-        ))}
-        <div style={{ width: 1, height: 24, background: "#e5e5e5", flexShrink: 0 }} />
-        <ToolBtn active={false} disabled={!canUndo} onClick={onUndo} label="Undo">
-          <Undo2 size={18} />
-        </ToolBtn>
-      </div>
-      )}
     </div>
   );
 }
 
 function ToolBtn({ children, active, disabled, onClick, label }) {
   return (
-    <button
-      onClick={onClick}
+    <PalmSafeButton
+      onPress={onClick}
       disabled={disabled}
       title={label}
       aria-label={label}
+      aria-pressed={active}
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        width: 44,
-        height: 44,
-        border: "none",
+        width: 40,
+        height: 40,
+        border: active ? "1px solid var(--accent-border)" : "1px solid transparent",
         borderRadius: 10,
-        background: active ? "#E3F2FD" : "transparent",
-        color: disabled ? "#ccc" : "#333",
+        background: active ? "var(--accent-soft)" : "transparent",
+        color: disabled ? "#B5B4B0" : active ? "var(--accent-ink)" : "var(--ink-2)",
         cursor: disabled ? "default" : "pointer",
         flexShrink: 0,
         touchAction: "manipulation",
       }}
     >
       {children}
-    </button>
+    </PalmSafeButton>
   );
 }

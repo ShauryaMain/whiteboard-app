@@ -2,6 +2,16 @@
 
 import { useRef } from "react";
 
+// The overlay is position:fixed inside the board pane, so its coordinates
+// are relative to that pane — not the browser window. Pointer events give
+// window coordinates, so convert before comparing (the pane isn't at the
+// window's top-left when the toolbar or reference pane is showing).
+function toPaneCoords(e) {
+  const pane = e.currentTarget.closest ? e.currentTarget.closest("[data-board-pane]") : null;
+  const rect = pane ? pane.getBoundingClientRect() : { left: 0, top: 0 };
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
 export default function CompassOverlay({ center, setCenter, radius, setRadius, angle, setAngle }) {
   const dragState = useRef(null);
 
@@ -32,8 +42,9 @@ export default function CompassOverlay({ center, setCenter, radius, setRadius, a
       const dy = e.clientY - drag.startY;
       setCenter({ x: drag.origin.x + dx, y: drag.origin.y + dy });
     } else if (drag.mode === "resize") {
-      const dx = e.clientX - center.x;
-      const dy = e.clientY - center.y;
+      const p = toPaneCoords(e);
+      const dx = p.x - center.x;
+      const dy = p.y - center.y;
       setRadius(Math.max(20, Math.hypot(dx, dy)));
       setAngle(Math.atan2(dy, dx));
     }

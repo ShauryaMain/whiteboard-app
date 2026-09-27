@@ -1,3 +1,43 @@
+/*
+ * Design tokens — the "Studio" look. Everything new reads its colours,
+ * radii and shadows from here, so the whole app can be retuned in one place.
+ * Kept to CSS that iPadOS 15 Safari understands (no container queries, no
+ * nesting, no color-mix).
+ */
+:root {
+  --bg: #F4F3EF;
+  --surface: #FFFFFF;
+  --surface-2: #F8F7F4;
+  --surface-hover: #F0EFEA;
+  --border: #E4E2DC;
+  --border-strong: #DCDAD3;
+
+  --ink: #18191C;
+  --ink-2: #3A3B3F;
+  --muted: #5F5E5A;
+  --faint: #9C9B97;
+
+  --accent: #2451D6;
+  --accent-hover: #1A3CA3;
+  --accent-soft: #EAF0FF;
+  --accent-border: #C7D5FB;
+  --accent-ink: #1F46B8;
+
+  --insert-soft: #FDF1E3;
+  --insert-ink: #A35A00;
+  --danger: #B3261E;
+  --danger-border: #F0C9C6;
+  --success: #2E9E5B;
+
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.14);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+  --font-sans: var(--font-geist), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
 * {
   box-sizing: border-box;
   padding: 0;
@@ -10,9 +50,14 @@ html, body {
 }
 
 body {
-  color: #1a1a1a;
+  color: var(--ink);
   background: #ffffff;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
 }
 
 a {
@@ -36,4 +81,29 @@ button {
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+}
+
+/* Keyboard focus ring (not shown for mouse / touch / pen taps). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Full-screen board layout. 100dvh (Safari 15.4+) avoids the URL bar
+   overlap on iPads; plain 100vh is the fallback for older versions. */
+.wb-root {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+/* Dialog cards never taller than the visible screen (dvh: Safari 15.4+,
+   vh fallback for older iPads). */
+.modal-card {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
 }

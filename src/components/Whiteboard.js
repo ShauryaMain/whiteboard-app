@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import Toolbar from "./Toolbar";
 import RulerOverlay from "./RulerOverlay";
 import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
+import SplitDivider from "./SplitDivider";
+import PalmSafeButton from "./PalmSafeButton";
+import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2 } from "lucide-react";
 import ReferencePane from "./ReferencePane";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
@@ -17,6 +19,26 @@ import GridToolModal from "./GridToolModal";
 import SimEmbed from "./SimEmbed";
 import SimEmbedModal from "./SimEmbedModal";
 import { renderGrid, withDefaults as withGridDefaults, WORLD_UNITS_PER_CM } from "@/lib/gridRenderer";
+import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
+import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
+import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
+import { renderBoardThumbnail } from "@/lib/boardThumbnail";
+import {
+  emptySelection, selectionCount, selectionFromData, strokeBounds, imageBounds, textBounds, unionBounds,
+  rectFromPoints, hitTestStrokes, hitTestImages, objectsInRect, translateStroke, translateText,
+  translateImage, cloneObjects, chunkObjects, newId, writeInternalClipboard, readInternalClipboard,
+  CLIPBOARD_MARKER, prepareImageFile, makeInlineImage, imageFilesFrom, writeClipboardMarker, readSystemClipboard,
+} from "@/lib/boardObjects";
+import chrome from "./StudioChrome.module.css";
+import {
+  subscribeViewport, getViewportWidth, getServerViewportWidth,
+  subscribeRefFraction, getRefFractionSide, getRefFractionStacked, getServerRefFraction,
+  setRefFraction, DEFAULT_REF_FRACTION,
+} from "@/lib/layoutPrefs";
+import {
+  subscribePencilPrefs, getPencilOnly, getPenSeen, getServerPrefSnapshot,
+  isPencilOnlyUndecided, setPencilOnly, markPenSeen,
+} from "@/lib/pencilPrefs";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -260,25 +282,75 @@ export default function Whiteboard({ boardId }) {
   // system and the text-editing overlay: pan/scale are refs, not state.
   const [sims, setSims] = useState([]);
   const simsRef = useRef([]);
+  // Page background ("blank" | "lined" | "graph" | "dots" | "iso"). The ref
+  // is what fullRedraw reads; the state drives the Page menu.
+  const [boardBackground, setBoardBackground] = useState("blank");
+  const backgroundRef = useRef("blank");
+  const backgroundCssKeyRef = useRef("");
+  const pageBgRef = useRef(null);
   const simNodesRef = useRef({});
   const pendingSimBroadcast = useRef(null);
   const simBroadcastTimer = useRef(null);
   const [simModalOpen, setSimModalOpen] = useState(false);
-  const [canUseReferencePane, setCanUseReferencePane] = useState(false);
+  // Reference pane layout: side-by-side on wide screens, stacked (document
+  // on top, board below) on narrower tablets / portrait, so it's usable on
+  // every tablet instead of hidden below 680px as before.
+  const viewportWidth = useSyncExternalStore(subscribeViewport, getViewportWidth, getServerViewportWidth);
+  const canUseReferencePane = viewportWidth >= 560;
+  const refStacked = viewportWidth < 900;
+  const savedRefFractionSide = useSyncExternalStore(subscribeRefFraction, getRefFractionSide, getServerRefFraction);
+  const savedRefFractionStacked = useSyncExternalStore(subscribeRefFraction, getRefFractionStacked, getServerRefFraction);
+  const [refDragFraction, setRefDragFraction] = useState(null);
+  const [refCollapsed, setRefCollapsed] = useState(false);
+  const workAreaRef = useRef(null);
   const [panToolActive, setPanToolActive] = useState(false);
   const [showPencilTip, setShowPencilTip] = useState(false);
+  const [showPencilOnlyNotice, setShowPencilOnlyNotice] = useState(false);
+  const [boardName, setBoardName] = useState("");
+  // Per-device stylus preferences (see pencilPrefs.js). The server render
+  // always sees "off"; the saved values take over after hydration.
+  const pencilOnly = useSyncExternalStore(subscribePencilPrefs, getPencilOnly, getServerPrefSnapshot);
+  const penSeen = useSyncExternalStore(subscribePencilPrefs, getPenSeen, getServerPrefSnapshot);
   const [referenceStrokes, setReferenceStrokes] = useState([]);
   const [referenceTool, setReferenceTool] = useState("pen");
   const [referenceColor, setReferenceColor] = useState("#E53935");
   const [myReferenceUndoAvailable, setMyReferenceUndoAvailable] = useState(false);
   const [editingText, setEditingText] = useState(null);
   const [selectedTextId, setSelectedTextId] = useState(null);
+  // Phase 5: images on the board + multi-object selection.
+  const [images, setImages] = useState([]);
+  const imagesRef = useRef([]);
+  const imageNodesRef = useRef({});
+  const imageInputRef = useRef(null);
+  const [selection, setSelectionState] = useState(emptySelection);
+  const selectionRef = useRef(emptySelection());
+  const selectionBoundsCacheRef = useRef(null);
+  const selectionBoxElRef = useRef(null);
+  const selectionBarElRef = useRef(null);
+  const marqueeRef = useRef(null);
+  const marqueeElRef = useRef(null);
+  const groupMoveRef = useRef(null);
+  const imageResizeRef = useRef(null);
+  const pasteCountRef = useRef(0);
+  const clipboardMarkedRef = useRef(false);
+  const copiedOnThisPageRef = useRef(false);
+  const imagesTableWarnedRef = useRef(false);
+  const [boardNotice, setBoardNotice] = useState("");
+  const noticeTimerRef = useRef(null);
+  const rlsNoticeShownRef = useRef(false);
+  const shortcutHandlersRef = useRef(null);
+  // Boards-list preview picture (boards.thumbnail).
+  const boardLoadedRef = useRef(false);
+  const lastThumbRef = useRef(undefined);
+  const thumbTimerRef = useRef(null);
+  const thumbWarnedRef = useRef(false);
   const [referenceDoc, setReferenceDoc] = useState(null);
   const [referenceUploadStatus, setReferenceUploadStatus] = useState("");
   const referenceFileInputRef = useRef(null);
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { textsRef.current = texts; }, [texts]);
+  useEffect(() => { imagesRef.current = images; }, [images]);
   useEffect(() => { selectedTextIdRef.current = selectedTextId; }, [selectedTextId]);
   useEffect(() => {
     if (tool !== "select") setSelectedTextId(null);
@@ -388,18 +460,6 @@ export default function Whiteboard({ boardId }) {
     };
   }, []);
 
-  // Reference docs are desktop/tablet only for now — a true side-by-side
-  // split isn't usable on a narrow phone screen. Re-checked on resize so
-  // rotating a tablet or resizing a browser window updates it live.
-  useEffect(() => {
-    function checkWidth() {
-      setCanUseReferencePane(window.innerWidth >= 680);
-    }
-    checkWidth();
-    window.addEventListener("resize", checkWidth);
-    return () => window.removeEventListener("resize", checkWidth);
-  }, []);
-
   function screenToWorld(p) {
     return {
       x: (p.x - panRef.current.x) / scaleRef.current,
@@ -452,13 +512,20 @@ export default function Whiteboard({ boardId }) {
     }
   }
 
+  // The eraser punches transparent holes ("destination-out") instead of
+  // painting white, so the page background (lined, dots…) shows through
+  // where you erase instead of being wiped out.
   function drawStroke(ctx, stroke) {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
-    ctx.globalAlpha = stroke.opacity ?? 1;
-    ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
     if (stroke.tool === "eraser") {
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.strokeStyle = "#000000";
       drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
+      ctx.globalCompositeOperation = "source-over";
     } else {
+      ctx.globalAlpha = stroke.opacity ?? 1;
+      ctx.strokeStyle = stroke.color;
       ctx.lineWidth = stroke.width;
       ctx.lineCap = "round";
       smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
@@ -639,6 +706,114 @@ export default function Whiteboard({ boardId }) {
     }
   }
 
+  // ---- Selection overlay + board images (positioned on every redraw) ----
+
+  function textHeightOf(t) {
+    return ctxRef.current ? getTextBoxHeight(ctxRef.current, t) : (t.fontSize || 24) * 1.3;
+  }
+
+  function getObjectsData(sel) {
+    const s = new Set(sel.strokes), t = new Set(sel.texts), i = new Set(sel.images);
+    return {
+      strokes: s.size ? strokesRef.current.filter((x) => s.has(x.id)) : [],
+      texts: t.size ? textsRef.current.filter((x) => t.has(x.id)) : [],
+      images: i.size ? imagesRef.current.filter((x) => i.has(x.id)) : [],
+    };
+  }
+
+  function boundsOfData(data) {
+    return unionBounds([
+      ...data.strokes.map(strokeBounds),
+      ...data.texts.map((t) => textBounds(t, textHeightOf(t))),
+      ...data.images.map(imageBounds),
+    ]);
+  }
+
+  function getSelectionBounds() {
+    const move = groupMoveRef.current;
+    if (move && move.origBounds) {
+      const b = move.origBounds;
+      return { minX: b.minX + move.dx, minY: b.minY + move.dy, maxX: b.maxX + move.dx, maxY: b.maxY + move.dy };
+    }
+    const key = [selectionRef.current, strokesRef.current, textsRef.current, imagesRef.current];
+    const cache = selectionBoundsCacheRef.current;
+    if (cache && cache.key.every((v, idx) => v === key[idx])) return cache.bounds;
+    const bounds = boundsOfData(getObjectsData(selectionRef.current));
+    selectionBoundsCacheRef.current = { key, bounds };
+    return bounds;
+  }
+
+  function repositionImages() {
+    for (const img of imagesRef.current) {
+      const el = imageNodesRef.current[img.id];
+      if (!el) continue;
+      const p = worldToScreen({ x: img.x, y: img.y });
+      const scale = scaleRef.current;
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
+      el.style.width = img.width * scale + "px";
+      el.style.height = img.height * scale + "px";
+    }
+  }
+
+  function repositionSelectionOverlay() {
+    const box = selectionBoxElRef.current;
+    const bar = selectionBarElRef.current;
+    const marquee = marqueeElRef.current;
+    if (marquee) {
+      const m = marqueeRef.current;
+      if (m) {
+        const a = worldToScreen(m.start), b = worldToScreen(m.current);
+        marquee.style.display = "block";
+        marquee.style.left = Math.min(a.x, b.x) + "px";
+        marquee.style.top = Math.min(a.y, b.y) + "px";
+        marquee.style.width = Math.abs(a.x - b.x) + "px";
+        marquee.style.height = Math.abs(a.y - b.y) + "px";
+      } else {
+        marquee.style.display = "none";
+      }
+    }
+    if (!box || !bar) return;
+    const sel = selectionRef.current;
+    const bounds = toolRef.current === "select" && selectionCount(sel) > 0 ? getSelectionBounds() : null;
+    if (!bounds) {
+      box.style.display = "none";
+      bar.style.display = "none";
+      return;
+    }
+    const scale = scaleRef.current;
+    const pad = 6;
+    const tl = worldToScreen({ x: bounds.minX, y: bounds.minY });
+    const w = (bounds.maxX - bounds.minX) * scale;
+    const h = (bounds.maxY - bounds.minY) * scale;
+    const singleText = sel.texts.length === 1 && sel.strokes.length === 0 && sel.images.length === 0;
+    const singleImage = sel.images.length === 1 && sel.strokes.length === 0 && sel.texts.length === 0;
+    box.style.display = singleText ? "none" : "block";
+    box.style.left = tl.x - pad + "px";
+    box.style.top = tl.y - pad + "px";
+    box.style.width = w + pad * 2 + "px";
+    box.style.height = h + pad * 2 + "px";
+    const handle = box.firstChild;
+    if (handle) handle.style.display = singleImage && !groupMoveRef.current ? "block" : "none";
+
+    // Action bar: above the selection if there's room, otherwise below,
+    // always kept inside the board.
+    const { width: paneW, height: paneH } = getPaneSize();
+    bar.style.display = groupMoveRef.current || imageResizeRef.current ? "none" : "flex";
+    const barW = bar.offsetWidth || 300;
+    const barH = bar.offsetHeight || 48;
+    const extraTop = singleText ? 44 : 0; // clear the text box's rotate handle
+    let top = tl.y - pad - barH - 10 - extraTop;
+    if (top < 8) top = tl.y + h + pad + 10;
+    top = Math.max(8, Math.min(paneH - barH - 8, top));
+    let left = tl.x + w / 2 - barW / 2;
+    left = Math.max(8, Math.min(paneW - barW - 8, left));
+    bar.style.left = left + "px";
+    bar.style.top = top + "px";
+  }
+
+  // ---------- saving + broadcasting ----------
+
   function fullRedraw() {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
@@ -659,8 +834,12 @@ export default function Whiteboard({ boardId }) {
     drawTexts(ctx, textsRef.current, selectedTextIdRef.current);
     drawGrid(ctx, gridConfigRef.current);
 
+    applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
+
     repositionEditingTextarea();
     repositionSimEmbeds();
+    repositionImages();
+    repositionSelectionOverlay();
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
@@ -669,11 +848,15 @@ export default function Whiteboard({ boardId }) {
     const lookback = 3;
     const startIdx = Math.max(0, pts.length - newPointsCount - 1 - lookback);
     const endIdx = pts.length - 1;
-    ctx.globalAlpha = styleStroke.opacity ?? 1;
-    ctx.strokeStyle = styleStroke.tool === "eraser" ? "#ffffff" : styleStroke.color;
     if (styleStroke.tool === "eraser") {
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.strokeStyle = "#000000";
       drawVariableWidthPath(ctx, pts, startIdx, endIdx, styleStroke.width);
+      ctx.globalCompositeOperation = "source-over";
     } else {
+      ctx.globalAlpha = styleStroke.opacity ?? 1;
+      ctx.strokeStyle = styleStroke.color;
       ctx.lineWidth = styleStroke.width;
       ctx.lineCap = "butt";
       smoothPath(ctx, pts, startIdx, endIdx);
@@ -681,6 +864,28 @@ export default function Whiteboard({ boardId }) {
     ctx.globalAlpha = 1;
 
     if (gridConfigRef.current) drawGrid(ctx, gridConfigRef.current);
+  }
+
+  // Supabase errors print as "{}" in the console, so spell them out. A
+  // row-level-security refusal (code 42501) when re-saving something that
+  // already exists means the table has no "update" rule yet — moving
+  // strokes is the first thing that ever updates a saved stroke — so say
+  // that once, in plain words, instead of an error every time.
+  function reportSaveError(kind, error) {
+    const detail = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" — ");
+    if (error.code === "42501") {
+      console.warn(`Could not save a moved ${kind} (the ${kind}s table needs an update rule in Supabase): ${detail}`);
+      if (!rlsNoticeShownRef.current) {
+        rlsNoticeShownRef.current = true;
+        setBoardNotice(
+          "Moved items show for everyone now, but won't stay moved after a reload until the Supabase update rule is added (see the SQL file)."
+        );
+        if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = setTimeout(() => setBoardNotice(""), 8000);
+      }
+      return;
+    }
+    console.error(`Error saving ${kind}: ${detail || String(error)}`);
   }
 
   async function insertStroke(stroke) {
@@ -696,7 +901,7 @@ export default function Whiteboard({ boardId }) {
         points: roundPoints(stroke.points),
       },
     });
-    if (error) console.error("Error saving stroke:", error);
+    if (error) reportSaveError("stroke", error);
   }
 
   async function insertText(t) {
@@ -712,12 +917,15 @@ export default function Whiteboard({ boardId }) {
       width: t.width,
       rotation: t.rotation || 0,
     });
-    if (error) console.error("Error saving text:", error);
+    if (error) reportSaveError("text", error);
   }
 
   function performClear() {
     setStrokes([]);
     setTexts([]);
+    setImages([]);
+    selectionRef.current = emptySelection();
+    setSelectionState(emptySelection());
   }
 
   function handleResetView() {
@@ -756,7 +964,7 @@ export default function Whiteboard({ boardId }) {
       async function fetchBoardRow() {
         const { data, error } = await supabase
           .from("boards")
-          .select("grid_config, owner_id")
+          .select("grid_config, owner_id, name")
           .eq("id", boardId)
           .maybeSingle();
         return { data, error };
@@ -771,6 +979,7 @@ export default function Whiteboard({ boardId }) {
       if (!boardError && boardRow) {
         gridConfigRef.current = boardRow.grid_config || null;
         setIsOwner(user.id === boardRow.owner_id);
+        setBoardName(boardRow.name || "");
       } else if (boardError) {
         console.error("Error loading board:", boardError);
       }
@@ -814,18 +1023,49 @@ export default function Whiteboard({ boardId }) {
       // jsonb;`). Failing quietly here just means embedded sims start
       // empty until that column exists, instead of breaking the whole
       // board load the way including it in the query above would.
-      const { data: simRow, error: simError } = await supabase
-        .from("boards")
-        .select("sim_embeds")
-        .eq("id", boardId)
-        .maybeSingle();
-      if (!simError && simRow) {
-        simsRef.current = simRow.sim_embeds || [];
-        setSims(simsRef.current);
-      } else if (simError) {
-        console.warn("Could not load embedded simulations (has the sim_embeds column been added yet?):", simError);
-      }
+      // These newer extras are each fetched on their own: one failing
+      // (column/table not created yet) or being slow never holds up or
+      // breaks the others, or the board itself.
+      supabase.from("boards").select("sim_embeds").eq("id", boardId).maybeSingle().then(({ data, error }) => {
+        if (!error && data) {
+          simsRef.current = data.sim_embeds || [];
+          setSims(simsRef.current);
+        } else if (error) {
+          console.warn("Could not load embedded simulations (has the sim_embeds column been added yet?):", error);
+        }
+      });
 
+      // Images live in their own (newer) table.
+      supabase
+        .from("images")
+        .select("id, x, y, width, height, src")
+        .eq("board_id", boardId)
+        .order("created_at", { ascending: true })
+        .then(({ data, error }) => {
+          if (!error && Array.isArray(data)) {
+            setImages(data.map((r) => ({ id: r.id, x: r.x, y: r.y, width: r.width, height: r.height, src: r.src })));
+          } else if (error) {
+            console.warn("Could not load images (has the images table been created yet?):", error);
+          }
+        });
+
+      // The saved preview picture, so an unchanged board isn't re-saved.
+      supabase.from("boards").select("thumbnail").eq("id", boardId).maybeSingle().then(({ data, error }) => {
+        if (!error && data) lastThumbRef.current = data.thumbnail || null;
+      });
+
+      // Page background: `alter table boards add column background text;`
+      supabase.from("boards").select("background").eq("id", boardId).maybeSingle().then(({ data, error }) => {
+        if (!error && data) {
+          backgroundRef.current = normalizeBackground(data.background);
+          setBoardBackground(backgroundRef.current);
+          fullRedraw();
+        } else if (error) {
+          console.warn("Could not load the page background (has the background column been added yet?):", error);
+        }
+      });
+
+      boardLoadedRef.current = true;
       fullRedraw();
     }
     loadBoard();
@@ -850,8 +1090,396 @@ export default function Whiteboard({ boardId }) {
     return !error;
   }
 
+  async function handleSetBackground(next) {
+    const value = normalizeBackground(next);
+    if (value === backgroundRef.current) return;
+    backgroundRef.current = value;
+    setBoardBackground(value);
+    fullRedraw();
+    channelRef.current?.send({ type: "broadcast", event: "background-set", payload: { background: value } });
+    if (!boardId) return;
+    const { error } = await supabase.from("boards").update({ background: value }).eq("id", boardId);
+    if (error) console.warn("Could not save the page background (has the background column been added yet?):", error);
+  }
+
+  // ================= Selection, copy / cut / paste, images =================
+  // Everything here works from refs so it can be called from the canvas
+  // pointer handlers (registered once) as well as from React handlers.
+
+  function flashNotice(text, ms = 2600) {
+    setBoardNotice(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setBoardNotice(""), ms);
+  }
+
+  function setSelection(next) {
+    const sel = next || emptySelection();
+    selectionRef.current = sel;
+    selectionBoundsCacheRef.current = null;
+    setSelectionState(sel);
+    const singleText = sel.texts.length === 1 && sel.strokes.length === 0 && sel.images.length === 0;
+    setSelectedTextId(singleText ? sel.texts[0] : null);
+    repositionSelectionOverlay();
+  }
+
+  function warnImagesTable(error) {
+    console.warn("Could not save images (has the images table been created yet?):", error);
+    if (!imagesTableWarnedRef.current) {
+      imagesTableWarnedRef.current = true;
+      flashNotice("Images show for everyone now, but won't be saved until the images table is set up in Supabase.", 6000);
+    }
+  }
+
+  async function insertImage(img) {
+    if (!boardId || !img?.id) return;
+    const { error } = await supabase.from("images").upsert({
+      id: img.id,
+      board_id: boardId,
+      x: img.x,
+      y: img.y,
+      width: img.width,
+      height: img.height,
+      src: img.src,
+    });
+    if (error) warnImagesTable(error);
+  }
+
+  function persistAdd(data) {
+    data.strokes.forEach((s) => insertStroke(s));
+    data.texts.forEach((t) => insertText(t));
+    data.images.forEach((img) => insertImage(img));
+  }
+
+  function persistRemove(sel) {
+    const run = (table, ids) => {
+      if (!ids.length) return;
+      supabase.from(table).delete().in("id", ids).then(({ error }) => {
+        if (error) {
+          if (table === "images") warnImagesTable(error);
+          else console.error(`Error deleting from ${table}:`, error);
+        }
+      });
+    };
+    run("strokes", sel.strokes);
+    run("texts", sel.texts);
+    run("images", sel.images);
+  }
+
+  function broadcastAdd(data) {
+    for (const chunk of chunkObjects(data)) {
+      channelRef.current?.send({ type: "broadcast", event: "objects-add", payload: chunk });
+    }
+  }
+
+  function mergeById(prev, added) {
+    if (!added.length) return prev;
+    const ids = new Set(added.map((o) => o.id));
+    return [...prev.filter((o) => !ids.has(o.id)), ...added];
+  }
+
+  // Low-level apply (no undo bookkeeping). `remote` skips broadcast/save.
+  function applyAdd(data, { remote = false } = {}) {
+    const d = { strokes: data.strokes || [], texts: data.texts || [], images: data.images || [] };
+    if (d.strokes.length) setStrokes((prev) => mergeById(prev, d.strokes));
+    if (d.texts.length) setTexts((prev) => mergeById(prev, d.texts));
+    if (d.images.length) setImages((prev) => mergeById(prev, d.images));
+    if (!remote) {
+      broadcastAdd(d);
+      persistAdd(d);
+    }
+  }
+
+  function applyRemove(sel, { remote = false } = {}) {
+    const s = new Set(sel.strokes || []), t = new Set(sel.texts || []), i = new Set(sel.images || []);
+    if (s.size) setStrokes((prev) => prev.filter((x) => !s.has(x.id)));
+    if (t.size) setTexts((prev) => prev.filter((x) => !t.has(x.id)));
+    if (i.size) setImages((prev) => prev.filter((x) => !i.has(x.id)));
+    if (!remote) {
+      channelRef.current?.send({ type: "broadcast", event: "objects-remove", payload: { strokes: [...s], texts: [...t], images: [...i] } });
+      persistRemove({ strokes: [...s], texts: [...t], images: [...i] });
+    }
+  }
+
+  function applyMove(sel, dx, dy, { remote = false } = {}) {
+    if (!dx && !dy) return;
+    const s = new Set(sel.strokes || []), t = new Set(sel.texts || []), i = new Set(sel.images || []);
+    if (s.size) setStrokes((prev) => prev.map((x) => (s.has(x.id) ? translateStroke(x, dx, dy) : x)));
+    if (t.size) setTexts((prev) => prev.map((x) => (t.has(x.id) ? translateText(x, dx, dy) : x)));
+    if (i.size) setImages((prev) => prev.map((x) => (i.has(x.id) ? translateImage(x, dx, dy) : x)));
+    if (!remote) {
+      channelRef.current?.send({ type: "broadcast", event: "objects-move", payload: { strokes: [...s], texts: [...t], images: [...i], dx, dy } });
+      // Save the moved copies (computed from the current refs, which don't
+      // include this move yet).
+      const moved = getObjectsData({ strokes: [...s], texts: [...t], images: [...i] });
+      persistAdd({
+        strokes: moved.strokes.map((x) => translateStroke(x, dx, dy)),
+        texts: moved.texts.map((x) => translateText(x, dx, dy)),
+        images: moved.images.map((x) => translateImage(x, dx, dy)),
+      });
+    }
+  }
+
+  function pushUndo(entry) {
+    myStrokeStack.current.push(entry);
+    myRedoStack.current = [];
+    setMyUndoAvailable(true);
+    setMyRedoAvailable(false);
+  }
+
+  // ---------- selection actions ----------
+
+  function copySelection({ silent = false } = {}) {
+    const data = getObjectsData(selectionRef.current);
+    if (selectionCount(selectionFromData(data)) === 0) return false;
+    writeInternalClipboard({ boardId, bounds: boundsOfData(data), ...data });
+    pasteCountRef.current = 0;
+    copiedOnThisPageRef.current = true;
+    clipboardMarkedRef.current = false;
+    writeClipboardMarker().then((ok) => {
+      if (ok) clipboardMarkedRef.current = true;
+    });
+    if (!silent) flashNotice("Copied — paste it here or on another board.");
+    return true;
+  }
+
+  function deleteSelection() {
+    const data = getObjectsData(selectionRef.current);
+    const sel = selectionFromData(data);
+    if (selectionCount(sel) === 0) return;
+    applyRemove(sel);
+    pushUndo({ op: "remove", data });
+    setSelection(emptySelection());
+  }
+
+  function cutSelection() {
+    if (!copySelection({ silent: true })) return;
+    deleteSelection();
+    flashNotice("Cut — paste it wherever you like.");
+  }
+
+  function addAsNewSelection(data) {
+    applyAdd(data);
+    const sel = selectionFromData(data);
+    pushUndo({ op: "add", sel });
+    toolRef.current = "select";
+    setPanToolActive(false);
+    setTool("select");
+    setSelection(sel);
+  }
+
+  function duplicateSelection() {
+    const data = getObjectsData(selectionRef.current);
+    if (selectionCount(selectionFromData(data)) === 0) return;
+    const off = 24 / scaleRef.current;
+    addAsNewSelection(cloneObjects(data, off, off));
+  }
+
+  function viewportCenterWorld() {
+    const { width, height } = getPaneSize();
+    return screenToWorld({ x: width / 2, y: height / 2 });
+  }
+
+  function isWorldPointVisible(p) {
+    const s = worldToScreen(p);
+    const { width, height } = getPaneSize();
+    return s.x >= 0 && s.y >= 0 && s.x <= width && s.y <= height;
+  }
+
+  function pasteInternal(clip) {
+    const data = { strokes: clip.strokes || [], texts: clip.texts || [], images: clip.images || [] };
+    const bounds = clip.bounds || boundsOfData(data);
+    if (!bounds) return false;
+    const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
+    let dx, dy;
+    if (isWorldPointVisible(center)) {
+      // Original is on screen: step each paste down-right so copies don't
+      // sit exactly on top of each other.
+      pasteCountRef.current += 1;
+      dx = dy = (24 * pasteCountRef.current) / scaleRef.current;
+    } else {
+      const target = viewportCenterWorld();
+      dx = target.x - center.x;
+      dy = target.y - center.y;
+    }
+    addAsNewSelection(cloneObjects(data, dx, dy));
+    return true;
+  }
+
+  function pastePlainText(text) {
+    const value = String(text).slice(0, 5000);
+    const at = viewportCenterWorld();
+    const t = {
+      id: newId(),
+      x: at.x - 160,
+      y: at.y - 20,
+      text: value,
+      color: colorRef.current,
+      fontSize: 24,
+      width: 320,
+      rotation: 0,
+    };
+    addAsNewSelection({ strokes: [], texts: [t], images: [] });
+  }
+
+  async function uploadBoardImage(prepared, id) {
+    const ext = prepared.type === "image/jpeg" ? "jpg" : "png";
+    const path = `${boardId}/${id}.${ext}`;
+    let failure = null;
+    try {
+      const { error } = await supabase.storage
+        .from("board-images")
+        .upload(path, prepared.blob, { contentType: prepared.type, upsert: true });
+      failure = error;
+    } catch (err) {
+      failure = err;
+    }
+    if (failure) {
+      console.warn("Image upload failed (has the board-images bucket been created?):", failure);
+      return null;
+    }
+    const { data } = supabase.storage.from("board-images").getPublicUrl(path);
+    return data?.publicUrl || null;
+  }
+
+  async function insertImageFiles(fileList, atWorld) {
+    const files = imageFilesFrom(fileList).slice(0, 6);
+    if (!files.length) {
+      flashNotice("That isn't an image this board can use — try a PNG or JPG.");
+      return;
+    }
+    flashNotice(files.length > 1 ? `Adding ${files.length} images…` : "Adding image…", 20000);
+    const center = atWorld || viewportCenterWorld();
+    const scale = scaleRef.current;
+    const { width: paneW, height: paneH } = getPaneSize();
+    const added = [];
+    for (let n = 0; n < files.length; n++) {
+      let prepared;
+      try {
+        prepared = await prepareImageFile(files[n]);
+      } catch (err) {
+        console.error("Image processing failed:", err);
+        continue;
+      }
+      const id = newId();
+      let src = await uploadBoardImage(prepared, id);
+      if (!src) src = await makeInlineImage(prepared);
+      if (!src) continue;
+      // Shown at its own pixel size, but never more than ~60% of the board.
+      const fit = Math.min(1, (paneW * 0.6) / prepared.width, (paneH * 0.6) / prepared.height);
+      const width = (prepared.width * fit) / scale;
+      const height = (prepared.height * fit) / scale;
+      const offset = (n * 24) / scale;
+      added.push({ id, x: center.x - width / 2 + offset, y: center.y - height / 2 + offset, width, height, src });
+    }
+    if (!added.length) {
+      flashNotice("Couldn't add that image — please try a smaller PNG or JPG.", 5000);
+      return;
+    }
+    setBoardNotice("");
+    addAsNewSelection({ strokes: [], texts: [], images: added });
+  }
+
+  // Decides what a paste means: our own copied selection, a picture, or
+  // plain text (which becomes a text box).
+  function pasteFromSources({ files = [], text = "" } = {}) {
+    if (files.length) {
+      insertImageFiles(files);
+      return;
+    }
+    const clip = readInternalClipboard();
+    const trimmed = (text || "").trim();
+    if (trimmed && trimmed !== CLIPBOARD_MARKER) {
+      // Text from somewhere else is newer than our copy — unless we never
+      // managed to put our marker on the system clipboard, in which case a
+      // selection copied on this page is the most recent thing.
+      if (clip && copiedOnThisPageRef.current && !clipboardMarkedRef.current) {
+        if (pasteInternal(clip)) return;
+      }
+      pastePlainText(text);
+      return;
+    }
+    if (clip && pasteInternal(clip)) return;
+    flashNotice("Nothing to paste yet — copy something on a board first, or use Insert ▸ Image.");
+  }
+
+  async function handlePasteButton() {
+    const { files, text } = await readSystemClipboard();
+    pasteFromSources({ files, text });
+  }
+
+  function selectAll() {
+    const sel = {
+      strokes: strokesRef.current.map((s) => s.id),
+      texts: textsRef.current.map((t) => t.id),
+      images: imagesRef.current.map((i) => i.id),
+    };
+    toolRef.current = "select";
+    setPanToolActive(false);
+    setTool("select");
+    setSelection(sel);
+  }
+
+  // ---------- images ----------
+
+  function handleInsertImageClick() {
+    imageInputRef.current?.click();
+  }
+
+  function handleImageInputChange(e) {
+    const files = Array.from(e.target.files || []);
+    e.target.value = "";
+    if (files.length) insertImageFiles(files);
+  }
+
+  function handleBoardDragOver(e) {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  }
+
+  function handleBoardDrop(e) {
+    const files = imageFilesFrom(e.dataTransfer?.files);
+    if (!files.length) return;
+    e.preventDefault();
+    const rect = canvasRef.current.getBoundingClientRect();
+    insertImageFiles(files, screenToWorld({ x: e.clientX - rect.left, y: e.clientY - rect.top }));
+  }
+
+  // ---------- boards-list preview ----------
+
+  function saveThumbnail() {
+    if (thumbTimerRef.current) {
+      clearTimeout(thumbTimerRef.current);
+      thumbTimerRef.current = null;
+    }
+    if (!boardId || !boardLoadedRef.current) return;
+    const url = renderBoardThumbnail({
+      strokes: strokesRef.current,
+      texts: textsRef.current,
+      images: imagesRef.current,
+      grid: gridConfigRef.current,
+      background: backgroundRef.current,
+    });
+    if (url === lastThumbRef.current) return;
+    lastThumbRef.current = url;
+    supabase.from("boards").update({ thumbnail: url }).eq("id", boardId).then(({ error }) => {
+      if (error && !thumbWarnedRef.current) {
+        thumbWarnedRef.current = true;
+        console.warn("Could not save the board preview (has the thumbnail column been added yet?):", error);
+      }
+    });
+  }
+
+  function scheduleThumbnail() {
+    if (!boardLoadedRef.current) return;
+    if (thumbTimerRef.current) clearTimeout(thumbTimerRef.current);
+    thumbTimerRef.current = setTimeout(saveThumbnail, 5000);
+  }
+
   async function handleEndSession() {
     setSaveStatus("Saving…");
+    saveThumbnail();
     const ok = await saveGrid();
     setSaveStatus(ok ? "Saved" : "Save failed");
     setTimeout(() => setSaveStatus(""), 3000);
@@ -936,6 +1564,40 @@ export default function Whiteboard({ boardId }) {
       }
       return next;
     });
+  }
+
+  // Toolbar: picking a drawing/select/text tool always leaves Move mode
+  // and graph-placement mode, so the tool you tapped is the one you get.
+  function handleSelectTool(name) {
+    setPanToolActive(false);
+    if (gridToolActive) {
+      setGridToolActive(false);
+      fullRedraw();
+    }
+    if (name !== "select") setSelection(emptySelection());
+    setTool(name);
+  }
+
+  function handleSelectMove() {
+    if (!panToolActive) handleTogglePan();
+  }
+
+  // Maths ▸ Graph: open the graph dialog and switch on placement mode so
+  // the graph can be dragged/resized afterwards (same flow as the old grid
+  // button). "Done placing graph" in the context bar switches it back off.
+  function handleOpenGraph() {
+    if (!gridToolActive) handleToggleGrid();
+    handleOpenGridModal();
+  }
+
+  function handleFinishGraphMove() {
+    if (!gridToolActive) return;
+    handleToggleGrid();
+    setTool(toolBeforeGridRef.current || "pen");
+  }
+
+  function getHasGrid() {
+    return !!gridConfigRef.current;
   }
 
   function handleToggleCalculator() {
@@ -1120,9 +1782,13 @@ export default function Whiteboard({ boardId }) {
 
     let pageCount = 1;
     if (file.type === "application/pdf") {
+      if (!browserCanOpenPdfs()) {
+        setReferenceUploadStatus("");
+        alert(PDF_UNSUPPORTED_MESSAGE);
+        return;
+      }
       try {
-        const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+        const pdfjsLib = await loadPdfjs();
         const arrayBuffer = await file.arrayBuffer();
         const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         pageCount = pdfDoc.numPages;
@@ -1184,6 +1850,7 @@ export default function Whiteboard({ boardId }) {
   }
 
   function handleReferenceToolClick() {
+    setRefCollapsed(false);
     if (referenceDoc) {
       handleRemoveReferenceDoc();
     } else {
@@ -1229,7 +1896,7 @@ export default function Whiteboard({ boardId }) {
       if (!trimmedForCheck) {
         // Cleared out entirely while editing — treat that as deleting it.
         setTexts((prev) => prev.filter((t) => t.id !== info.id));
-        setSelectedTextId(null);
+        setSelection(emptySelection());
         channelRef.current?.send({ type: "broadcast", event: "text-remove", payload: { textId: info.id } });
         supabase.from("texts").delete().eq("id", info.id).then(({ error }) => {
           if (error) console.error("Error deleting text:", error);
@@ -1400,6 +2067,29 @@ export default function Whiteboard({ boardId }) {
       fullRedraw();
     });
 
+    channel.on("broadcast", { event: "objects-add" }, ({ payload }) => {
+      applyAdd(payload, { remote: true });
+    });
+
+    channel.on("broadcast", { event: "objects-remove" }, ({ payload }) => {
+      applyRemove(payload, { remote: true });
+    });
+
+    channel.on("broadcast", { event: "objects-move" }, ({ payload }) => {
+      applyMove(payload, payload.dx, payload.dy, { remote: true });
+    });
+
+    channel.on("broadcast", { event: "image-update" }, ({ payload }) => {
+      const img = payload.image;
+      if (img) setImages((prev) => prev.map((x) => (x.id === img.id ? img : x)));
+    });
+
+    channel.on("broadcast", { event: "background-set" }, ({ payload }) => {
+      backgroundRef.current = normalizeBackground(payload.background);
+      setBoardBackground(backgroundRef.current);
+      fullRedraw();
+    });
+
     channel.on("broadcast", { event: "sim-embeds-set" }, ({ payload }) => {
       simsRef.current = payload.sims || [];
       setSims(simsRef.current);
@@ -1462,6 +2152,8 @@ export default function Whiteboard({ boardId }) {
           strokes: strokesRef.current,
           texts: textsRef.current,
           grid: gridConfigRef.current,
+          background: backgroundRef.current,
+          images: imagesRef.current,
           referenceDoc: referenceDocRef.current,
           referenceStrokes: referenceStrokesRef.current,
         },
@@ -1508,7 +2200,17 @@ export default function Whiteboard({ boardId }) {
     // listener) also correctly catches the canvas needing to resize when
     // the reference-doc pane appears/disappears, not just when the
     // browser window itself changes size.
-    const resizeObserver = new ResizeObserver(() => resizeCanvas());
+    // Coalesced to one resize per animation frame, so dragging the
+    // reference-pane divider doesn't reallocate the canvas many times per
+    // frame (noticeable on older iPads).
+    let resizeFrame = null;
+    const resizeObserver = new ResizeObserver(() => {
+      if (resizeFrame !== null) return;
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        resizeCanvas();
+      });
+    });
     if (boardPaneRef.current) resizeObserver.observe(boardPaneRef.current);
 
     function getPos(e) {
@@ -1923,8 +2625,65 @@ export default function Whiteboard({ boardId }) {
       setEditingText(info);
     }
 
+    function startGroupMove(pos, pointerId) {
+      const data = getObjectsData(selectionRef.current);
+      groupMoveRef.current = {
+        startPos: pos,
+        dx: 0,
+        dy: 0,
+        moved: false,
+        sel: selectionFromData(data),
+        orig: {
+          strokes: new Map(data.strokes.map((o) => [o.id, o])),
+          texts: new Map(data.texts.map((o) => [o.id, o])),
+          images: new Map(data.images.map((o) => [o.id, o])),
+        },
+        origBounds: boundsOfData(data),
+      };
+      try { canvas.setPointerCapture(pointerId); } catch (err) {}
+    }
+
+    // Live preview of a group drag: the refs are updated directly for
+    // speed; React state is only updated once, on release.
+    function previewGroupMove(dx, dy) {
+      const g = groupMoveRef.current;
+      g.dx = dx;
+      g.dy = dy;
+      const map = (list, orig, fn) => list.map((o) => (orig.has(o.id) ? fn(orig.get(o.id), dx, dy) : o));
+      if (g.orig.strokes.size) strokesRef.current = map(strokesRef.current, g.orig.strokes, translateStroke);
+      if (g.orig.texts.size) textsRef.current = map(textsRef.current, g.orig.texts, translateText);
+      if (g.orig.images.size) imagesRef.current = map(imagesRef.current, g.orig.images, translateImage);
+      fullRedraw();
+    }
+
+    function cancelSelectionDrag() {
+      if (groupMoveRef.current) {
+        previewGroupMove(0, 0);
+        groupMoveRef.current = null;
+      }
+      if (imageResizeRef.current) {
+        const { orig } = imageResizeRef.current;
+        imagesRef.current = imagesRef.current.map((i) => (i.id === orig.id ? orig : i));
+        imageResizeRef.current = null;
+      }
+      marqueeRef.current = null;
+      fullRedraw();
+    }
+
     function handlePointerDown(e) {
       const pos = getPos(e);
+
+      if (e.pointerType === "pen") {
+        notePenActivity();
+        markPenSeen();
+        // First time a stylus is used on this device: switch to
+        // Pencil-only drawing automatically (the user can turn it back off
+        // from the toolbar, and that choice sticks).
+        if (isPencilOnlyUndecided()) {
+          setPencilOnly(true);
+          setShowPencilOnlyNotice(true);
+        }
+      }
 
       if (e.pointerType === "touch") {
         touchPoints.current.set(e.pointerId, pos);
@@ -1932,6 +2691,7 @@ export default function Whiteboard({ boardId }) {
 
       if (touchPoints.current.size >= 2) {
         cancelActiveDrawing();
+        cancelSelectionDrag();
         movingTextRef.current = null;
         if (panDragActive.current) {
           panDragActive.current = false;
@@ -1963,6 +2723,11 @@ export default function Whiteboard({ boardId }) {
       }
 
       if (toolRef.current === "select") {
+        // Pencil-only + a touch right after the Pencil was used = a resting
+        // palm: don't let it drop or replace what the Pencil selected.
+        if (e.pointerType === "touch" && getPencilOnly() && msSincePenActivity() < 1500) {
+          return;
+        }
         const worldPos = screenToWorld(pos);
 
         if (selectedTextIdRef.current) {
@@ -1995,6 +2760,23 @@ export default function Whiteboard({ boardId }) {
           }
         }
 
+        const sel = selectionRef.current;
+        const count = selectionCount(sel);
+
+        // A single selected image: its corner handle resizes it.
+        if (count === 1 && sel.images.length === 1) {
+          const img = imagesRef.current.find((i) => i.id === sel.images[0]);
+          if (img) {
+            const corner = worldToScreen({ x: img.x + img.width, y: img.y + img.height });
+            if (distance(pos, corner) < 24) {
+              imageResizeRef.current = { id: img.id, startPos: pos, orig: { ...img } };
+              canvas.setPointerCapture(e.pointerId);
+              repositionSelectionOverlay();
+              return;
+            }
+          }
+        }
+
         const hit = hitTestText(worldPos);
 
         const now = Date.now();
@@ -2006,23 +2788,63 @@ export default function Whiteboard({ boardId }) {
         lastTextTapRef.current = hit ? { id: hit.id, time: now } : null;
 
         if (isDoubleTap) {
-          setSelectedTextId(hit.id);
+          setSelection({ strokes: [], texts: [hit.id], images: [] });
           openTextEditorForEdit(hit);
           return;
         }
 
-        if (hit) {
-          setSelectedTextId(hit.id);
-          movingTextRef.current = { id: hit.id, startScreenPos: pos, origX: hit.x, origY: hit.y };
-          canvas.setPointerCapture(e.pointerId);
-        } else {
-          setSelectedTextId(null);
+        // Pressing inside the current (multi-)selection drags all of it.
+        const singleText = count === 1 && sel.texts.length === 1;
+        if (count > 0 && !singleText) {
+          const b = getSelectionBounds();
+          const pad = 8 / scaleRef.current;
+          if (b && worldPos.x >= b.minX - pad && worldPos.x <= b.maxX + pad && worldPos.y >= b.minY - pad && worldPos.y <= b.maxY + pad) {
+            startGroupMove(pos, e.pointerId);
+            return;
+          }
         }
+
+        if (hit) {
+          setSelection({ strokes: [], texts: [hit.id], images: [] });
+          startGroupMove(pos, e.pointerId);
+          return;
+        }
+
+        const hitStroke = hitTestStrokes(strokesRef.current, worldPos, 10 / scaleRef.current);
+        const hitImage = hitStroke ? null : hitTestImages(imagesRef.current, worldPos);
+        if (hitStroke || hitImage) {
+          setSelection({
+            strokes: hitStroke ? [hitStroke.id] : [],
+            texts: [],
+            images: hitImage ? [hitImage.id] : [],
+          });
+          startGroupMove(pos, e.pointerId);
+          return;
+        }
+
+        // Empty space: start a selection box.
+        setSelection(emptySelection());
+        marqueeRef.current = { start: worldPos, current: worldPos, startPos: pos };
+        canvas.setPointerCapture(e.pointerId);
+        repositionSelectionOverlay();
         return;
       }
 
       if (toolRef.current === "text") {
+        // Tapping the board while a text box is open finishes that box
+        // first (it used to jump the half-typed text to the new spot).
+        if (editingTextRef.current) {
+          textareaElRef.current?.blur();
+          return;
+        }
         openTextEditor(screenToWorld(pos));
+        return;
+      }
+
+      // Pencil-only mode: fingers (and resting palms) never draw. They can
+      // still select, place text and move the board — two fingers pan and
+      // zoom through the multi-touch branch above.
+      if (e.pointerType === "touch" && getPencilOnly()) {
         return;
       }
 
@@ -2107,6 +2929,7 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handlePointerMove(e) {
+      if (e.pointerType === "pen") notePenActivity();
       if (e.pointerType === "touch" && touchPoints.current.has(e.pointerId)) {
         touchPoints.current.set(e.pointerId, getPos(e));
       }
@@ -2130,6 +2953,37 @@ export default function Whiteboard({ boardId }) {
 
       if (gridDragMode.current) {
         handleGridPointerMove(getPos(e));
+        return;
+      }
+
+      if (groupMoveRef.current) {
+        const pos = getPos(e);
+        const g = groupMoveRef.current;
+        if (!g.moved && distance(pos, g.startPos) < 3) return;
+        g.moved = true;
+        previewGroupMove((pos.x - g.startPos.x) / scaleRef.current, (pos.y - g.startPos.y) / scaleRef.current);
+        return;
+      }
+
+      if (imageResizeRef.current) {
+        const pos = getPos(e);
+        const r = imageResizeRef.current;
+        const dx = (pos.x - r.startPos.x) / scaleRef.current;
+        const dy = (pos.y - r.startPos.y) / scaleRef.current;
+        const aspect = r.orig.height / r.orig.width;
+        // Follow whichever direction was dragged further, keeping the shape.
+        const grow = Math.abs(dx) >= Math.abs(dy) ? dx : dy / aspect;
+        const width = Math.max(24 / scaleRef.current, r.orig.width + grow);
+        r.last = { ...r.orig, width, height: width * aspect };
+        imagesRef.current = imagesRef.current.map((i) => (i.id === r.orig.id ? r.last : i));
+        selectionBoundsCacheRef.current = null;
+        fullRedraw();
+        return;
+      }
+
+      if (marqueeRef.current) {
+        marqueeRef.current.current = screenToWorld(getPos(e));
+        repositionSelectionOverlay();
         return;
       }
 
@@ -2256,6 +3110,7 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handlePointerUp(e) {
+      if (e.pointerType === "pen") notePenActivity();
       if (e.pointerType === "touch") {
         touchPoints.current.delete(e.pointerId);
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
@@ -2282,6 +3137,55 @@ export default function Whiteboard({ boardId }) {
         gridDragStart.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
         saveGrid();
+        return;
+      }
+
+      if (groupMoveRef.current) {
+        const g = groupMoveRef.current;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        const { dx, dy } = g;
+        if (g.moved && (dx || dy)) {
+          // Put the refs back and let the state update (plus broadcast +
+          // save) apply the move once.
+          previewGroupMove(0, 0);
+          groupMoveRef.current = null;
+          applyMove(g.sel, dx, dy);
+          pushUndo({ op: "move", sel: g.sel, dx, dy });
+        } else {
+          groupMoveRef.current = null;
+        }
+        repositionSelectionOverlay();
+        return;
+      }
+
+      if (imageResizeRef.current) {
+        const r = imageResizeRef.current;
+        imageResizeRef.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (r.last) {
+          setImages((prev) => prev.map((i) => (i.id === r.last.id ? r.last : i)));
+          channelRef.current?.send({ type: "broadcast", event: "image-update", payload: { image: r.last } });
+          insertImage(r.last);
+        }
+        repositionSelectionOverlay();
+        return;
+      }
+
+      if (marqueeRef.current) {
+        const m = marqueeRef.current;
+        marqueeRef.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        const endPos = getPos(e);
+        if (distance(endPos, m.startPos) > 6) {
+          const rect = rectFromPoints(m.start, screenToWorld(endPos));
+          setSelection(objectsInRect(rect, {
+            strokes: strokesRef.current,
+            texts: textsRef.current,
+            images: imagesRef.current,
+          }, textHeightOf));
+        } else {
+          repositionSelectionOverlay();
+        }
         return;
       }
 
@@ -2355,6 +3259,7 @@ export default function Whiteboard({ boardId }) {
 
     return () => {
       resizeObserver.disconnect();
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
@@ -2368,11 +3273,54 @@ export default function Whiteboard({ boardId }) {
 
   useEffect(() => {
     if (ctxRef.current) fullRedraw();
-  }, [strokes, texts]);
+  }, [strokes, texts, images, tool]);
+
+  // Selection / paste / image operations are stored as { op, ... } entries
+  // (one entry per action, however many objects it touched); older
+  // single-stroke / single-text entries keep their original handling below.
+  function undoOp(entry) {
+    if (entry.op === "add") {
+      const data = getObjectsData(entry.sel);
+      const sel = selectionFromData(data);
+      if (selectionCount(sel) === 0) return false;
+      applyRemove(sel);
+      myRedoStack.current.push({ op: "add", data });
+    } else if (entry.op === "remove") {
+      applyAdd(entry.data);
+      myRedoStack.current.push({ op: "remove", sel: selectionFromData(entry.data) });
+    } else if (entry.op === "move") {
+      applyMove(entry.sel, -entry.dx, -entry.dy);
+      myRedoStack.current.push(entry);
+    }
+    return true;
+  }
+
+  function redoOp(entry) {
+    if (entry.op === "add") {
+      applyAdd(entry.data);
+      myStrokeStack.current.push({ op: "add", sel: selectionFromData(entry.data) });
+    } else if (entry.op === "remove") {
+      const data = getObjectsData(entry.sel);
+      applyRemove(selectionFromData(data));
+      myStrokeStack.current.push({ op: "remove", data });
+    } else if (entry.op === "move") {
+      applyMove(entry.sel, entry.dx, entry.dy);
+      myStrokeStack.current.push(entry);
+    }
+  }
 
   function handleUndo() {
     const last = myStrokeStack.current[myStrokeStack.current.length - 1];
     if (!last) return;
+
+    if (last.op) {
+      myStrokeStack.current.pop();
+      undoOp(last);
+      setSelection(emptySelection());
+      setMyUndoAvailable(myStrokeStack.current.length > 0);
+      setMyRedoAvailable(myRedoStack.current.length > 0);
+      return;
+    }
 
     if (last.kind === "stroke") {
       const strokeToUndo = strokes.find((s) => s.id === last.id);
@@ -2413,6 +3361,14 @@ export default function Whiteboard({ boardId }) {
     if (!last) return;
     myRedoStack.current.pop();
 
+    if (last.op) {
+      redoOp(last);
+      setSelection(emptySelection());
+      setMyRedoAvailable(myRedoStack.current.length > 0);
+      setMyUndoAvailable(true);
+      return;
+    }
+
     if (last.kind === "stroke") {
       setStrokes((prev) => [...prev, last.data]);
       myStrokeStack.current.push({ kind: "stroke", id: last.data.id });
@@ -2438,7 +3394,7 @@ export default function Whiteboard({ boardId }) {
   }
 
   function handleClear() {
-    if (strokes.length === 0 && texts.length === 0) return;
+    if (strokes.length === 0 && texts.length === 0 && images.length === 0) return;
     if (window.confirm("Clear the whole board for everyone? This can't be undone.")) {
       performClear();
       myStrokeStack.current = [];
@@ -2452,55 +3408,317 @@ export default function Whiteboard({ boardId }) {
       supabase.from("texts").delete().eq("board_id", boardId).then(({ error }) => {
         if (error) console.error("Error clearing texts:", error);
       });
+      supabase.from("images").delete().eq("board_id", boardId).then(({ error }) => {
+        if (error) console.warn("Error clearing images:", error);
+      });
     }
   }
 
+  // Refresh the boards-list preview a few seconds after the board changes,
+  // and straight away when leaving the page.
+  useEffect(() => {
+    scheduleThumbnail();
+  }, [strokes, texts, images, boardBackground]);
+
+  useEffect(() => {
+    function flush() {
+      if (thumbTimerRef.current) saveThumbnail();
+    }
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
+
+  // Keyboard shortcuts and system copy / cut / paste. The handlers read the
+  // latest versions of these functions through a ref, so the listeners are
+  // attached only once.
+  useEffect(() => {
+    shortcutHandlersRef.current = {
+      copySelection, cutSelection, deleteSelection, duplicateSelection, selectAll,
+      handleUndo, handleRedo, pasteFromSources,
+      clearSelection: () => setSelection(emptySelection()),
+    };
+  });
+
+  useEffect(() => {
+    function isTypingTarget(el) {
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+    }
+    function hasSelection() {
+      return toolRef.current === "select" && selectionCount(selectionRef.current) > 0;
+    }
+    function onKeyDown(e) {
+      if (isTypingTarget(e.target) || editingTextRef.current) return;
+      const h = shortcutHandlersRef.current;
+      if (!h) return;
+      const mod = e.metaKey || e.ctrlKey;
+      const key = (e.key || "").toLowerCase();
+      if (mod && key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) h.handleRedo();
+        else h.handleUndo();
+        return;
+      }
+      if (mod && key === "y") {
+        e.preventDefault();
+        h.handleRedo();
+        return;
+      }
+      if (mod && key === "a") {
+        e.preventDefault();
+        h.selectAll();
+        return;
+      }
+      if (!hasSelection()) return;
+      if (mod && key === "c") h.copySelection();
+      else if (mod && key === "x") h.cutSelection();
+      else if (mod && key === "d") {
+        e.preventDefault();
+        h.duplicateSelection();
+      } else if (!mod && (key === "delete" || key === "backspace")) {
+        e.preventDefault();
+        h.deleteSelection();
+      } else if (key === "escape") {
+        h.clearSelection();
+      }
+    }
+    // Marks the system clipboard synchronously during a real copy / cut, so
+    // a later paste knows our selection is the newest thing copied.
+    function onCopyOrCut(e) {
+      if (isTypingTarget(e.target) || editingTextRef.current || !hasSelection()) return;
+      if (e.clipboardData) {
+        e.clipboardData.setData("text/plain", CLIPBOARD_MARKER);
+        e.preventDefault();
+        clipboardMarkedRef.current = true;
+      }
+    }
+    function onPaste(e) {
+      if (isTypingTarget(e.target) || editingTextRef.current) return;
+      const h = shortcutHandlersRef.current;
+      const cd = e.clipboardData;
+      if (!h || !cd) return;
+      const files = imageFilesFrom(cd.files);
+      if (!files.length && cd.items) {
+        for (const item of Array.from(cd.items)) {
+          if (item.kind === "file" && item.type.indexOf("image/") === 0) {
+            const f = item.getAsFile();
+            if (f) files.push(f);
+          }
+        }
+      }
+      e.preventDefault();
+      h.pasteFromSources({ files, text: cd.getData("text/plain") });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    document.addEventListener("copy", onCopyOrCut);
+    document.addEventListener("cut", onCopyOrCut);
+    document.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("copy", onCopyOrCut);
+      document.removeEventListener("cut", onCopyOrCut);
+      document.removeEventListener("paste", onPaste);
+    };
+  }, []);
+
   const showReferencePane = canUseReferencePane && !!referenceDoc;
+  const refMode = refStacked ? "stacked" : "side";
+  const refFraction = refDragFraction ?? (refStacked ? savedRefFractionStacked : savedRefFractionSide);
+
+  // Keeps both panes usable: the document never gets narrower/shorter than
+  // a readable minimum, and neither does the board.
+  function clampRefFraction(fraction, totalPx) {
+    const minPane = refStacked ? 160 : 260;
+    const minBoard = (refStacked ? 220 : 320) + 14; // + the divider's width
+    if (!totalPx) return Math.min(0.8, Math.max(0.2, fraction));
+    const lo = minPane / totalPx;
+    const hi = Math.max(lo, (totalPx - minBoard) / totalPx);
+    return Math.min(hi, Math.max(lo, fraction));
+  }
+
+  function handleRefDividerDrag(fraction, totalPx) {
+    setRefDragFraction(clampRefFraction(fraction, totalPx));
+  }
+
+  function handleRefDividerDragEnd(fraction, totalPx) {
+    setRefFraction(refMode, clampRefFraction(fraction, totalPx));
+    setRefDragFraction(null);
+  }
+
+  function handleRefSnap(fraction) {
+    const rect = workAreaRef.current?.getBoundingClientRect();
+    const total = rect ? (refStacked ? rect.height : rect.width) : 0;
+    setRefFraction(refMode, clampRefFraction(fraction, total));
+  }
+
+  const statusText =
+    referenceUploadStatus || saveStatus || (liveClassCode ? "Live class running" : "Saves automatically");
 
   return (
-    <div style={{ width: "100dvw", height: "100dvh", overflow: "hidden", display: "flex" }}>
+    <div className="wb-root">
+      <Toolbar
+        boardName={boardName}
+        statusText={statusText}
+        isOwner={isOwner}
+        tool={tool}
+        panToolActive={panToolActive}
+        onSelectTool={handleSelectTool}
+        onSelectMove={handleSelectMove}
+        color={color}
+        setColor={setColor}
+        strokeWidth={strokeWidth}
+        setStrokeWidth={setStrokeWidth}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onClear={handleClear}
+        canUndo={myUndoAvailable}
+        canRedo={myRedoAvailable}
+        rulerActive={rulerActive}
+        onToggleRuler={handleToggleRuler}
+        compassActive={compassActive}
+        onToggleCompass={handleToggleCompass}
+        getHasGrid={getHasGrid}
+        background={boardBackground}
+        onSetBackground={handleSetBackground}
+        onInsertImage={handleInsertImageClick}
+        onPaste={handlePasteButton}
+        onSelectAll={selectAll}
+        hasSelection={selectionCount(selection) > 0}
+        gridToolActive={gridToolActive}
+        onOpenGraph={handleOpenGraph}
+        onFinishGraphMove={handleFinishGraphMove}
+        onRemoveGrid={handleRemoveGrid}
+        calculatorActive={calculatorActive}
+        onToggleCalculator={handleToggleCalculator}
+        canInsertReference={isOwner && canUseReferencePane}
+        hasReferenceDoc={!!referenceDoc}
+        onReferenceToolClick={handleReferenceToolClick}
+        onOpenSimModal={handleOpenSimModal}
+        onCopyLink={handleCopyLink}
+        onStartLiveClass={handleStartLiveClass}
+        onEndSession={handleEndSession}
+        liveClassCode={liveClassCode}
+        classRoster={classRoster}
+        onViewStudent={(student) => setViewingStudent(student)}
+        onEndLiveClass={handleEndLiveClass}
+        penSeen={penSeen}
+        pencilOnly={pencilOnly}
+        onSetPencilOnly={setPencilOnly}
+        zoomPercent={zoomPercent}
+        onResetView={handleResetView}
+      />
+      <div
+        ref={workAreaRef}
+        style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: refStacked ? "column" : "row" }}
+      >
+      {showReferencePane && refCollapsed && (
+        <PalmSafeButton
+          aria-label={`Show reference document ${referenceDoc.fileName}`}
+          onPress={() => setRefCollapsed(false)}
+          style={
+            refStacked
+              ? {
+                  flex: "0 0 44px", display: "flex", alignItems: "center", gap: 8, padding: "0 16px",
+                  border: "none", borderBottom: "1px solid var(--border)", background: "var(--surface)",
+                  color: "var(--ink-2)", fontSize: 13, cursor: "pointer", textAlign: "left",
+                }
+              : {
+                  flex: "0 0 44px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+                  padding: "14px 0", border: "none", borderRight: "1px solid var(--border)",
+                  background: "var(--surface)", color: "var(--ink-2)", fontSize: 12.5, cursor: "pointer",
+                }
+          }
+        >
+          <FileText size={18} strokeWidth={1.8} />
+          <span style={refStacked ? { fontWeight: 600 } : { writingMode: "vertical-rl", fontWeight: 600 }}>
+            Show reference
+          </span>
+          {refStacked && (
+            <span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {referenceDoc.fileName}
+            </span>
+          )}
+        </PalmSafeButton>
+      )}
       {showReferencePane && (
         <div
           style={{
-          width: "clamp(340px, 42%, 600px)",
-            height: "100%",
-            flexShrink: 0,
-            borderRight: "1px solid #ddd",
-            background: "#e8eaed",
-            display: "flex",
+            // Hidden (not unmounted) while collapsed, so the PDF doesn't
+            // have to reload when it's shown again.
+            display: refCollapsed ? "none" : "flex",
             flexDirection: "column",
+            flex: `0 0 ${(refFraction * 100).toFixed(2)}%`,
+            minWidth: refStacked ? 0 : 260,
+            maxWidth: refStacked ? "none" : "calc(100% - 334px)",
+            minHeight: refStacked ? 160 : 0,
+            maxHeight: refStacked ? "calc(100% - 234px)" : "none",
+            background: "#ECEAE4",
+            overflow: "hidden",
           }}
         >
           <div
             style={{
+              height: 46,
+              flexShrink: 0,
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 14px",
-              background: "#fff",
-              borderBottom: "1px solid #eee",
+              gap: 8,
+              padding: "0 8px 0 14px",
+              background: "var(--surface)",
+              borderBottom: "1px solid var(--border)",
               fontSize: 13,
-              color: "#333",
+              color: "var(--ink)",
             }}
           >
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <FileText size={16} strokeWidth={1.8} color="var(--muted)" style={{ flexShrink: 0 }} />
+            <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {referenceDoc.fileName}
             </span>
+            <div
+              role="group"
+              aria-label="Reference document size"
+              style={{ display: "flex", flexShrink: 0, border: "1px solid var(--border-strong)", borderRadius: 8, overflow: "hidden" }}
+            >
+              {[["⅓", 1 / 3, "One third of the screen"], ["½", 1 / 2, "Half the screen"], ["⅔", 2 / 3, "Two thirds of the screen"]].map(
+                ([label, value, title], i) => (
+                  <PalmSafeButton
+                    key={label}
+                    aria-label={title}
+                    onPress={() => handleRefSnap(value)}
+                    style={{
+                      width: 32, height: 30, border: "none", borderLeft: i ? "1px solid var(--border-strong)" : "none",
+                      background: "var(--surface)", color: "var(--ink-2)", fontSize: 13, cursor: "pointer", padding: 0,
+                    }}
+                  >
+                    {label}
+                  </PalmSafeButton>
+                )
+              )}
+            </div>
+            <PalmSafeButton
+              aria-label="Hide the reference document"
+              onPress={() => setRefCollapsed(true)}
+              style={{
+                width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                border: "none", borderRadius: 8, background: "transparent", color: "var(--muted)", cursor: "pointer",
+              }}
+            >
+              {refStacked ? <PanelTopClose size={18} strokeWidth={1.8} /> : <PanelLeftClose size={18} strokeWidth={1.8} />}
+            </PalmSafeButton>
             {isOwner && (
-              <button
-                onClick={handleRemoveReferenceDoc}
+              <PalmSafeButton
+                onPress={handleRemoveReferenceDoc}
                 style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#c62828",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  flexShrink: 0,
-                  marginLeft: 10,
+                  height: 32, flexShrink: 0, padding: "0 10px", border: "1px solid var(--danger-border)", borderRadius: 8,
+                  background: "var(--surface)", color: "var(--danger)", fontSize: 12.5, cursor: "pointer",
                 }}
               >
                 Remove
-              </button>
+              </PalmSafeButton>
             )}
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
@@ -2518,13 +3736,30 @@ export default function Whiteboard({ boardId }) {
           </div>
         </div>
       )}
+      {showReferencePane && !refCollapsed && (
+        <SplitDivider
+          orientation={refStacked ? "horizontal" : "vertical"}
+          containerRef={workAreaRef}
+          valueNow={refFraction}
+          onDrag={handleRefDividerDrag}
+          onDragEnd={handleRefDividerDragEnd}
+          onReset={() => {
+            setRefDragFraction(null);
+            setRefFraction(refMode, DEFAULT_REF_FRACTION);
+          }}
+        />
+      )}
 
       <div
         ref={boardPaneRef}
+        data-board-pane="true"
+        onDragOver={handleBoardDragOver}
+        onDrop={handleBoardDrop}
         style={{
           position: "relative",
           flex: 1,
-          height: "100%",
+          minWidth: 0,
+          minHeight: 0,
           overflow: "hidden",
           // A transform on this container makes it the "containing block"
           // for any position:fixed descendant inside it (toolbar, ruler,
@@ -2534,150 +3769,35 @@ export default function Whiteboard({ boardId }) {
           transform: "translate(0, 0)",
         }}
       >
-        <a
-          href="/"
-          style={{
-            position: "fixed",
-            top: "max(16px, env(safe-area-inset-top))",
-            left: 16,
-            zIndex: 10,
-            width: 40,
-            height: 40,
-            borderRadius: "50%",
-            background: "#fff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
-            color: "#333",
-          }}
-        >
-          <ArrowLeft size={18} />
-        </a>
-        {liveClassCode && (
-          <>
-            <style>{`
-              @keyframes liveDotPulse {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.25; }
-              }
-            `}</style>
-            <div
-              style={{
-                position: "fixed",
-                top: "max(16px, env(safe-area-inset-top))",
-                left: "50%",
-                transform: "translateX(-50%)",
-                zIndex: 10,
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                background: "#1a1a1a",
-                color: "#fff",
-                borderRadius: 999,
-                padding: "8px 10px 8px 14px",
-                boxShadow: "0 2px 10px rgba(0,0,0,0.25)",
-                fontSize: 13,
-              }}
-            >
-              <span
-                style={{
-                  width: 9,
-                  height: 9,
-                  borderRadius: "50%",
-                  background: "#E53935",
-                  animation: "liveDotPulse 1.4s ease-in-out infinite",
-                  flexShrink: 0,
-                }}
-              />
-              <span style={{ fontWeight: 600 }}>LIVE</span>
-              <span style={{ opacity: 0.5 }}>·</span>
-              <span style={{ letterSpacing: 2, fontWeight: 600 }}>{liveClassCode}</span>
-              <button
-                onClick={() => setShowRoster((v) => !v)}
-                style={{
-                  border: "none",
-                  background: showRoster ? "#1E88E5" : "rgba(255,255,255,0.15)",
-                  color: "#fff",
-                  borderRadius: 999,
-                  padding: "4px 10px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                Students{classRoster.length > 0 ? ` (${classRoster.length})` : ""}
-              </button>
-              <button
-                onClick={handleEndLiveClass}
-                style={{
-                  border: "none",
-                  background: "rgba(255,255,255,0.15)",
-                  color: "#fff",
-                  borderRadius: 999,
-                  padding: "4px 10px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                  marginLeft: 4,
-                }}
-              >
-                End
-              </button>
-            </div>
-
-            {showRoster && (
-              <div
-                style={{
-                  position: "fixed",
-                  top: "max(64px, calc(env(safe-area-inset-top) + 48px))",
-                  left: "50%",
-                  transform: "translateX(-50%)",
-                  zIndex: 10,
-                  width: "min(320px, calc(100vw - 32px))",
-                  maxHeight: "50vh",
-                  overflowY: "auto",
-                  background: "#fff",
-                  borderRadius: 14,
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
-                  padding: 10,
-                }}
-              >
-                {classRoster.length === 0 ? (
-                  <div style={{ fontSize: 13, color: "#999", padding: "10px 8px" }}>
-                    Waiting for students to join…
-                  </div>
-                ) : (
-                  classRoster.map((s) => (
-                    <button
-                      key={s.studentId}
-                      onClick={() => {
-                        setViewingStudent(s);
-                        setShowRoster(false);
-                      }}
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        border: "none",
-                        background: "none",
-                        textAlign: "left",
-                        padding: "10px 8px",
-                        borderRadius: 8,
-                        fontSize: 14,
-                        color: "#1a1a1a",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#43A047", flexShrink: 0 }} />
-                      {s.name}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </>
-        )}
-
+        {/* The page ("paper") layer: white plus the chosen pattern, drawn
+            behind the transparent ink canvas. It's a separate element
+            because browsers don't reliably paint background images on a
+            GPU-backed canvas itself. z-index -1 keeps it under the canvas
+            and everything else in this pane (the transform above makes
+            the pane its own stacking context). */}
+        <div
+          ref={pageBgRef}
+          aria-hidden="true"
+          style={{ position: "absolute", inset: 0, zIndex: -1, backgroundColor: "#ffffff", pointerEvents: "none" }}
+        />
+        {/* Pictures sit on the page, under the ink, so you can write on
+            top of them and the eraser never rubs them out. Positioned by
+            repositionImages() as the board pans and zooms. */}
+        {images.map((img) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={img.id}
+            ref={(el) => {
+              if (el) imageNodesRef.current[img.id] = el;
+              else delete imageNodesRef.current[img.id];
+            }}
+            src={img.src}
+            alt=""
+            draggable={false}
+            onLoad={repositionImages}
+            className={chrome.boardImage}
+          />
+        ))}
         {viewingStudent && liveClassCode && (
           <TeacherStudentBoardView
             code={liveClassCode}
@@ -2691,13 +3811,43 @@ export default function Whiteboard({ boardId }) {
           style={{
             display: "block",
             touchAction: "none",
-            background: "#ffffff",
             WebkitUserSelect: "none",
             userSelect: "none",
             WebkitTouchCallout: "none",
             WebkitTapHighlightColor: "transparent",
             cursor: panToolActive ? "grab" : "default",
           }}
+        />
+        <div ref={marqueeElRef} aria-hidden="true" className={chrome.marquee} />
+        <div ref={selectionBoxElRef} aria-hidden="true" className={chrome.selectionBox}>
+          <span className={chrome.selectionHandle} />
+        </div>
+        <div ref={selectionBarElRef} role="toolbar" aria-label="Selected items" className={chrome.selectionBar}>
+          <PalmSafeButton className={chrome.selBtn} onPress={() => copySelection()}>
+            <Copy size={17} strokeWidth={1.9} />
+            Copy
+          </PalmSafeButton>
+          <PalmSafeButton className={chrome.selBtn} onPress={cutSelection}>
+            <Scissors size={17} strokeWidth={1.9} />
+            Cut
+          </PalmSafeButton>
+          <PalmSafeButton className={chrome.selBtn} onPress={duplicateSelection}>
+            <CopyPlus size={17} strokeWidth={1.9} />
+            Duplicate
+          </PalmSafeButton>
+          <span className={chrome.selDivider} />
+          <PalmSafeButton className={`${chrome.selBtn} ${chrome.selBtnDanger}`} onPress={deleteSelection}>
+            <Trash2 size={17} strokeWidth={1.9} />
+            Delete
+          </PalmSafeButton>
+        </div>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          onChange={handleImageInputChange}
+          style={{ display: "none" }}
         />
         {editingText && (
           <textarea
@@ -2786,14 +3936,66 @@ export default function Whiteboard({ boardId }) {
             style={{ display: "none" }}
           />
         )}
-        {showPencilTip && (
+        {(showPencilOnlyNotice || showPencilTip || boardNotice) && (
           <div
             style={{
               position: "fixed",
-              top: "max(16px, env(safe-area-inset-top))",
+              top: 12,
               left: "50%",
               transform: "translateX(-50%)",
               zIndex: 30,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 8,
+            }}
+          >
+            {boardNotice && (
+              <div role="status" className={chrome.boardNotice}>
+                {boardNotice}
+              </div>
+            )}
+            {showPencilOnlyNotice && (
+              <div
+                style={{
+                  maxWidth: "min(92vw, 400px)",
+                  background: "var(--ink)",
+                  color: "#fff",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  fontSize: 13,
+                  lineHeight: 1.4,
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  <strong>Pencil detected — only the Pencil draws now.</strong> Fingers can
+                  still select and type; use two fingers to move and zoom. Switch this off
+                  any time with &ldquo;Pencil only&rdquo; next to the pen colours.
+                </span>
+                <button
+                  onClick={() => setShowPencilOnlyNotice(false)}
+                  style={{
+                    border: "none",
+                    background: "rgba(255,255,255,0.15)",
+                    color: "#fff",
+                    borderRadius: 8,
+                    padding: "4px 8px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
+                >
+                  Got it
+                </button>
+              </div>
+            )}
+            {showPencilTip && (
+          <div
+            style={{
               maxWidth: "min(92vw, 380px)",
               background: "#1a1a1a",
               color: "#fff",
@@ -2829,45 +4031,10 @@ export default function Whiteboard({ boardId }) {
             </button>
           </div>
         )}
+          </div>
+        )}
         <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} />
-        <Toolbar
-          tool={tool}
-          setTool={setTool}
-          color={color}
-          setColor={setColor}
-          strokeWidth={strokeWidth}
-          setStrokeWidth={setStrokeWidth}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onClear={handleClear}
-          canUndo={myUndoAvailable}
-          canRedo={myRedoAvailable}
-          isOwner={isOwner}
-          onCopyLink={handleCopyLink}
-          onEndSession={handleEndSession}
-          saveStatus={saveStatus}
-          rulerActive={rulerActive}
-          onToggleRuler={handleToggleRuler}
-          onResetView={handleResetView}
-          compassActive={compassActive}
-          onToggleCompass={handleToggleCompass}
-          gridToolActive={gridToolActive}
-          onToggleGrid={handleToggleGrid}
-          onOpenGridModal={handleOpenGridModal}
-          gridCellSizeCm={gridCellSizeCm}
-          onSetGridCellSize={handleSetGridCellSize}
-          onRemoveGrid={handleRemoveGrid}
-          panToolActive={panToolActive}
-          onTogglePan={handleTogglePan}
-          canUseReferencePane={canUseReferencePane}
-          hasReferenceDoc={!!referenceDoc}
-          onReferenceToolClick={handleReferenceToolClick}
-          referenceUploadStatus={referenceUploadStatus}
-          calculatorActive={calculatorActive}
-          onToggleCalculator={handleToggleCalculator}
-          onStartLiveClass={handleStartLiveClass}
-          onOpenSimModal={handleOpenSimModal}
-        />
+      </div>
       </div>
     </div>
   );

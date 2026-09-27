@@ -5,6 +5,16 @@ import { useRef } from "react";
 const RULER_LENGTH = 320;
 const RULER_HEIGHT = 56;
 
+// The overlay is position:fixed inside the board pane, so its coordinates
+// are relative to that pane — not the browser window. Pointer events give
+// window coordinates, so convert before comparing (the pane isn't at the
+// window's top-left when the toolbar or reference pane is showing).
+function toPaneCoords(e) {
+  const pane = e.currentTarget.closest ? e.currentTarget.closest("[data-board-pane]") : null;
+  const rect = pane ? pane.getBoundingClientRect() : { left: 0, top: 0 };
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
 export default function RulerOverlay({ angle, setAngle, position, setPosition }) {
   const dragState = useRef(null);
 
@@ -35,8 +45,9 @@ export default function RulerOverlay({ angle, setAngle, position, setPosition })
       const dy = e.clientY - drag.startY;
       setPosition({ x: drag.origin.x + dx, y: drag.origin.y + dy });
     } else if (drag.mode === "rotate") {
-      const dx = e.clientX - position.x;
-      const dy = e.clientY - position.y;
+      const p = toPaneCoords(e);
+      const dx = p.x - position.x;
+      const dy = p.y - position.y;
       setAngle(Math.atan2(dy, dx));
     }
   }
