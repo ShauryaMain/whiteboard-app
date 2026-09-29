@@ -95,8 +95,10 @@ function detailRows(rows) {
 }
 
 export async function POST(request) {
-  const smtpUser = process.env.FEEDBACK_GMAIL_USER;
-  const smtpPass = process.env.FEEDBACK_GMAIL_APP_PASSWORD;
+  // Google shows app passwords in groups of four ("abcd efgh ijkl mnop");
+  // Gmail wants them without the spaces, so strip any that were pasted in.
+  const smtpUser = (process.env.FEEDBACK_GMAIL_USER || "").trim();
+  const smtpPass = (process.env.FEEDBACK_GMAIL_APP_PASSWORD || "").replace(/\s+/g, "");
   if (!smtpUser || !smtpPass) {
     return json({ error: "not_configured", message: "Feedback email isn't set up on the server yet." }, 503);
   }
@@ -213,8 +215,18 @@ ${techRows.some(([, v]) => v) ? `<div style="padding:14px 22px 18px;border-top:1
       attachments,
     });
   } catch (err) {
-    console.error("Feedback email failed:", err && err.message);
-    return json({ error: "send_failed", message: "We couldn't send that just now." }, 502);
+    // Shows up in the terminal (npm run dev) and in Vercel → Logs.
+    console.error("Feedback email failed:", err && err.code, err && err.responseCode, err && err.message);
+    const authProblem = err && (err.code === "EAUTH" || err.responseCode === 535 || err.responseCode === 534);
+    return json(
+      {
+        error: "send_failed",
+        // Safe to show: no password, just which kind of failure it was.
+        detail: authProblem ? "gmail_login_rejected" : (err && (err.code || err.responseCode)) || "unknown",
+        message: "We couldn't send that just now.",
+      },
+      502
+    );
   }
 
   return json({ ok: true });

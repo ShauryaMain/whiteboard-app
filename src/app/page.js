@@ -19,8 +19,14 @@ const FULL_COLUMNS = BASE_COLUMNS + ", background, thumbnail";
 // Loads boards with their preview + paper type when those (newer) columns
 // exist, and without them when they don't, so the list always works.
 async function selectBoards(build) {
-  const full = await build(supabase.from("boards").select(FULL_COLUMNS));
+  let full = await build(supabase.from("boards").select(FULL_COLUMNS));
+  // An expired sign-in comes back as 401: refresh it once and try again.
+  if (full.error && (full.status === 401 || /jwt/i.test(full.error.message || ""))) {
+    await supabase.auth.refreshSession();
+    full = await build(supabase.from("boards").select(FULL_COLUMNS));
+  }
   if (!full.error) return full;
+  console.warn("Boards list: falling back to the basic columns:", full.status, full.error.code, full.error.message);
   return build(supabase.from("boards").select(BASE_COLUMNS));
 }
 

@@ -138,6 +138,7 @@ export async function sendFeedback({ type, message, area, impact, replyOk, tech,
     body = null;
   }
   if (response.ok && body && body.ok) return { ok: true };
+  if (body && body.detail) console.warn("Feedback not sent:", body.error, body.detail);
   if (response.status === 413) {
     return { ok: false, code: "too_big", message: "The screenshots are too large together — try removing one." };
   }
