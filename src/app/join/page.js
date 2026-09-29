@@ -1,16 +1,33 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import d from "@/components/Dialog.module.css";
 
 // Save this file as: src/app/join/page.js
 // No auth required to join a class — matches the low-friction,
 // code-plus-name join flow this feature is deliberately modeled on.
+// A link like /join?code=ABC123 (used by the Clean Slate landing page)
+// pre-fills the class code, so the student only has to add their name.
+
+function cleanCode(raw) {
+  return String(raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+}
 
 export default function JoinPage() {
+  // useSearchParams needs a Suspense boundary so the page can still be
+  // pre-rendered at build time.
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
+      <JoinForm />
+    </Suspense>
+  );
+}
+
+function JoinForm() {
   const router = useRouter();
-  const [code, setCode] = useState("");
+  const searchParams = useSearchParams();
+  const [code, setCode] = useState(() => cleanCode(searchParams.get("code")));
   const [name, setName] = useState("");
 
   function handleJoin(e) {

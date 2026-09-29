@@ -96,6 +96,13 @@
   cursor: pointer;
 }
 
+/* Quieter than the other top-bar buttons: always there, never shouting. */
+.feedbackBtn {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
 .avatarBtn {
   width: 40px;
   height: 40px;

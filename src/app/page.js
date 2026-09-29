@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Users, MoreHorizontal, Pencil, Share2, Trash2, LogOut, X } from "lucide-react";
+import { Plus, Search, Users, MoreHorizontal, Pencil, Share2, Trash2, LogOut, X, MessageSquarePlus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { BOARD_BACKGROUNDS, backgroundCss, normalizeBackground } from "@/lib/boardBackground";
 import NewBoardModal from "@/components/NewBoardModal";
 import ShareModal from "@/components/ShareModal";
+import FeedbackModal from "@/components/FeedbackModal";
 import s from "./Home.module.css";
 import d from "@/components/Dialog.module.css";
 
@@ -49,6 +50,7 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [menuFor, setMenuFor] = useState(null); // board id whose ⋯ menu is open
   const [accountOpen, setAccountOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -246,6 +248,16 @@ export default function Home() {
           <input type="search" placeholder="Search boards" aria-label="Search boards" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
         <div className={s.spacer} />
+        <button
+          type="button"
+          className={`${s.topBtn} ${s.feedbackBtn}`}
+          onClick={() => setFeedbackOpen(true)}
+          aria-label="Send feedback"
+          title="Send feedback — ideas, bugs or anything else"
+        >
+          <MessageSquarePlus size={16} />
+          <span className={s.longLabel}>Feedback</span>
+        </button>
         <Link href="/join" className={s.topBtn} aria-label="Join a class with a code" title="Join a class with a code">
           <Users size={16} />
           <span className={s.longLabel}>Join with a class code</span>
@@ -267,6 +279,17 @@ export default function Home() {
               <b>Signed in</b>
               {user?.email}
             </div>
+            <button
+              type="button"
+              role="menuitem"
+              className={s.menuItem}
+              onClick={() => {
+                setAccountOpen(false);
+                setFeedbackOpen(true);
+              }}
+            >
+              <MessageSquarePlus size={16} /> Send feedback
+            </button>
             <button type="button" role="menuitem" className={`${s.menuItem} ${s.menuItemDanger}`} onClick={signOut}>
               <LogOut size={16} /> Sign out
             </button>
@@ -322,6 +345,10 @@ export default function Home() {
           </>
         )}
       </main>
+
+      {feedbackOpen && (
+        <FeedbackModal userEmail={user?.email} boardCount={myBoards.length} onClose={() => setFeedbackOpen(false)} />
+      )}
 
       {showNew && <NewBoardModal onClose={() => setShowNew(false)} onCreate={handleCreate} />}
 

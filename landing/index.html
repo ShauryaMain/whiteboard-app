@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clean Slate · The live whiteboard for every lesson</title>
+<meta name="description" content="Clean Slate is a free live whiteboard for teachers and tutors. Write with Apple Pencil, keep your worksheet beside the board, and run a whole class with one code.">
+<meta name="theme-color" content="#FDFCF7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15171C" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Clean Slate · The live whiteboard for every lesson">
+<meta property="og:description" content="A free, fast whiteboard for every lesson. Apple Pencil ready, works on older iPads, and runs a whole class from one code.">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shantell+Sans:wght@500;700;800&family=Geist:wght@400;500;600;700&family=Caveat:wght@500;700&display=swap">
+<style>
+/* Layout: an exercise book. Graph-paper ground with a red margin rule, marker headings,
+   handwritten notes, tape and sticky notes; the product shots sit on it like taped-in screenshots. */
+:root{
+  --paper:#FDFCF7; --grid:#E6ECF7; --margin:#F3B3A6;
+  --ink:#1B1D24; --ink-2:#3A3B3F; --muted:#5F5E5A;
+  --card:#FFFFFF; --line:#E4E2DC; --nav-bg:rgba(253,252,247,.88);
+  --accent:#2451D6; --accent-ink:#1F46B8; --on-accent:#FFFFFF;
+  --pen:#C2410C; --hand-blue:#2451D6; --hand-orange:#A35A00;
+  --tape:rgba(255,229,138,.88); --tape-ink:#6B4E00; --hilite:rgba(255,229,138,.95);
+  --sticky-y:#FFF3B0; --sticky-b:#DDE7FF; --sticky-p:#FFE1D6; --sticky-ink:#1B1D24; --sticky-muted:#3A3B3F;
+  --chalk:#1B1D24; --chalk-line:rgba(255,255,255,.05); --chalk-fg:#FFFFFF; --chalk-muted:#D2D1CC; --chalk-hi:#FFE58A; --chalk-panel:#2A2C33; --chalk-panel-line:#3A3D45;
+  --soft-shadow:0 10px 24px rgba(27,29,36,.10);
+  /* screenshot surfaces: the app is light, so these stay light in both themes */
+  --shot-bg:#FFFFFF; --shot-ink:#18191C; --shot-muted:#5F5E5A; --shot-line:#E4E2DC; --shot-soft:#F8F7F4; --shot-grid:#E7EAF1; --shot-rule:#C7D5FB;
+
+  --f-display:"Shantell Sans","Comic Neue","Trebuchet MS",sans-serif;
+  --f-body:Geist,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --f-hand:Caveat,"Segoe Print","Bradley Hand",cursive;
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --gutter:clamp(16px,5vw,80px);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#15171C; --grid:#1D2027; --margin:#5A302C;
+  --ink:#F2F1EC; --ink-2:#D3D4D9; --muted:#A7A9B0;
+  --card:#1F2229; --line:#30343D; --nav-bg:rgba(21,23,28,.88);
+  --accent:#7C9BFF; --accent-ink:#A9BCFF; --on-accent:#0E1014;
+  --pen:#FF8A5C; --hand-blue:#9DB2FF; --hand-orange:#F0B060;
+  --tape:rgba(255,229,138,.8); --hilite:rgba(255,214,90,.45);
+  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2;
+  --chalk:#0D0E11; --chalk-panel:#1E2026; --chalk-panel-line:#30333B;
+  --soft-shadow:0 10px 24px rgba(0,0,0,.4);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --paper:#15171C; --grid:#1D2027; --margin:#5A302C;
+  --ink:#F2F1EC; --ink-2:#D3D4D9; --muted:#A7A9B0;
+  --card:#1F2229; --line:#30343D; --nav-bg:rgba(21,23,28,.88);
+  --accent:#7C9BFF; --accent-ink:#A9BCFF; --on-accent:#0E1014;
+  --pen:#FF8A5C; --hand-blue:#9DB2FF; --hand-orange:#F0B060;
+  --tape:rgba(255,229,138,.8); --hilite:rgba(255,214,90,.45);
+  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2;
+  --chalk:#0D0E11; --chalk-panel:#1E2026; --chalk-panel-line:#30333B;
+  --soft-shadow:0 10px 24px rgba(0,0,0,.4);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{
+  margin:0; font-family:var(--f-body); font-size:17px; line-height:1.55; color:var(--ink);
+  background-color:var(--paper);
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:32px 32px;
+  overflow-x:hidden; position:relative;
+}
+body::before{content:"";position:absolute;top:0;bottom:0;left:clamp(6px,2.4vw,40px);width:2px;background:var(--margin);pointer-events:none}
+a{color:var(--accent-ink)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px;border-radius:6px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.02em}
+p{margin:0}
+.wrap{max-width:1280px;margin-inline:auto;padding-inline:var(--gutter);position:relative}
+.wide{max-width:1440px;margin-inline:auto;padding-inline:var(--gutter);position:relative}
+section{padding-block:clamp(64px,9vw,120px)}
+.hand{font-family:var(--f-hand)}
+
+/* tape label */
+.tape-label{display:inline-flex;align-items:center;min-height:36px;padding:2px 16px;background:var(--tape);color:var(--tape-ink);font-family:var(--f-hand);font-size:clamp(20px,2.2vw,25px);font-weight:700;transform:rotate(-2deg);line-height:1.1}
+.tape{position:absolute;width:96px;height:26px;background:var(--tape);pointer-events:none}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:56px;padding:0 26px;border-radius:14px;font-family:var(--f-body);font-size:17px;font-weight:600;text-decoration:none;border:2px solid var(--ink);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
+.btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:4px 4px 0 var(--ink)}
+.btn-dark{background:var(--ink);color:var(--paper);box-shadow:4px 4px 0 var(--accent)}
+.btn-ghost{background:var(--card);color:var(--ink)}
+.btn-primary:hover,.btn-dark:hover{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--ink)}
+.btn-dark:hover{box-shadow:2px 2px 0 var(--accent)}
+.btn-ghost:hover{background:var(--paper)}
+.btn svg{flex-shrink:0}
+
+/* nav */
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--nav-bg);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.nav .wrap{height:76px;display:flex;align-items:center;gap:32px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font-family:var(--f-display);font-size:21px;font-weight:800;flex-shrink:0}
+.brand-mark{width:36px;height:36px;border-radius:10px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;transform:rotate(-4deg)}
+.nav-links{display:flex;gap:28px;flex:1;font-weight:500;font-size:16px}
+.nav-links a,.nav-join{color:var(--ink-2);text-decoration:none}
+.nav-links a:hover,.nav-join:hover{color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:5px}
+.nav-join{font-weight:600;font-size:16px}
+.nav .btn{min-height:46px;padding:0 20px;font-size:16px;border-radius:12px;box-shadow:3px 3px 0 var(--accent)}
+.nav .btn:hover{box-shadow:1px 1px 0 var(--accent)}
+@media (max-width:900px){.nav-links{display:none}.nav .wrap{justify-content:space-between}}
+@media (max-width:480px){.nav-join{display:none}}
+
+/* hero */
+.hero{padding-block:clamp(48px,6vw,72px) clamp(72px,8vw,110px);text-align:center}
+.hero-copy{display:flex;flex-direction:column;align-items:center}
+.hero h1{margin-top:28px;font-weight:800;font-size:clamp(46px,7.6vw,108px);line-height:1.02;letter-spacing:-.03em;max-width:16ch}
+.mark{position:relative;display:inline-block;color:var(--accent);white-space:nowrap}
+.mark svg{position:absolute;left:-2%;width:104%;bottom:-.14em;height:.3em;overflow:visible}
+.mark path{stroke:var(--accent);stroke-dasharray:420;stroke-dashoffset:0;animation:draw .9s .35s ease-out backwards}
+@keyframes draw{from{stroke-dashoffset:420}to{stroke-dashoffset:0}}
+.hero-lede{margin-top:40px;font-size:clamp(18px,1.6vw,21px);color:var(--ink-2);max-width:40em}
+.cta-row{margin-top:36px;display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
+.subjects{margin-top:36px;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 12px;font-size:15px;color:var(--muted)}
+.chip{display:inline-flex;align-items:center;height:34px;padding:0 14px;border-radius:999px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);font-weight:600;font-size:15px}
+
+/* hero screenshot row */
+.shot-row{margin-top:clamp(56px,7vw,88px);display:grid;grid-template-columns:150px minmax(0,1fr) 150px;grid-template-areas:"l shot r";gap:28px;align-items:stretch;text-align:left}
+.shot-wrap{grid-area:shot;position:relative}
+.shot-frame{border:2px solid var(--ink);border-radius:18px;background:var(--shot-bg);box-shadow:8px 8px 0 var(--ink);overflow:hidden}
+.shot-wrap .tape.t1{left:-18px;top:-12px;transform:rotate(-9deg)}
+.shot-wrap .tape.t2{right:-18px;top:-10px;transform:rotate(8deg)}
+.note{font-family:var(--f-hand);font-size:27px;line-height:1.08;font-weight:500}
+.note-l{grid-area:l;align-self:center;color:var(--hand-blue);transform:rotate(-4deg);display:flex;flex-direction:column;gap:10px}
+.note-r{grid-area:r;display:flex;flex-direction:column;justify-content:space-between;gap:24px;padding-block:20px}
+.note-r .n1{color:var(--hand-blue);transform:rotate(3deg)}
+.note-r .n2{color:var(--hand-orange);transform:rotate(-3deg)}
+.note svg{display:block}
+.note .arrow-mobile{display:none}
+@media (max-width:1180px){
+  .shot-row{grid-template-columns:1fr 1fr;grid-template-areas:"shot shot" "l r";gap:28px 40px}
+  .note-l,.note-r .n1,.note-r .n2{transform:none}
+  .note-r{padding:0;justify-content:flex-start}
+  .note .arrow-desk{display:none}
+  .note{font-size:24px;display:flex;gap:10px;align-items:flex-start}
+  .note-l{flex-direction:row}
+  .note .arrow-mobile{display:block;flex-shrink:0;margin-top:2px}
+}
+@media (max-width:640px){.shot-row{grid-template-columns:1fr;grid-template-areas:"shot" "l" "r";gap:22px}.shot-frame{box-shadow:5px 5px 0 var(--ink)}}
+
+/* scaled fixed-size mockups */
+.fit{position:relative;width:100%;max-width:100%;overflow:hidden}
+.fit-inner{position:absolute;left:0;top:0;transform-origin:0 0;transform:scale(var(--k,1))}
+
+/* ----- app mockup (fixed 1100x660, scaled) ----- */
+.app{width:1100px;height:660px;display:flex;flex-direction:column;background:var(--shot-bg);color:var(--shot-ink);font-family:var(--f-body);font-size:13px;line-height:1.3}
+.appbar{height:52px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--shot-line)}
+.appbar .logo{width:26px;height:26px;border-radius:7px;background:var(--shot-ink);color:#fff;display:flex;align-items:center;justify-content:center}
+.appbar b{font-size:14px;font-weight:600}
+.appbar .saved{font-size:12px;color:var(--shot-muted)}
+.appbar .sp{flex:1}
+.live{height:28px;padding:0 10px;border-radius:99px;background:#FDECEB;color:#B3261E;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
+.live i{width:7px;height:7px;border-radius:9px;background:#B3261E}
+.pill{height:30px;padding:0 12px;border-radius:8px;background:#F4F3EF;font-size:13px;font-weight:600;display:flex;align-items:center}
+.pill.blue{background:#2451D6;color:#fff}
+.toolrow{height:64px;flex-shrink:0;display:flex;align-items:center;gap:4px;padding:0 12px;border-bottom:1px solid var(--shot-line);font-size:11px;font-weight:500;color:#3A3B3F}
+.tool{width:64px;height:52px;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.tool.on{background:#EAF0FF;color:#1F46B8}
+.vsep{width:1px;height:30px;background:var(--shot-line);margin:0 8px}
+.menu{height:36px;padding:0 12px;border-radius:8px;background:var(--shot-soft);border:1px solid var(--shot-line);display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
+.menu.insert{background:#FDF1E3;color:#A35A00;border-color:#FDF1E3}
+.sw{width:22px;height:22px;border-radius:99px}
+.ctx{height:36px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--shot-soft);border-bottom:1px solid var(--shot-line);color:var(--shot-muted)}
+.ctx b{color:var(--shot-ink);font-weight:600}
+.appbody{flex:1;display:flex;min-height:0}
+.refpane{width:340px;flex-shrink:0;background:#EDECE7;padding:18px}
+.sheet{height:100%;background:#fff;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1);padding:22px;display:flex;flex-direction:column;gap:10px}
+.sheet .eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--shot-muted)}
+.sheet .ttl{font-family:var(--f-display);font-weight:700;font-size:22px;line-height:1.05}
+.sheet .q{font-size:13px;line-height:1.5;color:#3A3B3F;margin-top:6px}
+.bar{height:8px;border-radius:4px;background:#EDECE7}
+.divider{width:10px;flex-shrink:0;background:#F4F3EF;border-left:1px solid var(--shot-line);border-right:1px solid var(--shot-line);display:flex;align-items:center;justify-content:center}
+.divider i{width:3px;height:36px;border-radius:3px;background:#9C9B97}
+.board{flex:1;position:relative}
+
+/* paper patterns (light, like the app) */
+.p-sq{background-color:#fff;background-image:linear-gradient(var(--shot-grid) 1px,transparent 1px),linear-gradient(90deg,var(--shot-grid) 1px,transparent 1px);background-size:36px 36px;background-position:0 6px}
+.p-sq-s{background-color:#fff;background-image:linear-gradient(#DDE3EF 1px,transparent 1px),linear-gradient(90deg,#DDE3EF 1px,transparent 1px);background-size:14px 14px}
+.p-lined{background-color:#fff;background-image:linear-gradient(var(--shot-rule) 1px,transparent 1px);background-size:100% 30px;background-position:0 14px}
+.p-lined-s{background-color:#fff;background-image:linear-gradient(var(--shot-rule) 1px,transparent 1px);background-size:100% 13px}
+.p-dot{background-color:#fff;background-image:radial-gradient(#9C9B97 1.2px,transparent 1.5px);background-size:14px 14px}
+.p-iso{background-color:#fff;background-image:linear-gradient(60deg,transparent 48%,#DDE3EF 49%,#DDE3EF 51%,transparent 52%),linear-gradient(-60deg,transparent 48%,#DDE3EF 49%,#DDE3EF 51%,transparent 52%),linear-gradient(90deg,transparent 48%,#DDE3EF 49%,#DDE3EF 51%,transparent 52%);background-size:14px 24px}
+
+/* section heads */
+.head{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px 72px;align-items:end;margin-bottom:clamp(40px,5vw,64px)}
+.head h2{font-weight:800;font-size:clamp(38px,5vw,64px);line-height:1.04}
+.head p{font-size:clamp(17px,1.4vw,19px);color:var(--ink-2);max-width:34em}
+.hl{background:linear-gradient(transparent 56%,var(--hilite) 56%);padding:0 .12em}
+@media (max-width:860px){.head{grid-template-columns:1fr}}
+
+/* subject cards */
+.subject-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:28px}
+.subject{background:var(--card);border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink);overflow:hidden;display:flex;flex-direction:column}
+.subject .mini{aspect-ratio:26/15;max-width:100%;border-bottom:2px solid var(--ink);position:relative}
+.subject .mini svg{position:absolute;inset:0;width:100%;height:100%}
+.subject .txt{padding:20px 22px 24px;display:flex;flex-direction:column;gap:6px}
+.subject h3{font-size:24px;font-weight:700}
+.subject p{font-size:16px;color:var(--ink-2)}
+@media (max-width:1100px){.subject-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.subject-grid{grid-template-columns:1fr}}
+
+/* tools */
+.tool-group+.tool-group{margin-top:clamp(56px,6vw,80px)}
+.group-label{display:flex;align-items:center;gap:16px;margin-bottom:34px;font-family:var(--f-hand);font-size:clamp(26px,2.4vw,32px);font-weight:700;color:var(--hand-blue)}
+.group-label::after{content:"";flex:1;height:2px;background:repeating-linear-gradient(90deg,var(--hand-blue) 0 10px,transparent 10px 18px);opacity:.6}
+.tool-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:40px 28px}
+.tcard{position:relative;background:var(--card);border:1px solid var(--line);box-shadow:var(--soft-shadow);padding:30px 22px 26px;display:flex;flex-direction:column;gap:14px;transition:transform .15s ease}
+.tcard:hover{transform:translateY(-3px)}
+.tcard .tape{left:50%;top:-13px;margin-left:-48px;transform:rotate(-3deg)}
+.tcard:nth-child(even) .tape{transform:rotate(2.5deg)}
+.illus{aspect-ratio:13/8;max-width:100%;border:1.5px solid var(--ink);border-radius:10px;background:var(--shot-bg);overflow:hidden;position:relative}
+.illus>svg{position:absolute;inset:0;width:100%;height:100%}
+.illus .swatches{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:18px 16px 30px;background:var(--shot-soft)}
+.illus .swatches div{border:1px solid #DCDAD3;border-radius:6px}
+.illus .swatch-labels{position:absolute;left:16px;right:16px;bottom:7px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;text-align:center;font-size:11px;font-weight:600;color:var(--shot-muted)}
+.tcard h3{font-size:21px;font-weight:700;line-height:1.15}
+.tcard p{font-size:15.5px;color:var(--ink-2)}
+@media (max-width:1180px){.tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.tool-grid{grid-template-columns:1fr}}
+
+/* classroom chalkboard */
+.chalk{margin-inline:clamp(0px,2vw,24px);border-radius:28px;border:2px solid var(--ink);box-shadow:8px 8px 0 var(--accent);background-color:var(--chalk);background-image:linear-gradient(var(--chalk-line) 1px,transparent 1px),linear-gradient(90deg,var(--chalk-line) 1px,transparent 1px);background-size:32px 32px;color:var(--chalk-fg);padding:clamp(40px,6vw,96px) clamp(22px,5vw,80px);display:grid;grid-template-columns:minmax(0,470px) minmax(0,1fr);gap:clamp(40px,5vw,72px);align-items:center}
+.chalk .tape-label{align-self:flex-start}
+.chalk-copy{display:flex;flex-direction:column;gap:24px}
+.chalk h2{font-weight:800;font-size:clamp(38px,4.4vw,56px);line-height:1.06}
+.chalk h2 span{color:var(--chalk-hi)}
+.chalk-copy>p{font-size:18px;color:var(--chalk-muted)}
+.steps{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:18px}
+.steps li{display:flex;gap:16px;align-items:flex-start;font-size:17px;line-height:1.45}
+.steps .num{width:36px;height:36px;flex-shrink:0;border-radius:99px;border:2px solid var(--chalk-hi);color:var(--chalk-hi);display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-weight:700;font-size:16px}
+.steps li:nth-child(1) .num{transform:rotate(-6deg)}.steps li:nth-child(2) .num{transform:rotate(5deg)}.steps li:nth-child(3) .num{transform:rotate(-4deg)}
+.steps .t{padding-top:6px}
+.steps b{font-weight:600}
+.steps .t span{color:var(--chalk-muted)}
+.roster-col{display:flex;flex-direction:column;align-items:flex-end;min-width:0}
+.roster{width:100%;border-radius:18px;background:var(--chalk-panel);border:1px solid var(--chalk-panel-line);padding:22px;display:flex;flex-direction:column;gap:16px}
+.roster-top{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.roster-top .ttl{font-size:15px;font-weight:600;flex:1}
+.code{display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:8px;border:1.5px dashed var(--chalk-hi);color:var(--chalk-hi);font-family:var(--f-mono);font-size:14px;letter-spacing:.12em}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.tile{position:relative;aspect-ratio:10/7;max-width:100%;background:#fff;border-radius:10px;padding:10px 12px 26px;color:#18191C;font-family:var(--f-hand);font-size:clamp(17px,1.55vw,22px);line-height:1.15;overflow:hidden}
+.tile .ok{color:#2451D6}
+.tile .who{position:absolute;left:10px;bottom:6px;font-family:var(--f-body);font-size:12px;font-weight:600;color:#3A3B3F}
+.tile.flag{box-shadow:0 0 0 3px #D9480F}
+.pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:99px 99px 99px 3px;background:#D9480F;color:#fff;font-family:var(--f-body);font-size:11px;font-weight:700}
+.tile .pin{position:absolute;right:10px;top:10px}
+.comment{margin-top:-10px;margin-right:clamp(0px,2vw,24px);width:min(270px,100%);background:var(--sticky-b);color:var(--sticky-ink);padding:16px 18px 20px;box-shadow:0 16px 36px rgba(0,0,0,.35);transform:rotate(2.5deg);position:relative;z-index:1}
+.comment .who{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:#1F46B8}
+.comment .msg{font-family:var(--f-hand);font-size:27px;line-height:1.1;margin-top:8px}
+@media (max-width:980px){.chalk{grid-template-columns:1fr}}
+@media (max-width:520px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tiles .tile:nth-child(n+5){display:none}}
+
+/* tablets */
+.tablet-sec{display:grid;grid-template-columns:minmax(0,540px) minmax(0,1fr);gap:clamp(48px,7vw,96px);align-items:center}
+.tablet-col{display:flex;flex-direction:column;gap:22px}
+.tablet-stage{position:relative;padding-right:40px;padding-bottom:40px}
+.tablet{border-radius:34px;background:#1B1D24;padding:16px;box-shadow:10px 10px 0 var(--accent)}
+.tablet .fit{border-radius:20px}
+.screen{width:488px;height:348px;padding:40px 40px 0;color:#18191C;font-family:var(--f-hand)}
+.screen .t1{font-size:30px;color:#5F5E5A}
+.screen .eq{font-size:40px;line-height:1.3;letter-spacing:.01em;margin-top:12px}
+.screen .eq.b{color:#2451D6;padding-left:30px;margin-top:4px}
+.screen sub{font-size:.62em;vertical-align:-.28em;line-height:0;margin:0 .04em}
+.screen .ul{width:320px;height:14px;margin:4px 0 0 30px}
+.pencil{position:absolute;right:120px;bottom:0;width:16px;height:220px;border-radius:8px;background:#E9E8E3;border:1.5px solid #1B1D24;transform:rotate(28deg);transform-origin:bottom center}
+.pencil::after{content:"";position:absolute;left:3px;bottom:-12px;border-left:4px solid transparent;border-right:4px solid transparent;border-top:12px solid #1B1D24}
+.tablet-note{font-family:var(--f-hand);font-size:27px;line-height:1.1;color:var(--hand-orange);transform:rotate(-2deg);align-self:flex-start;padding-left:8px}
+.tablet-sec h2{font-weight:800;font-size:clamp(38px,4.4vw,56px);line-height:1.06}
+.points{display:flex;flex-direction:column;gap:24px;margin-top:30px}
+.point{display:flex;gap:18px}
+.point svg{flex-shrink:0;margin-top:2px;color:var(--accent)}
+.point h3{font-size:21px;font-weight:700;letter-spacing:-.01em}
+.point p{font-size:17px;color:var(--ink-2);margin-top:4px}
+@media (max-width:980px){.tablet-sec{grid-template-columns:1fr}.tablet-col{max-width:540px}}
+
+/* sticky notes */
+.stickies{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(28px,4vw,48px)}
+.sticky{padding:30px 30px 34px;box-shadow:0 12px 26px rgba(27,29,36,.14);color:var(--sticky-ink)}
+.sticky h3{font-size:27px;font-weight:700;line-height:1.15}
+.sticky p{margin-top:12px;font-size:16px;color:var(--sticky-muted)}
+.sticky.y{background:var(--sticky-y);transform:rotate(-2deg)}
+.sticky.b{background:var(--sticky-b);transform:rotate(1.5deg)}
+.sticky.p{background:var(--sticky-p);transform:rotate(-1deg)}
+@media (max-width:900px){.stickies{grid-template-columns:1fr;max-width:520px;margin-inline:auto}}
+
+/* homework CTA */
+.homework{max-width:860px;margin-inline:auto;background:var(--sticky-y);color:var(--sticky-ink);padding:clamp(32px,5vw,56px) clamp(22px,5vw,64px) clamp(36px,5vw,60px);box-shadow:0 18px 40px rgba(27,29,36,.16);transform:rotate(-1deg);display:flex;flex-direction:column;gap:24px}
+.homework .due{font-family:var(--f-hand);font-size:30px;font-weight:700;color:#6B4E00}
+.homework h2{font-weight:800;font-size:clamp(36px,5vw,62px);line-height:1.08}
+.homework .mark{color:#2451D6}
+.homework .mark path{stroke:#2451D6}
+.checks{display:flex;flex-direction:column;gap:12px;font-family:var(--f-hand);font-size:clamp(25px,2.6vw,32px);line-height:1.1;margin-top:6px}
+.checks label{display:flex;align-items:center;gap:14px;cursor:pointer}
+.checks input{width:24px;height:24px;flex-shrink:0;accent-color:#2451D6}
+.checks input:checked+span{text-decoration:line-through;text-decoration-color:#C2410C;text-decoration-thickness:2px}
+.hw-actions{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:6px}
+.homework .btn-dark{background:#1B1D24;color:#FFFFFF;border-color:#1B1D24;box-shadow:4px 4px 0 #2451D6}
+.homework .btn-dark:hover{box-shadow:2px 2px 0 #2451D6}
+.join{display:flex;align-items:center;gap:8px;min-height:58px;padding:6px 6px 6px 16px;border-radius:14px;background:#FFFFFF;border:2px solid #1B1D24;color:#1B1D24;flex-wrap:wrap}
+.join label{font-size:15px;font-weight:600}
+.join input{width:140px;min-width:0;flex:1;height:40px;border:none;outline:none;font-size:16px;font-family:var(--f-mono);letter-spacing:.08em;background:transparent;color:#1B1D24}
+.join button{height:44px;padding:0 18px;border-radius:10px;border:none;background:#2451D6;color:#FFFFFF;font-size:15px;font-weight:600;font-family:var(--f-body);cursor:pointer}
+.join-msg:empty{display:none}
+.join-msg a{color:#1F46B8;font-weight:600}
+.join-msg{font-size:15px;color:#3A3B3F;min-height:1.4em}
+
+/* footer */
+footer{border-top:2px solid var(--ink);background:var(--paper);position:relative}
+footer .wrap{padding-block:40px;display:flex;flex-wrap:wrap;align-items:center;gap:16px 32px;font-size:15px;color:var(--muted)}
+footer .fname{font-family:var(--f-display);font-size:19px;font-weight:800;color:var(--ink)}
+footer .grow{flex:1;min-width:220px}
+footer nav{display:flex;flex-wrap:wrap;gap:12px 28px}
+footer a{color:var(--ink-2);text-decoration:none}
+footer a:hover{text-decoration:underline}
+</style>
+<style>html,body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<!-- NAV -->
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Clean Slate home">
+      <span class="brand-mark"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5"/></svg></span>
+      Clean Slate
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#subjects">Subjects</a>
+      <a href="#tools">Tools</a>
+      <a href="#classroom">Classroom mode</a>
+      <a href="#tablets">Tablets</a>
+    </nav>
+    <a class="nav-join" href="https://whiteboard-app-beta.vercel.app/join">Join a class</a>
+    <a class="btn btn-dark" href="https://whiteboard-app-beta.vercel.app/">Start free</a>
+  </div>
+</header>
+
+<main id="top">
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap hero-copy">
+    <span class="tape-label">free for every teacher · runs in your browser</span>
+    <h1>A clean slate for <span class="mark">every<svg viewBox="0 0 300 30" preserveAspectRatio="none" fill="none" stroke-width="7" stroke-linecap="round" aria-hidden="true"><path d="M6 20c70-12 160-16 288-6"/></svg></span> lesson.</h1>
+    <p class="hero-lede">The live whiteboard built for teaching. Write with Apple Pencil, keep the worksheet beside the board, and bring a whole class in with one code. Whatever you teach, it’s just as quick three hours in as it was at the start.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://whiteboard-app-beta.vercel.app/">Start a board. It’s free
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <a class="btn btn-ghost" href="https://whiteboard-app-beta.vercel.app/join">I have a class code</a>
+    </div>
+    <div class="subjects" aria-label="Made for any subject">
+      <span>Made for</span>
+      <span class="chip">Maths</span><span class="chip">Science</span><span class="chip">English</span><span class="chip">Languages</span><span class="chip">History</span><span class="chip">and the rest</span>
+    </div>
+  </div>
+
+  <div class="wide">
+    <div class="shot-row">
+      <div class="note note-l">
+        <svg class="arrow-mobile" width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M13 22V5M6 11l7-7 7 7"/></svg>
+        <span>your worksheet, right beside the board</span>
+        <svg class="arrow-desk" width="110" height="80" viewBox="0 0 110 80" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M8 4c8 36 38 60 92 66"/><path d="M86 58l14 12-17 6"/></svg>
+      </div>
+
+      <div class="shot-wrap">
+        <div class="shot-frame">
+          <div class="fit" data-fit="1100" style="aspect-ratio:1100/660">
+            <div class="fit-inner" aria-label="The Clean Slate board: a worksheet on the left and a sketched quadratic graph on the right" role="img">
+              <div class="app">
+                <div class="appbar">
+                  <span class="logo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5"/></svg></span>
+                  <b>Quadratics · Year 10</b><span class="saved">Saved</span><span class="sp"></span>
+                  <span class="live"><i></i>LIVE · 24 students</span><span class="pill">100%</span><span class="pill blue">Share</span>
+                </div>
+                <div class="toolrow">
+                  <div class="tool on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg>Pen</div>
+                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l-5 5v4h4l5-5M9 11l6-6 4 4-6 6z"/></svg>Highlight</div>
+                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20h11M4 15l8-8 7 7-6 6H9z"/></svg>Eraser</div>
+                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 8-6 2-2 7z"/></svg>Select</div>
+                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 5h14M12 5v14"/></svg>Text</div>
+                  <div class="vsep"></div>
+                  <div class="menu">Maths<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
+                  <div class="menu insert">Insert<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
+                  <div class="menu">Page: Squared<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
+                  <span style="flex:1"></span>
+                  <span class="sw" style="background:#18191C;border:2px solid #fff;box-shadow:0 0 0 2px #2451D6"></span>
+                  <span class="sw" style="background:#2451D6"></span><span class="sw" style="background:#D9480F"></span><span class="sw" style="background:#2E9E5B"></span>
+                </div>
+                <div class="ctx"><b>Pen</b> Draw freely. Pencil-only is on, so resting your hand won’t leave marks.</div>
+                <div class="appbody">
+                  <div class="refpane">
+                    <div class="sheet">
+                      <div class="eyebrow">WORKSHEET 3</div>
+                      <div class="ttl">Quadratic graphs</div>
+                      <div class="q">1. Sketch the graph of y = x² − 4x + 3. Label the roots and the turning point.</div>
+                      <div class="bar"></div><div class="bar" style="width:86%"></div>
+                      <div class="q">2. Hence solve x² − 4x + 3 &lt; 0.</div>
+                      <div class="bar" style="width:92%"></div><div class="bar" style="width:70%"></div>
+                      <div class="q">3. Find the equation of the line of symmetry.</div>
+                      <div class="bar" style="width:80%"></div>
+                      <span style="flex:1"></span>
+                      <div style="font-size:12px;color:#5F5E5A;text-align:center">Page 1 of 4</div>
+                    </div>
+                  </div>
+                  <div class="divider"><i></i></div>
+                  <div class="board p-sq">
+                    <svg width="750" height="508" viewBox="0 0 750 508" fill="none" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:0;top:0">
+                      <path d="M180 24V486M40 330H460" stroke="#18191C" stroke-width="2.2"/>
+                      <path d="M452 324l8 6-8 6M174 32l6-8 6 8" stroke="#18191C" stroke-width="2.2"/>
+                      <path d="M144 42Q252 690 360 42" stroke="#2451D6" stroke-width="3.6"/>
+                      <circle cx="216" cy="330" r="12" stroke="#D9480F" stroke-width="2.6"/>
+                      <circle cx="288" cy="330" r="12" stroke="#D9480F" stroke-width="2.6"/>
+                      <circle cx="252" cy="366" r="4" fill="#18191C"/>
+                      <path d="M330 440c-30-10-58-34-72-62" stroke="#18191C" stroke-width="2"/>
+                      <path d="M252 382l6-6 3 10" stroke="#18191C" stroke-width="2"/>
+                      <text x="336" y="456" font-family="Caveat, cursive" font-size="30" fill="#18191C">turning point (2, −1)</text>
+                      <text x="470" y="90" font-family="Caveat, cursive" font-size="40" font-weight="700" fill="#2451D6">y = x² − 4x + 3</text>
+                      <text x="500" y="146" font-family="Caveat, cursive" font-size="36" fill="#2451D6">= (x − 1)(x − 3)</text>
+                      <text x="490" y="236" font-family="Caveat, cursive" font-size="36" font-weight="700" fill="#D9480F">x = 1  or  x = 3</text>
+                      <path d="M480 250c60 6 140 4 196-4" stroke="#D9480F" stroke-width="2.4"/>
+                      <text x="196" y="360" font-family="Caveat, cursive" font-size="24" fill="#5F5E5A">1</text>
+                      <text x="280" y="360" font-family="Caveat, cursive" font-size="24" fill="#5F5E5A">3</text>
+                      <text x="160" y="232" font-family="Caveat, cursive" font-size="24" fill="#5F5E5A">3</text>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <span class="tape t1"></span><span class="tape t2"></span>
+      </div>
+
+      <div class="note-r">
+        <div class="note n1">
+          <svg class="arrow-mobile" width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M13 22V5M6 11l7-7 7 7"/></svg>
+          <span>every tool says what it does</span>
+        </div>
+        <div class="note n2">
+          <svg class="arrow-mobile" width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M13 22V5M6 11l7-7 7 7"/></svg>
+          <span>palm on the screen? no stray marks</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SUBJECTS -->
+<section id="subjects" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wrap">
+    <div class="head">
+      <h2>One board for <span class="hl">every</span> subject.</h2>
+      <p>Pick the paper and the tools that suit the lesson. The same fast board works for an equation, an experiment, a poem or a verb table.</p>
+    </div>
+    <div class="subject-grid">
+      <article class="subject">
+        <div class="mini p-sq-s">
+          <svg viewBox="0 0 260 150" fill="none" stroke-linecap="round" aria-hidden="true">
+            <path d="M40 16v120M20 104h140" stroke="#18191C" stroke-width="1.8"/>
+            <path d="M52 22Q88 196 124 22" stroke="#2451D6" stroke-width="3"/>
+            <circle cx="70" cy="104" r="6" stroke="#D9480F" stroke-width="2"/><circle cx="106" cy="104" r="6" stroke="#D9480F" stroke-width="2"/>
+            <text x="160" y="52" font-family="Caveat, cursive" font-size="24" fill="#18191C">roots</text>
+            <text x="160" y="80" font-family="Caveat, cursive" font-size="26" font-weight="700" fill="#D9480F">x = 1, 3</text>
+          </svg>
+        </div>
+        <div class="txt"><h3>Maths</h3><p>Graph and grid tool, ruler, protractor and compass, and a calculator in the Maths menu.</p></div>
+      </article>
+      <article class="subject">
+        <div class="mini p-dot">
+          <svg viewBox="0 0 260 150" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M50 68V40H210V116H50V88" stroke="#18191C" stroke-width="2.2"/>
+            <path d="M36 70h28" stroke="#18191C" stroke-width="3"/>
+            <path d="M43 86h14" stroke="#18191C" stroke-width="3"/>
+            <circle cx="160" cy="40" r="14" fill="#fff" stroke="#18191C" stroke-width="2.2"/>
+            <path d="M150 30l20 20M170 30l-20 20" stroke="#18191C" stroke-width="2"/>
+            <path d="M118 124h40M150 118l8 6-8 6" stroke="#2451D6" stroke-width="2.2"/>
+            <text x="66" y="92" font-family="Caveat, cursive" font-size="20" fill="#2451D6">cell</text>
+            <text x="180" y="30" font-family="Caveat, cursive" font-size="20" fill="#2451D6">bulb</text>
+            <text x="70" y="140" font-family="Caveat, cursive" font-size="20" fill="#2451D6">current flows</text>
+          </svg>
+        </div>
+        <div class="txt"><h3>Science</h3><p>Label diagrams, and drop a PhET simulation right next to your notes.</p></div>
+      </article>
+      <article class="subject">
+        <div class="mini p-lined-s">
+          <svg viewBox="0 0 260 150" fill="none" stroke-linecap="round" aria-hidden="true">
+            <path d="M22 24h150M22 44h168M22 64h140M22 84h160M22 104h120" stroke="#9C9B97" stroke-width="5" opacity=".55"/>
+            <path d="M24 64h136" stroke="#FFD84D" stroke-width="14" opacity=".7"/>
+            <path d="M22 64h140" stroke="#5F5E5A" stroke-width="5" opacity=".7"/>
+            <path d="M164 62c8-6 14-10 22-12" stroke="#D9480F" stroke-width="2"/>
+            <text x="172" y="42" font-family="Caveat, cursive" font-size="21" font-weight="700" fill="#D9480F">imagery!</text>
+            <path d="M22 112c30 3 70 3 100 0" stroke="#2451D6" stroke-width="2.2"/>
+            <text x="150" y="124" font-family="Caveat, cursive" font-size="20" fill="#2451D6">why here?</text>
+          </svg>
+        </div>
+        <div class="txt"><h3>English &amp; humanities</h3><p>Paste in a passage or a source, highlight it and annotate the margins.</p></div>
+      </article>
+      <article class="subject">
+        <div class="mini p-lined-s">
+          <svg viewBox="0 0 260 150" fill="none" stroke-linecap="round" aria-hidden="true">
+            <text x="24" y="36" font-family="Caveat, cursive" font-size="26" font-weight="700" fill="#18191C">être (to be)</text>
+            <g font-family="Caveat, cursive" font-size="21" fill="#2451D6"><text x="28" y="68">je suis</text><text x="28" y="94">tu es</text><text x="28" y="120">il / elle est</text><text x="136" y="68">nous sommes</text><text x="136" y="94">vous êtes</text><text x="136" y="120">ils sont</text></g>
+            <ellipse cx="182" cy="113" rx="24" ry="15" stroke="#D9480F" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="txt"><h3>Languages</h3><p>Lined paper for handwriting practice, and typed text boxes for new vocabulary.</p></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- TOOLS -->
+<section id="tools" style="padding-top:clamp(40px,5vw,72px)">
+  <div class="wrap">
+    <div class="head">
+      <h2>Built for teaching, <span class="hl">not</span> meetings.</h2>
+      <p>Most whiteboards are made for office brainstorms. Clean Slate has what a lesson needs, one tap away and clearly labelled.</p>
+    </div>
+
+    <div class="tool-group">
+      <div class="group-label">in every lesson</div>
+      <div class="tool-grid">
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" aria-hidden="true">
+              <text x="30" y="46" font-family="Caveat, cursive" font-size="28" font-weight="700" fill="#2451D6">Key idea:</text>
+              <path d="M34 80h150" stroke="#FFE58A" stroke-width="24"/>
+              <text x="36" y="88" font-family="Caveat, cursive" font-size="24" fill="#18191C">energy is conserved</text>
+              <path d="M36 100c40 5 100 5 140-2" stroke="#D9480F" stroke-width="2.4"/>
+              <circle cx="48" cy="134" r="9" fill="#18191C"/><circle cx="74" cy="134" r="9" fill="#2451D6"/><circle cx="100" cy="134" r="9" fill="#D9480F"/><circle cx="126" cy="134" r="9" fill="#2E9E5B"/>
+              <rect x="150" y="124" width="76" height="20" rx="10" fill="#EAF0FF"/>
+              <text x="188" y="138" text-anchor="middle" font-family="Geist, sans-serif" font-size="11" font-weight="600" fill="#1F46B8">Highlight</text>
+            </svg>
+          </div>
+          <h3>Pen, highlighter, text</h3>
+          <p>Write, highlight and type in any colour. The eraser only removes ink, so the page stays clean.</p>
+        </article>
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" aria-hidden="true">
+              <rect x="24" y="22" width="84" height="116" rx="4" fill="#fff" stroke="#DCDAD3"/>
+              <rect x="34" y="34" width="50" height="6" rx="3" fill="#18191C"/>
+              <path d="M34 54h62M34 66h54M34 78h62M34 90h40M34 102h58M34 114h46" stroke="#E4E2DC" stroke-width="5"/>
+              <path d="M122 60v40" stroke="#2451D6" stroke-width="4"/>
+              <rect x="136" y="22" width="100" height="116" rx="4" fill="#fff" stroke="#DCDAD3"/>
+              <path d="M148 110c14-50 28-70 42-40s24 30 36-30" stroke="#2451D6" stroke-width="2.6"/>
+              <g font-family="Geist, sans-serif" font-size="10" font-weight="600" fill="#3A3B3F"><rect x="84" y="142" width="26" height="14" rx="4" fill="#F4F3EF"/><text x="97" y="152.5" text-anchor="middle">⅓</text><rect x="116" y="142" width="26" height="14" rx="4" fill="#EAF0FF"/><text x="129" y="152.5" text-anchor="middle" fill="#1F46B8">½</text><rect x="148" y="142" width="26" height="14" rx="4" fill="#F4F3EF"/><text x="161" y="152.5" text-anchor="middle">⅔</text></g>
+            </svg>
+          </div>
+          <h3>Worksheet side by side</h3>
+          <p>Open a PDF or photo beside the board and drag the divider to size it. You can annotate it too.</p>
+        </article>
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <div class="swatches"><div class="p-lined-s"></div><div class="p-sq-s"></div><div class="p-dot"></div><div class="p-iso"></div></div>
+            <div class="swatch-labels"><span>Lined</span><span>Squared</span><span>Dots</span><span>Isometric</span></div>
+          </div>
+          <h3>Paper to suit the task</h3>
+          <p>Blank, lined, squared, dot grid or isometric. The pattern stays put when you zoom.</p>
+        </article>
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" aria-hidden="true">
+              <rect x="46" y="26" width="168" height="62" rx="4" stroke="#2451D6" stroke-width="1.6" stroke-dasharray="5 4"/>
+              <g fill="#fff" stroke="#2451D6" stroke-width="1.6"><rect x="42" y="22" width="8" height="8"/><rect x="210" y="22" width="8" height="8"/><rect x="42" y="84" width="8" height="8"/><rect x="210" y="84" width="8" height="8"/></g>
+              <text x="130" y="66" text-anchor="middle" font-family="Caveat, cursive" font-size="25" fill="#18191C">speed = d ÷ t</text>
+              <rect x="24" y="106" width="212" height="32" rx="8" fill="#18191C"/>
+              <g font-family="Geist, sans-serif" font-size="11" font-weight="600" fill="#fff" text-anchor="middle"><text x="54" y="126">Copy</text><text x="94" y="126">Cut</text><text x="146" y="126">Duplicate</text><text x="204" y="126">Delete</text></g>
+            </svg>
+          </div>
+          <h3>Copy, paste, move anything</h3>
+          <p>Box-select work to reuse it. Paste a screenshot or drop in a picture and it lands on the board.</p>
+        </article>
+      </div>
+    </div>
+
+    <div class="tool-group">
+      <div class="group-label">when the lesson needs more</div>
+      <div class="tool-grid">
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" aria-hidden="true">
+              <g transform="rotate(-8 130 104)"><rect x="20" y="92" width="220" height="34" rx="4" fill="#FDF1E3" stroke="#A35A00" stroke-width="1.6"/><path d="M34 92v10M48 92v6M62 92v10M76 92v6M90 92v10M104 92v6M118 92v10M132 92v6M146 92v10M160 92v6M174 92v10M188 92v6M202 92v10M216 92v6M230 92v10" stroke="#A35A00" stroke-width="1.4"/></g>
+              <path d="M150 26l-24 50M150 26l22 48" stroke="#18191C" stroke-width="2"/><circle cx="150" cy="24" r="5" fill="#18191C"/>
+              <path d="M96 64a70 70 0 0 1 110-8" stroke="#2451D6" stroke-width="2.6"/>
+            </svg>
+          </div>
+          <h3>Ruler, protractor &amp; compass</h3>
+          <p>Construction tools that sit on the board. Rule a line, draw an arc or measure an angle with your Pencil.</p>
+        </article>
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" aria-hidden="true">
+              <g stroke="#C7D5FB" stroke-width="1.2"><circle cx="130" cy="80" r="22"/><circle cx="130" cy="80" r="44"/><circle cx="130" cy="80" r="66"/><path d="M64 80h132M130 14v132M83 33l94 94M177 33l-94 94"/></g>
+              <path d="M56 80h148M130 8v144" stroke="#18191C" stroke-width="1.6"/>
+              <circle cx="130" cy="80" r="44" stroke="#2451D6" stroke-width="2.4"/>
+              <g font-family="Caveat, cursive" font-size="17" fill="#1F46B8"><text x="178" y="74">0</text><text x="135" y="32">π/2</text><text x="72" y="74">π</text><text x="135" y="138">3π/2</text><text x="164" y="44">π/4</text></g>
+            </svg>
+          </div>
+          <h3>Graphs and grids</h3>
+          <p>Cartesian or polar, any scale, labelled in degrees or radians, with a live preview first.</p>
+        </article>
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" aria-hidden="true">
+              <rect x="30" y="18" width="200" height="124" rx="10" fill="#fff" stroke="#DCDAD3"/>
+              <path d="M30 42h200" stroke="#E4E2DC"/>
+              <path d="M40 18h180a10 10 0 0 1 10 10v14H30V28a10 10 0 0 1 10-10z" fill="#F4F3EF"/>
+              <g stroke="#2451D6" stroke-width="1.6"><circle cx="46" cy="30" r="2"/><ellipse cx="46" cy="30" rx="8" ry="3.2"/><ellipse cx="46" cy="30" rx="8" ry="3.2" transform="rotate(60 46 30)"/><ellipse cx="46" cy="30" rx="8" ry="3.2" transform="rotate(120 46 30)"/></g>
+              <text x="60" y="34" font-family="Geist, sans-serif" font-size="11" font-weight="600" fill="#3A3B3F">Pendulum lab</text>
+              <path d="M90 56h80" stroke="#18191C" stroke-width="3"/>
+              <path d="M130 56l30 58" stroke="#5F5E5A" stroke-width="1.6"/>
+              <circle cx="160" cy="118" r="11" fill="#D9480F"/>
+              <path d="M98 112a46 46 0 0 0 64 2" stroke="#2451D6" stroke-width="1.6" stroke-dasharray="4 4"/>
+            </svg>
+          </div>
+          <h3>Simulations on the board</h3>
+          <p>Paste a PhET link (or another interactive) and move or resize it next to your working.</p>
+        </article>
+        <article class="tcard">
+          <span class="tape"></span>
+          <div class="illus">
+            <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="30" y="16" width="96" height="128" rx="12" fill="#F8F7F4" stroke="#18191C" stroke-width="1.8"/>
+              <rect x="40" y="26" width="76" height="34" rx="5" fill="#fff" stroke="#DCDAD3"/>
+              <text x="46" y="39" font-family="Geist, sans-serif" font-size="9.5" fill="#5F5E5A">sin(30)</text>
+              <text x="110" y="54" text-anchor="end" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="#18191C">0.5</text>
+              <g fill="#DCDAD3"><rect x="40" y="70" width="20" height="14" rx="3"/><rect x="68" y="70" width="20" height="14" rx="3"/><rect x="96" y="70" width="20" height="14" rx="3"/><rect x="40" y="92" width="20" height="14" rx="3"/><rect x="68" y="92" width="20" height="14" rx="3"/><rect x="96" y="92" width="20" height="14" rx="3"/><rect x="40" y="114" width="20" height="14" rx="3"/><rect x="68" y="114" width="20" height="14" rx="3"/></g>
+              <rect x="96" y="114" width="20" height="14" rx="3" fill="#2451D6"/>
+              <path d="M146 80h96M160 26v108" stroke="#18191C" stroke-width="1.6"/>
+              <path d="M150 80c8-30 16-40 24-40s16 40 24 40 16 40 24 40 12-20 16-30" stroke="#2451D6" stroke-width="2.6"/>
+            </svg>
+          </div>
+          <h3>Calculator &amp; graphs</h3>
+          <p>A calculator and a graph plotter live in the Maths menu, so there’s no need to switch apps.</p>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CLASSROOM -->
+<section id="classroom" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wide">
+    <div class="chalk">
+      <div class="chalk-copy">
+        <span class="tape-label">classroom mode</span>
+        <h2>Sit beside thirty students <span>at once.</span></h2>
+        <p>Start a live class and students join with a short code. They don’t need accounts. They follow your board, work on their own, and you can look at anyone’s working and leave them a note.</p>
+        <ol class="steps">
+          <li><span class="num">1</span><span class="t"><b>Go live.</b> <span>Your board becomes the master board everyone sees.</span></span></li>
+          <li><span class="num">2</span><span class="t"><b>Students join with the code.</b> <span>Each one gets their own mini-board to work on.</span></span></li>
+          <li><span class="num">3</span><span class="t"><b>Check in on anyone.</b> <span>Open a student’s board live and pin a comment exactly where it matters.</span></span></li>
+        </ol>
+      </div>
+      <div class="roster-col">
+        <div class="roster">
+          <div class="roster-top"><span class="ttl">Students (24)</span><span class="code">CODE 7KQ42M</span></div>
+          <div class="tiles">
+            <div class="tile">2x + 3 = 11<br>2x = 8<br><span class="ok">x = 4 ✓</span><span class="who">Aisha</span></div>
+            <div class="tile flag">2x + 3 = 11<br>2x = 14<br>x = 7<span class="pin">1</span><span class="who">Ben</span></div>
+            <div class="tile">11 − 3 = 8<br>8 ÷ 2 = 4<span class="who">Chen</span></div>
+            <div class="tile">2x + 3 = 11<br>take 3 from both sides<span class="who">Dara</span></div>
+            <div class="tile">2x = 11 − 3<br><span class="ok">x = 4</span><span class="who">Eli</span></div>
+            <div class="tile">x = 8 ÷ 2<br><span class="ok">= 4</span><span class="who">Farah</span></div>
+          </div>
+        </div>
+        <div class="comment" role="note">
+          <div class="who"><span class="pin">1</span>YOU → BEN</div>
+          <div class="msg">Nearly! What happens to the +3 when it moves across?</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TABLETS -->
+<section id="tablets">
+  <div class="wrap tablet-sec">
+    <div class="tablet-col">
+      <div class="tablet-stage">
+        <div class="tablet">
+          <div class="fit p-lined" data-fit="488" style="aspect-ratio:488/348">
+            <div class="fit-inner" role="img" aria-label="A tablet showing the photosynthesis equation written by hand">
+              <div class="screen">
+                <div class="t1">Photosynthesis</div>
+                <div class="eq">6CO<sub>2</sub> + 6H<sub>2</sub>O</div>
+                <div class="eq b">→ C<sub>6</sub>H<sub>12</sub>O<sub>6</sub> + 6O<sub>2</sub></div>
+                <svg class="ul" viewBox="0 0 320 14" fill="none" aria-hidden="true"><path d="M4 8c80 6 200 5 312-3" stroke="#D9480F" stroke-width="2.6" stroke-linecap="round"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+        <span class="pencil" aria-hidden="true"></span>
+      </div>
+      <div class="tablet-note">works on older school iPads too!</div>
+    </div>
+    <div>
+      <h2>Feels like paper under your Pencil.</h2>
+      <div class="points">
+        <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg><div><h3>Palm-safe by design</h3><p>Nothing to tap at the bottom where your hand rests, and the toolbar ignores brushes from your palm mid-stroke.</p></div></div>
+        <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg><div><h3>Pencil-only switches on by itself</h3><p>The first time you write with a stylus, fingers go back to scrolling and zooming. You can always turn it off.</p></div></div>
+        <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></svg><div><h3>Runs on the tablet you already own</h3><p>Works on iPads going back to 2014, on Samsung and other Android tablets, and on laptops. Nothing to install.</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY IT STAYS FAST -->
+<section style="padding-top:0">
+  <div class="wrap stickies">
+    <div class="sticky y"><h3>Still quick in hour three</h3><p>Your board lives on your device while you teach and saves when you finish, not after every stroke. So long lessons don’t drag.</p></div>
+    <div class="sticky b"><h3>Share with an email</h3><p>Add a student or co-teacher and you can all write on the same board at once, live.</p></div>
+    <div class="sticky p"><h3>Free, and it stays tidy</h3><p>Every board gets a preview picture, so last week’s lesson is easy to find. Sign in with Google and go.</p></div>
+  </div>
+</section>
+
+<!-- HOMEWORK CTA -->
+<section id="start" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wrap">
+    <div class="homework">
+      <div class="due">Homework, due next lesson:</div>
+      <h2>Start your next lesson on a <span class="mark">clean slate.<svg viewBox="0 0 300 30" preserveAspectRatio="none" fill="none" stroke-width="6" stroke-linecap="round" aria-hidden="true"><path d="M6 20c70-12 160-16 288-6"/></svg></span></h2>
+      <div class="checks">
+        <label for="hw1"><input type="checkbox" id="hw1"><span>Sign in with Google (free)</span></label>
+        <label for="hw2"><input type="checkbox" id="hw2"><span>Make a board and choose your paper</span></label>
+        <label for="hw3"><input type="checkbox" id="hw3"><span>Share the class code with your students</span></label>
+      </div>
+      <div class="hw-actions">
+        <a class="btn btn-dark" href="https://whiteboard-app-beta.vercel.app/">Start for free</a>
+        <form class="join" id="joinForm" novalidate>
+          <label for="classCode">Student?</label>
+          <input id="classCode" name="classCode" placeholder="Class code" autocomplete="off" maxlength="8" autocapitalize="characters" spellcheck="false">
+          <button type="submit">Join</button>
+        </form>
+      </div>
+      <div class="join-msg" id="joinMsg" aria-live="polite"></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="fname">Clean Slate</span>
+    <span class="grow">The live whiteboard for every lesson.</span>
+    <nav aria-label="Footer">
+      <a href="#subjects">Subjects</a><a href="#tools">Tools</a><a href="#classroom">Classroom mode</a><a href="https://whiteboard-app-beta.vercel.app/join">Join a class</a><a href="https://whiteboard-app-beta.vercel.app/">Open the app</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // Scale fixed-size mockups to their box.
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('[data-fit]'));
+  function fit(box){ var w = +box.getAttribute('data-fit'); var k = box.clientWidth / w; if (k > 0) box.style.setProperty('--k', k); }
+  boxes.forEach(fit);
+  if ('ResizeObserver' in window) { var ro = new ResizeObserver(function(es){ es.forEach(function(e){ fit(e.target); }); }); boxes.forEach(function(b){ ro.observe(b); }); }
+  else { window.addEventListener('resize', function(){ boxes.forEach(fit); }); }
+
+  // Join form: check the code, then open the app's join screen with it filled in.
+  var APP_URL = 'https://whiteboard-app-beta.vercel.app';
+  var CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
+  var form = document.getElementById('joinForm'), input = document.getElementById('classCode'), msg = document.getElementById('joinMsg');
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var code = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code) { msg.textContent = 'Type the code shown on your teacher’s board, like 7KQ42M.'; input.focus(); return; }
+    if (!CODE_RE.test(code)) { msg.textContent = 'Class codes are 6 letters and numbers, like 7KQ42M. Check the code on your teacher’s board.'; input.focus(); return; }
+    var url = APP_URL + '/join?code=' + encodeURIComponent(code);
+    var inFrame = false; try { inFrame = window.top !== window.self; } catch (err) { inFrame = true; }
+    if (!inFrame) { window.location.assign(url); return; }
+    msg.innerHTML = '';
+    var a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Continue to class ' + code + ' →';
+    msg.appendChild(a);
+  });
+})();
+</script>
+</body>
+</html>
