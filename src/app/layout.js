@@ -13,8 +13,8 @@ const geist = localFont({
 });
 
 export const metadata = {
-  title: "Whiteboard",
-  description: "Shared whiteboard for tutoring sessions",
+  title: "Clean Slate",
+  description: "Clean Slate — live whiteboards for teaching maths, from any tablet.",
 };
 
 export const viewport = {

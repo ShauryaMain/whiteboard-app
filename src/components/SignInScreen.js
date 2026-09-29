@@ -34,7 +34,7 @@ export default function SignInScreen({ loading, onSignIn }) {
             </svg>
           </span>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <h1 className={d.title} style={{ fontSize: 24 }}>Whiteboard</h1>
+            <h1 className={d.title} style={{ fontSize: 24 }}>Clean Slate</h1>
             <p className={d.subtitle} style={{ fontSize: 14 }}>
               Live boards for teaching maths — draw, share and run a class from any tablet.
             </p>

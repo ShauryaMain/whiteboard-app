@@ -239,7 +239,7 @@ export default function Home() {
               <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />
             </svg>
           </span>
-          <span className={s.brandName}>Whiteboard</span>
+          <span className={s.brandName}>Clean Slate</span>
         </div>
         <label className={s.search}>
           <Search size={16} aria-hidden="true" />

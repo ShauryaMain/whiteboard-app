@@ -222,7 +222,7 @@ export function chunkObjects(data, maxChars = 60000) {
 // clipboard just gets a short marker text, so a later copy from another
 // app is recognised and wins.
 
-export const CLIPBOARD_MARKER = "[Whiteboard selection]";
+export const CLIPBOARD_MARKER = "[Clean Slate selection]";
 const CLIPBOARD_KEY = "whiteboard_clipboard";
 let memoryClipboard = null;
 
