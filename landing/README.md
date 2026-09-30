@@ -1,6 +1,6 @@
 # Clean Slate landing page
 
-The public marketing page for Clean Slate. It's a plain static site (one HTML file and an icon, no build step), kept separate from the app.
+The public marketing page for Clean Slate. It's a plain static site (`index.html`, `privacy.html` and an icon, no build step), kept separate from the app.
 
 Every button sends people to the app at https://whiteboard-app-beta.vercel.app:
 
@@ -10,7 +10,13 @@ Every button sends people to the app at https://whiteboard-app-beta.vercel.app:
 | Join a class · I have a class code | `/join` |
 | Student class-code box | `/join?code=XXXXXX` (the app pre-fills the code) |
 
-If the app's address changes, search `index.html` for `whiteboard-app-beta.vercel.app` and replace every match (there are 8, including `APP_URL` in the script at the bottom).
+## Tracking where visitors come from
+
+Add `?ref=something` to any link you post, for example `?ref=reddit` or `?ref=producthunt`. The page passes it on to every app link, so a visitor who clicks through arrives at `.../?ref=reddit`.
+
+To count visits, open this project in Vercel, go to **Analytics** and enable **Web Analytics**. The page already loads Vercel's script, which doesn't use cookies.
+
+If the app’s address changes, search `index.html` and `privacy.html` for `whiteboard-app-beta.vercel.app` and replace every match, including `APP_URL` in the script at the bottom of `index.html`.
 
 ## Deploying on Vercel (one-time setup)
 

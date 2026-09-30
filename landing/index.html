@@ -3,15 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Clean Slate · The live whiteboard for every lesson</title>
-<meta name="description" content="Clean Slate is a free live whiteboard for teachers and tutors. Write with Apple Pencil, keep your worksheet beside the board, and run a whole class with one code.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#FDFCF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#15171C" media="(prefers-color-scheme: dark)">
+<title>Clean Slate · Free live whiteboard for every lesson</title>
+<meta name="description" content="A free, fast online whiteboard for teachers and tutors, and a free alternative to Microsoft Whiteboard. Apple Pencil ready, works on older iPads, and runs a whole class from one code.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Clean Slate · The live whiteboard for every lesson">
-<meta property="og:description" content="A free, fast whiteboard for every lesson. Apple Pencil ready, works on older iPads, and runs a whole class from one code.">
+<meta property="og:title" content="Clean Slate · Free live whiteboard for every lesson">
+<meta property="og:description" content="A free, fast online whiteboard for teachers and tutors, and a free alternative to Microsoft Whiteboard. Apple Pencil ready, works on older iPads, and runs a whole class from one code.">
 <meta name="twitter:card" content="summary">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shantell+Sans:wght@500;700;800&family=Geist:wght@400;500;600;700&family=Caveat:wght@500;700&display=swap">
@@ -321,12 +322,56 @@ footer .grow{flex:1;min-width:220px}
 footer nav{display:flex;flex-wrap:wrap;gap:12px 28px}
 footer a{color:var(--ink-2);text-decoration:none}
 footer a:hover{text-decoration:underline}
+
+/* ---- selling points update ---- */
+:root{--accent-soft:#EAF0FF;--us-row:#FFF6C8}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--accent-soft:#23304F;--us-row:#3A3620}}
+:root[data-theme="dark"]{--accent-soft:#23304F;--us-row:#3A3620}
+
+.proof{list-style:none;margin:30px 0 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 28px;font-size:16px;color:var(--ink-2)}
+.proof li{display:flex;align-items:center;gap:8px}
+.proof svg{color:var(--accent);flex-shrink:0}
+.proof b{color:var(--ink);font-weight:700}
+
+.why-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px 28px}
+.why{background:var(--card);border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink);padding:28px 26px 24px;display:flex;flex-direction:column;gap:12px}
+.why .ico{width:52px;height:52px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;border:1.5px solid var(--ink);transform:rotate(-3deg)}
+.why:nth-child(even) .ico{transform:rotate(3deg)}
+.why h3{font-size:clamp(23px,2vw,26px);font-weight:800;line-height:1.1;margin-top:4px}
+.why p{font-size:16px;color:var(--ink-2)}
+.why .scribble{margin-top:auto;padding-top:6px;font-family:var(--f-hand);font-size:23px;line-height:1.1;color:var(--hand-blue);display:flex;gap:8px;align-items:flex-start}
+.why .scribble svg{flex-shrink:0;margin-top:3px}
+@media (max-width:1100px){.why-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.why-grid{grid-template-columns:1fr}}
+
+.switch{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(44px,6vw,80px);align-items:start}
+.switch h2{font-weight:800;font-size:clamp(36px,4.4vw,56px);line-height:1.06;margin-top:22px}
+.switch .lede{margin-top:18px;font-size:18px;color:var(--ink-2)}
+.move-steps{list-style:none;margin:28px 0 0;padding:0;display:flex;flex-direction:column;gap:16px}
+.move-steps li{display:flex;gap:14px;align-items:flex-start;font-size:17px;line-height:1.45}
+.move-steps .num{width:34px;height:34px;flex-shrink:0;border-radius:99px;border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-weight:700;font-size:15px;margin-top:-4px}
+.move-steps b{font-weight:600}
+.switch-cta{margin-top:32px;display:flex;flex-direction:column;align-items:flex-start;gap:12px}
+.src{font-size:13px;color:var(--muted)}
+.src a{color:var(--muted)}
+.freecard{background:var(--card);border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink);padding:30px 26px 22px;position:relative;min-width:0}
+.freecard .tape{left:50%;top:-13px;margin-left:-48px;transform:rotate(-2deg)}
+.freecard h3{font-size:24px;font-weight:700}
+.freecard table{width:100%;border-collapse:collapse;margin-top:14px;font-size:15.5px;line-height:1.4}
+.freecard th,.freecard td{text-align:left;padding:12px 10px;border-top:1px solid var(--line);vertical-align:top}
+.freecard thead th{font-family:var(--f-body);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-top:0;padding-top:4px}
+.freecard tbody th{font-weight:600;width:38%}
+.freecard tr.us th,.freecard tr.us td{background:var(--us-row);border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);color:var(--ink);font-weight:700}
+.freecard .src{margin-top:14px}
+@media (max-width:980px){.switch{grid-template-columns:1fr}}
+
+.support{white-space:nowrap}
 </style>
+
+<!-- NAV -->
 <style>html,body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
 </head>
 <body>
-
-<!-- NAV -->
 <header class="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="Clean Slate home">
@@ -334,10 +379,10 @@ footer a:hover{text-decoration:underline}
       Clean Slate
     </a>
     <nav class="nav-links" aria-label="Sections">
-      <a href="#subjects">Subjects</a>
+      <a href="#why">Why Clean Slate</a>
       <a href="#tools">Tools</a>
       <a href="#classroom">Classroom mode</a>
-      <a href="#tablets">Tablets</a>
+      <a href="#switch">Switching?</a>
     </nav>
     <a class="nav-join" href="https://whiteboard-app-beta.vercel.app/join">Join a class</a>
     <a class="btn btn-dark" href="https://whiteboard-app-beta.vercel.app/">Start free</a>
@@ -356,6 +401,11 @@ footer a:hover{text-decoration:underline}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
       <a class="btn btn-ghost" href="https://whiteboard-app-beta.vercel.app/join">I have a class code</a>
     </div>
+    <ul class="proof" aria-label="Clean Slate in use today">
+      <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span>In <b>daily lessons</b> for 3+ months</span></li>
+      <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span><b>About 20 students</b> using it regularly</span></li>
+      <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span>Replaced <b>Microsoft Whiteboard</b> for a working maths tutor</span></li>
+    </ul>
     <div class="subjects" aria-label="Made for any subject">
       <span>Made for</span>
       <span class="chip">Maths</span><span class="chip">Science</span><span class="chip">English</span><span class="chip">Languages</span><span class="chip">History</span><span class="chip">and the rest</span>
@@ -453,6 +503,54 @@ footer a:hover{text-decoration:underline}
   </div>
 </section>
 
+<!-- WHY TEACHERS SWITCH -->
+<section id="why" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wrap">
+    <div class="head">
+      <h2>Why teachers <span class="hl">switch</span> to Clean Slate.</h2>
+      <p>It started as a fix for one tutor’s lagging whiteboard. These are the six things that made her class stay.</p>
+    </div>
+    <div class="why-grid">
+      <article class="why">
+        <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
+        <h3>Fast in hour three</h3>
+        <p>Your board runs on your device and saves when you finish, instead of uploading every stroke as you draw. Long lessons don’t build up lag.</p>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>built after Microsoft Whiteboard kept slowing down mid-lesson</span></div>
+      </article>
+      <article class="why">
+        <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3.5 3.5 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.6"/></svg></span>
+        <h3>Every student gets a board</h3>
+        <p>Students join with a 6-character code and no account. They follow your board, work on their own, and you can look in on anyone and pin a comment.</p>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>free, with no 2-hour session limit</span></div>
+      </article>
+      <article class="why">
+        <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v16H4zM14 4h6v16h-6"/></svg></span>
+        <h3>The worksheet beside the board</h3>
+        <p>Open a PDF or photo in a side pane, size it how you like and write on it. Nothing to print and nothing to screenshot.</p>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>no work or school account needed</span></div>
+      </article>
+      <article class="why">
+        <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2"/></svg></span>
+        <h3>Real teaching tools</h3>
+        <p>Ruler, protractor and compass, graph and grid paper, simulations, and a scientific calculator that gives exact answers.</p>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>new: a Casio-style calculator</span></div>
+      </article>
+      <article class="why">
+        <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg></span>
+        <h3>Made for the Pencil</h3>
+        <p>Rest your hand on the screen without stray marks or switched tools. Pencil-only mode turns on by itself the first time you write.</p>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>works on iPads back to 2014</span></div>
+      </article>
+      <article class="why">
+        <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12l-8 8-9-9V3h8zM7.5 7.5h.01"/></svg></span>
+        <h3>Free, with no catch</h3>
+        <p>No board limit, no ads, no card and nothing to install. Sign in with Google and start teaching.</p>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>most free whiteboards stop at 3 boards</span></div>
+      </article>
+    </div>
+  </div>
+</section>
+
 <!-- SUBJECTS -->
 <section id="subjects" style="padding-top:clamp(24px,3vw,40px)">
   <div class="wrap">
@@ -471,7 +569,7 @@ footer a:hover{text-decoration:underline}
             <text x="160" y="80" font-family="Caveat, cursive" font-size="26" font-weight="700" fill="#D9480F">x = 1, 3</text>
           </svg>
         </div>
-        <div class="txt"><h3>Maths</h3><p>Graph and grid tool, ruler, protractor and compass, and a calculator in the Maths menu.</p></div>
+        <div class="txt"><h3>Maths</h3><p>Graph and grid tool, ruler, protractor and compass, and a scientific calculator with exact answers.</p></div>
       </article>
       <article class="subject">
         <div class="mini p-dot">
@@ -636,18 +734,21 @@ footer a:hover{text-decoration:underline}
           <span class="tape"></span>
           <div class="illus">
             <svg viewBox="0 0 260 160" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="30" y="16" width="96" height="128" rx="12" fill="#F8F7F4" stroke="#18191C" stroke-width="1.8"/>
-              <rect x="40" y="26" width="76" height="34" rx="5" fill="#fff" stroke="#DCDAD3"/>
-              <text x="46" y="39" font-family="Geist, sans-serif" font-size="9.5" fill="#5F5E5A">sin(30)</text>
-              <text x="110" y="54" text-anchor="end" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="#18191C">0.5</text>
-              <g fill="#DCDAD3"><rect x="40" y="70" width="20" height="14" rx="3"/><rect x="68" y="70" width="20" height="14" rx="3"/><rect x="96" y="70" width="20" height="14" rx="3"/><rect x="40" y="92" width="20" height="14" rx="3"/><rect x="68" y="92" width="20" height="14" rx="3"/><rect x="96" y="92" width="20" height="14" rx="3"/><rect x="40" y="114" width="20" height="14" rx="3"/><rect x="68" y="114" width="20" height="14" rx="3"/></g>
-              <rect x="96" y="114" width="20" height="14" rx="3" fill="#2451D6"/>
-              <path d="M146 80h96M160 26v108" stroke="#18191C" stroke-width="1.6"/>
-              <path d="M150 80c8-30 16-40 24-40s16 40 24 40 16 40 24 40 12-20 16-30" stroke="#2451D6" stroke-width="2.6"/>
+              <rect x="24" y="8" width="110" height="146" rx="12" fill="#F8F7F4" stroke="#18191C" stroke-width="1.8"/>
+              <rect x="32" y="15" width="32" height="11" rx="5.5" fill="#EAF0FF"/>
+              <text x="48" y="23.5" text-anchor="middle" font-family="Geist, sans-serif" font-size="7.5" font-weight="700" fill="#1F46B8">DEG</text>
+              <rect x="32" y="31" width="94" height="44" rx="6" fill="#fff" stroke="#DCDAD3"/>
+              <text x="38" y="45" font-family="Geist, sans-serif" font-size="10" fill="#5F5E5A">sin(30)</text>
+              <text x="120" y="67" text-anchor="end" font-family="Geist, sans-serif" font-size="21" font-weight="700" fill="#18191C">½</text>
+              <rect x="32" y="84" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="55" y="84" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="78" y="84" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="101" y="84" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="32" y="101" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="55" y="101" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="78" y="101" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="101" y="101" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="32" y="118" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="55" y="118" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="78" y="118" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="101" y="118" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="32" y="135" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="55" y="135" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="78" y="135" width="19" height="13" rx="3" fill="#DCDAD3"/><rect x="101" y="135" width="19" height="13" rx="3" fill="#2451D6"/>
+              <path d="M140 84h14M149 79l5 5-5 5" stroke="#2451D6" stroke-width="2"/>
+              <text x="200" y="46" text-anchor="middle" font-family="Geist, sans-serif" font-size="10" font-weight="700" fill="#1F46B8">Add to board</text>
+              <rect x="158" y="54" width="86" height="60" rx="6" fill="#fff" stroke="#DCDAD3"/>
+              <text x="201" y="90" text-anchor="middle" font-family="Caveat, cursive" font-size="20" fill="#2451D6">sin(30) = ½</text>
             </svg>
           </div>
-          <h3>Calculator &amp; graphs</h3>
-          <p>A calculator and a graph plotter live in the Maths menu, so there’s no need to switch apps.</p>
+          <h3>Scientific calculator</h3>
+          <p>A Casio-style calculator with exact answers like ½ and 2√2. Tap Add to board and the answer lands on your page.</p>
         </article>
       </div>
     </div>
@@ -721,12 +822,48 @@ footer a:hover{text-decoration:underline}
   </div>
 </section>
 
-<!-- WHY IT STAYS FAST -->
+<!-- SWITCHING FROM MICROSOFT WHITEBOARD -->
+<section id="switch" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wrap switch">
+    <div>
+      <span class="tape-label">switching from Microsoft Whiteboard?</span>
+      <h2>Your lessons have somewhere to go.</h2>
+      <p class="lede">Microsoft Whiteboard no longer works with personal Microsoft accounts. It’s now only for work and school Microsoft 365 accounts. Clean Slate was built to replace it for a working tutor, so the pen, eraser and menus are where you expect them.</p>
+      <ol class="move-steps">
+        <li><span class="num">1</span><span><b>Sign in to Clean Slate</b> with any Google account. It’s free.</span></li>
+        <li><span class="num">2</span><span><b>Bring your old work across.</b> If you exported boards as pictures, drop them straight onto a new board.</span></li>
+        <li><span class="num">3</span><span><b>Share your class code</b> and carry on teaching where you left off.</span></li>
+      </ol>
+      <div class="switch-cta">
+        <a class="btn btn-primary" href="https://whiteboard-app-beta.vercel.app/">Move my lessons to Clean Slate</a>
+        <p class="src">Source: <a href="https://support.microsoft.com/en-us/whiteboard/retirement-standalone-microsoft-whiteboard-apps" target="_blank" rel="noopener">Microsoft Support</a>.</p>
+      </div>
+    </div>
+    <div class="freecard">
+      <span class="tape"></span>
+      <h3>What “free” usually gets you</h3>
+      <table>
+        <thead><tr><th scope="col">Whiteboard</th><th scope="col">On the free plan</th></tr></thead>
+        <tbody>
+          <tr class="us"><th scope="row">Clean Slate</th><td>Unlimited boards, live classes with no time limit, no ads</td></tr>
+          <tr><th scope="row">Miro</th><td>3 editable boards</td></tr>
+          <tr><th scope="row">FigJam</th><td>3 files</td></tr>
+          <tr><th scope="row">Lucidspark</th><td>Only your 3 newest boards stay editable</td></tr>
+          <tr><th scope="row">Whiteboard.fi</th><td>20 students, 1 session at a time, sessions end after 2 hours</td></tr>
+          <tr><th scope="row">Microsoft Whiteboard</th><td>Work or school Microsoft 365 accounts only</td></tr>
+        </tbody>
+      </table>
+      <p class="src">Free-plan limits as published in September 2026 (<a href="https://huddleiq.com/online-whiteboard-pricing-2026-what-tools-really-cost/" target="_blank" rel="noopener">HuddleIQ</a>, <a href="https://www.softwaresuggest.com/whiteboard-fi" target="_blank" rel="noopener">SoftwareSuggest</a>). Check each site for the latest.</p>
+    </div>
+  </div>
+</section>
+
+<!-- MORE REASONS -->
 <section style="padding-top:0">
   <div class="wrap stickies">
-    <div class="sticky y"><h3>Still quick in hour three</h3><p>Your board lives on your device while you teach and saves when you finish, not after every stroke. So long lessons don’t drag.</p></div>
+    <div class="sticky y"><h3>Tell us what to build</h3><p>Send an idea or a bug report from inside the app, screenshots and all. It goes straight to the person building Clean Slate.</p></div>
     <div class="sticky b"><h3>Share with an email</h3><p>Add a student or co-teacher and you can all write on the same board at once, live.</p></div>
-    <div class="sticky p"><h3>Free, and it stays tidy</h3><p>Every board gets a preview picture, so last week’s lesson is easy to find. Sign in with Google and go.</p></div>
+    <div class="sticky p"><h3>Easy to find last week’s lesson</h3><p>Every board gets a preview picture, so the lesson you need is one glance away.</p></div>
   </div>
 </section>
 
@@ -760,8 +897,9 @@ footer a:hover{text-decoration:underline}
     <span class="fname">Clean Slate</span>
     <span class="grow">The live whiteboard for every lesson.</span>
     <nav aria-label="Footer">
-      <a href="#subjects">Subjects</a><a href="#tools">Tools</a><a href="#classroom">Classroom mode</a><a href="https://whiteboard-app-beta.vercel.app/join">Join a class</a><a href="https://whiteboard-app-beta.vercel.app/">Open the app</a>
+      <a href="#why">Why Clean Slate</a><a href="#tools">Tools</a><a href="#switch">Switching</a><a href="https://whiteboard-app-beta.vercel.app/join">Join a class</a><a href="https://whiteboard-app-beta.vercel.app/">Open the app</a><a href="privacy.html">Privacy</a>
     </nav>
+    <span class="grow" style="flex-basis:100%">Questions? Email <span class="support">cleanslatesupportoffical@gmail.com</span></span>
   </div>
 </footer>
 
@@ -776,6 +914,12 @@ footer a:hover{text-decoration:underline}
 
   // Join form: check the code, then open the app's join screen with it filled in.
   var APP_URL = 'https://whiteboard-app-beta.vercel.app';
+  // Pass ?ref= (which post or partner sent the visitor) on to every app link.
+  var REF = null;
+  try { REF = new URLSearchParams(window.location.search).get('ref'); } catch (err) {}
+  if (!REF || !/^[A-Za-z0-9_-]{1,40}$/.test(REF)) REF = null;
+  function withRef(url){ return REF ? url + (url.indexOf('?') < 0 ? '?' : '&') + 'ref=' + encodeURIComponent(REF) : url; }
+  if (REF) Array.prototype.forEach.call(document.querySelectorAll('a[href^="' + APP_URL + '"]'), function(a){ a.href = withRef(a.getAttribute('href')); });
   var CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
   var form = document.getElementById('joinForm'), input = document.getElementById('classCode'), msg = document.getElementById('joinMsg');
   form.addEventListener('submit', function(e){
@@ -783,7 +927,7 @@ footer a:hover{text-decoration:underline}
     var code = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!code) { msg.textContent = 'Type the code shown on your teacher’s board, like 7KQ42M.'; input.focus(); return; }
     if (!CODE_RE.test(code)) { msg.textContent = 'Class codes are 6 letters and numbers, like 7KQ42M. Check the code on your teacher’s board.'; input.focus(); return; }
-    var url = APP_URL + '/join?code=' + encodeURIComponent(code);
+    var url = withRef(APP_URL + '/join?code=' + encodeURIComponent(code));
     var inFrame = false; try { inFrame = window.top !== window.self; } catch (err) { inFrame = true; }
     if (!inFrame) { window.location.assign(url); return; }
     msg.innerHTML = '';
@@ -792,5 +936,6 @@ footer a:hover{text-decoration:underline}
   });
 })();
 </script>
+<script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
