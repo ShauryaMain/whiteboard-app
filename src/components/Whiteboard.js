@@ -22,6 +22,7 @@ import { renderGrid, withDefaults as withGridDefaults, WORLD_UNITS_PER_CM } from
 import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
 import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
+import { loadCalcPosition } from "@/lib/calcMath";
 import { renderBoardThumbnail } from "@/lib/boardThumbnail";
 import {
   emptySelection, selectionCount, selectionFromData, strokeBounds, imageBounds, textBounds, unionBounds,
@@ -1601,14 +1602,19 @@ export default function Whiteboard({ boardId }) {
   }
 
   function handleToggleCalculator() {
-    setCalculatorActive((prev) => {
-      const next = !prev;
-      if (next) {
-        const { width, height } = getPaneSize();
-        setCalculatorPos({ x: Math.max(20, width / 2 - 150), y: Math.max(20, height / 2 - 220) });
-      }
-      return next;
-    });
+    if (!calculatorActive) {
+      // Open where it was last left on this device (kept on screen),
+      // otherwise on the right-hand side of the board.
+      const { width, height } = getPaneSize();
+      const saved = loadCalcPosition();
+      const x = saved ? saved.x : width - 336 - 24;
+      const y = saved ? saved.y : 64; // below the zoom control
+      setCalculatorPos({
+        x: Math.max(8, Math.min(x, width - 336 - 8)),
+        y: Math.max(8, Math.min(y, height - 58)), // the calculator nudges itself fully on screen
+      });
+    }
+    setCalculatorActive((prev) => !prev);
   }
 
   function handleRemoveGrid() {
@@ -3901,6 +3907,7 @@ export default function Whiteboard({ boardId }) {
             position={calculatorPos}
             setPosition={setCalculatorPos}
             onClose={() => setCalculatorActive(false)}
+            onInsertToBoard={pastePlainText}
           />
         )}
         {gridModalOpen && (

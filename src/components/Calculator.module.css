@@ -1,0 +1,487 @@
+/* Calculator — Studio look. A floating card: grab it anywhere on the
+   header, keys are big enough for fingers, and nothing opens the iPad
+   keyboard. Plain CSS that iPadOS 15 Safari handles. */
+
+.calc {
+  position: fixed;
+  z-index: 25;
+  width: 336px;
+  max-width: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(24, 25, 28, 0.18), 0 2px 6px rgba(24, 25, 28, 0.06);
+  overflow: hidden;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  color: var(--ink);
+}
+
+.dragging {
+  box-shadow: 0 26px 64px rgba(24, 25, 28, 0.26), 0 2px 6px rgba(24, 25, 28, 0.08);
+  cursor: grabbing;
+}
+
+/* ---------- Header (the whole bar is the drag handle) ---------- */
+
+.header {
+  height: 50px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 10px;
+  cursor: grab;
+  touch-action: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.grip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  color: var(--faint);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.grip span {
+  color: var(--ink);
+}
+
+.segment {
+  display: flex;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.segBtn {
+  height: 28px;
+  min-width: 42px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.segOn {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.iconBtn {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.iconOn {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* ---------- Display ---------- */
+
+.display {
+  padding: 12px 16px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 118px;
+  justify-content: flex-end;
+}
+
+.expr {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 22px;
+  color: var(--ink);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.expr::-webkit-scrollbar {
+  display: none;
+}
+
+.expr math-field {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 24px;
+  text-align: right;
+  --caret-color: var(--accent);
+  --selection-background-color: var(--accent-soft);
+  --contains-highlight-background-color: transparent;
+  --placeholder-color: var(--faint);
+  --primary-color: var(--accent);
+}
+
+.expr math-field::part(menu-toggle),
+.expr math-field::part(virtual-keyboard-toggle) {
+  display: none;
+}
+
+.exprText {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.placeholderText {
+  color: var(--faint);
+  font-size: 16px;
+}
+
+.answer {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.answerBig {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.answerEq {
+  font-size: 22px;
+  color: var(--faint);
+}
+
+.preview {
+  font-size: 18px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.errorText {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--danger);
+}
+
+.tools {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 34px;
+}
+
+.toolBtn {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.toolPrimary {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* ---------- Keys ---------- */
+
+.pad {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.key {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 500;
+  box-shadow: 0 1px 0 var(--border-strong);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.06s ease, background 0.06s ease;
+}
+
+.key:active {
+  transform: translateY(1px) scale(0.98);
+  background: var(--surface-hover);
+}
+
+.key:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.fn {
+  height: 40px;
+  font-size: 14.5px;
+  font-weight: 500;
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid var(--border);
+  color: var(--ink-2);
+}
+
+.fnSecond {
+  color: var(--accent-ink);
+  border-color: var(--accent-border);
+  background: rgba(234, 240, 255, 0.55);
+}
+
+.second {
+  height: 40px;
+  font-size: 13px;
+  font-weight: 700;
+  background: transparent;
+  box-shadow: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.secondOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #FFFFFF;
+}
+
+.op {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 22px;
+  box-shadow: 0 1px 0 var(--accent-border);
+}
+
+.del {
+  color: var(--danger);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ac {
+  background: #FCEDEC;
+  color: var(--danger);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 1px 0 var(--danger-border);
+}
+
+.small {
+  font-size: 15px;
+}
+
+.equals {
+  background: var(--accent);
+  color: #FFFFFF;
+  font-size: 26px;
+  box-shadow: 0 1px 0 var(--accent-hover);
+}
+
+.equals:active {
+  background: var(--accent-hover);
+}
+
+/* ---------- History ---------- */
+
+.history {
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  max-height: 338px;
+}
+
+.historyHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.linkBtn {
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.historyList {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.historyItem {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: right;
+}
+
+.historyExpr {
+  display: block;
+  line-height: 1.35;
+  font-size: 13.5px;
+  color: var(--muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyAns {
+  display: block;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.historyEmpty {
+  padding: 22px 16px 28px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.toast {
+  position: absolute;
+  left: 50%;
+  top: 58px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #FFFFFF;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .key:hover:not(:disabled) {
+    filter: brightness(0.97);
+  }
+  .iconBtn:hover,
+  .toolBtn:hover,
+  .historyItem:hover {
+    background: var(--surface-hover);
+  }
+}
+
+/* iPads in landscape and other short screens: tighter, so the whole
+   calculator fits beside the zoom control with room to move it. */
+@media (max-height: 820px) {
+  .key {
+    height: 42px;
+    font-size: 18px;
+  }
+  .fn,
+  .second {
+    height: 32px;
+    font-size: 13.5px;
+  }
+  .pad {
+    padding: 8px;
+    gap: 5px;
+  }
+  .grid {
+    gap: 5px;
+  }
+  .display {
+    min-height: 84px;
+    padding: 8px 14px 8px;
+  }
+  .expr {
+    min-height: 34px;
+  }
+  .answer {
+    min-height: 36px;
+  }
+  .answerBig {
+    font-size: 28px;
+  }
+}
