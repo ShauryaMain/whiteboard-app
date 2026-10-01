@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { getOrCreateStudentId } from "@/lib/classroomCode";
+import d from "@/components/Dialog.module.css";
+import p from "@/components/Paper.module.css";
 
 // Save this file as: src/app/join/[code]/page.js
 // Phase 1: confirms the code is live and shows a waiting screen.
@@ -80,15 +82,11 @@ export default function JoinCodePage() {
 
   if (status === "not_found") {
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ marginBottom: 16 }}>
-            That code isn't active right now — check with your teacher and try again.
-          </p>
-          <button
-            onClick={() => router.push("/join")}
-            style={{ border: "none", background: "#1E88E5", color: "#fff", borderRadius: 10, padding: "10px 18px", cursor: "pointer" }}
-          >
+      <div className={p.screen}>
+        <div className={`${p.sticky} ${p.stickyPink}`} role="alert">
+          <h1 className={p.stickyTitle}>That code isn&apos;t live right now</h1>
+          <p className={p.stickyText}>Check the code with your teacher — they may not have started the class yet.</p>
+          <button type="button" className={`${d.btn} ${d.btnPrimary}`} onClick={() => router.push("/join")} style={{ marginTop: 6 }}>
             Try another code
           </button>
         </div>
@@ -97,10 +95,32 @@ export default function JoinCodePage() {
   }
 
   return (
-    <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f6f8", padding: 24 }}>
-      <div style={{ textAlign: "center", color: "#666" }}>
-        {status === "connecting" ? "Connecting…" : "You're in! Waiting for your teacher to start…"}
+    <div className={p.screen}>
+      <div className={p.sticky} role="status">
+        {status === "connecting" ? (
+          <>
+            <h1 className={p.stickyTitle}>Finding your class…</h1>
+            <span className={p.dots} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </>
+        ) : (
+          <>
+            <h1 className={p.stickyTitle}>You&apos;re in!</h1>
+            <p className={p.stickyText}>Waiting for your teacher to start the lesson.</p>
+            <span className={p.dots} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </>
+        )}
       </div>
+      <span className={p.hand} aria-hidden="true" style={{ transform: "rotate(-2deg)" }}>
+        class code {String(code).toUpperCase()}
+      </span>
     </div>
   );
 }

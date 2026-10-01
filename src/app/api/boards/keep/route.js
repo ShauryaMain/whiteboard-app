@@ -19,22 +19,32 @@ function page({ title, body, action }) {
 <meta name="robots" content="noindex">
 <title>${esc(title)} · Clean Slate</title>
 <link rel="icon" href="data:image/png;base64,${BRAND_MARK_PNG_BASE64}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shantell+Sans:wght@700;800&family=Caveat:wght@600&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
-    background: #F4F3EF; color: #18191C; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .card { width: min(100%, 420px); background: #FFFFFF; border: 1px solid #E4E2DC; border-radius: 14px;
-    box-shadow: 0 12px 32px rgba(0,0,0,.08); padding: 28px 26px 24px; text-align: center; }
-  .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; margin-bottom: 22px; }
-  .brand img { width: 30px; height: 30px; border-radius: 8px; }
-  h1 { font-size: 21px; line-height: 1.3; margin: 0 0 10px; }
+    background-color: #FDFCF7; color: #1B1D24;
+    background-image: linear-gradient(#E6ECF7 1px, transparent 1px), linear-gradient(90deg, #E6ECF7 1px, transparent 1px);
+    background-size: 32px 32px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .card { position: relative; width: min(100%, 420px); background: #FFFFFF; border: 2px solid #1B1D24; border-radius: 18px;
+    box-shadow: 6px 6px 0 #1B1D24; padding: 30px 26px 24px; text-align: center; }
+  .card::before { content: ""; position: absolute; top: -13px; left: 50%; width: 96px; height: 26px; margin-left: -48px;
+    background: rgba(255,229,138,.9); transform: rotate(-3deg); }
+  .brand { display: inline-flex; align-items: center; gap: 10px; font-family: "Shantell Sans", sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 20px; }
+  .brand img { width: 32px; height: 32px; border-radius: 9px; }
+  h1 { font-family: "Shantell Sans", sans-serif; font-weight: 800; font-size: 23px; line-height: 1.25; margin: 0 0 10px; }
   p { font-size: 15px; line-height: 1.55; color: #5F5E5A; margin: 0 0 20px; }
-  .btn { display: block; width: 100%; min-height: 46px; border: 0; border-radius: 10px; background: #2451D6; color: #fff;
-    font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; line-height: 46px; }
-  .btn:hover { background: #1A3CA3; }
-  .btn.secondary { background: #FFFFFF; color: #18191C; border: 1px solid #E4E2DC; margin-top: 10px; }
-  .btn.secondary:hover { background: #F0EFEA; }
+  .btn { display: block; width: 100%; min-height: 50px; border: 2px solid #1B1D24; border-radius: 12px; background: #2451D6; color: #fff;
+    font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; line-height: 46px;
+    box-shadow: 3px 3px 0 #1B1D24; transition: transform .12s ease, box-shadow .12s ease; }
+  .btn:hover { transform: translate(1px,1px); box-shadow: 2px 2px 0 #1B1D24; }
+  .btn.secondary { background: #FFFFFF; color: #1B1D24; box-shadow: none; margin-top: 12px; }
+  .btn.secondary:hover { background: #FDFCF7; transform: none; }
+  .note { font-family: Caveat, cursive; font-size: 20px; color: #2451D6; margin-top: 16px; }
 </style>
 </head><body>
 <main class="card">

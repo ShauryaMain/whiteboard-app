@@ -41,7 +41,7 @@ export default function SimEmbedModal({ onAdd, onClose }) {
   return (
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)",
+        position: "fixed", inset: 0, zIndex: 200, background: "rgba(27,29,36,0.32)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       }}
       onPointerDown={(e) => {
@@ -50,25 +50,25 @@ export default function SimEmbedModal({ onAdd, onClose }) {
     >
       <div
         style={{
-          background: "#fff", borderRadius: 16, width: "min(420px, 100%)",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+          background: "#fff", borderRadius: 18, width: "min(440px, 100%)", border: "2px solid var(--ink-line)",
+          boxShadow: "6px 6px 0 var(--ink-line)", overflow: "hidden",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #eee" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#1a1a1a", flex: 1 }}>Embed a Simulation</div>
+        <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: "2px solid var(--ink-line)", ...paperStyle }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: "var(--ink)", flex: 1 }}>Embed a simulation</div>
           <button
             onClick={onClose}
             aria-label="Close"
-            style={{ border: "none", background: "#f0f0f0", borderRadius: 8, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            style={{ border: "1.5px solid var(--ink-line)", background: "#fff", borderRadius: 11, width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--ink)" }}
           >
             <X size={16} />
           </button>
         </div>
 
         <div style={{ padding: 20 }}>
-          <div style={{ fontSize: 13, color: "#666", marginBottom: 12, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 14, color: "var(--muted)", marginBottom: 14, lineHeight: 1.55 }}>
             Paste a link to an interactive simulation — for example a{" "}
-            <a href="https://phet.colorado.edu/en/simulations/browse" target="_blank" rel="noreferrer" style={{ color: "#1E88E5" }}>
+            <a href="https://phet.colorado.edu/en/simulations/browse" target="_blank" rel="noreferrer" style={{ color: "var(--accent-ink)", fontWeight: 600 }}>
               PhET simulation
             </a>
             — it will be added to the board as a resizable window you and your students can interact with.
@@ -83,20 +83,20 @@ export default function SimEmbedModal({ onAdd, onClose }) {
             }}
             placeholder="https://phet.colorado.edu/sims/html/..."
             style={{
-              width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 8, fontSize: 14,
-              border: touched && !valid ? "1px solid #E53935" : "1px solid #ddd",
+              width: "100%", boxSizing: "border-box", padding: "0 13px", height: 46, borderRadius: 12, fontSize: 15,
+              border: touched && !valid ? "2px solid var(--danger)" : "2px solid var(--ink-line)",
             }}
           />
           {touched && !valid && (
-            <div style={{ fontSize: 12, color: "#E53935", marginTop: 6 }}>
+            <div style={{ fontSize: 13, color: "var(--danger)", marginTop: 8, fontWeight: 500 }}>
               That does not look like a valid link — make sure it starts with http:// or https://
             </div>
           )}
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 20px", borderTop: "1px solid #eee" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "14px 18px", borderTop: "2px solid var(--ink-line)", background: "var(--paper)" }}>
           <button onClick={onClose} style={secondaryBtnStyle}>Cancel</button>
-          <button onClick={handleAdd} style={primaryBtnStyle}>Add to Board</button>
+          <button onClick={handleAdd} style={primaryBtnStyle}>Add to board</button>
         </div>
       </div>
     </div>
@@ -104,9 +104,17 @@ export default function SimEmbedModal({ onAdd, onClose }) {
 }
 
 const primaryBtnStyle = {
-  border: "none", background: "#1E88E5", color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  border: "2px solid var(--ink-line)", background: "var(--accent)", color: "#fff", borderRadius: 12, padding: "0 18px", height: 44,
+  fontSize: 14.5, fontWeight: 600, cursor: "pointer", boxShadow: "var(--shadow-hard)",
 };
 
 const secondaryBtnStyle = {
-  border: "none", background: "#f0f0f0", color: "#333", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+  border: "2px solid var(--ink-line)", background: "#fff", color: "var(--ink)", borderRadius: 12, padding: "0 18px", height: 44,
+  fontSize: 14.5, fontWeight: 600, cursor: "pointer",
+};
+
+const paperStyle = {
+  backgroundColor: "var(--paper)",
+  backgroundImage: "linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px)",
+  backgroundSize: "20px 20px",
 };

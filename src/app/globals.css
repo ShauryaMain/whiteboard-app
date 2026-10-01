@@ -45,6 +45,14 @@
   --hand-blue: #2451D6;
   --hand-orange: #A35A00;
   --shadow-hard: 3px 3px 0 var(--ink-line);
+  --shadow-card-hard: 4px 4px 0 var(--ink-line);
+  --sticky-y: #FFF3B0;
+  --sticky-b: #DDE7FF;
+  --sticky-p: #FFE1D6;
+  --hilite: rgba(255, 229, 138, 0.95);
+  /* graph-paper ground: use with background-size: var(--grid-size) */
+  --paper-grid: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  --grid-size: 32px 32px;
   --shadow-hard-sm: 2px 2px 0 var(--ink-line);
 
   --font-display: var(--font-shantell), "Comic Neue", "Trebuchet MS", sans-serif;

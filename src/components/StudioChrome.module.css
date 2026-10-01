@@ -843,8 +843,8 @@
   display: none;
   border-radius: 50%;
   background: #FFFFFF;
-  border: 2px solid var(--accent);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  border: 2px solid var(--ink-line);
+  box-shadow: 2px 2px 0 var(--ink-line);
 }
 
 .selectionBar {
@@ -913,10 +913,10 @@
   padding: 0 12px;
   border: none;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.16);
-  color: #FFFFFF;
+  background: var(--sticky-y);
+  color: var(--ink);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
 }
 

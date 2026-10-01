@@ -121,17 +121,19 @@ export default function SplitDivider({ orientation, containerRef, valueNow, onDr
       <span
         style={{
           position: "absolute",
-          inset: vertical ? "0 9px" : "9px 0",
-          background: "var(--border)",
+          inset: vertical ? "0 15px" : "15px 0",
+          background: "var(--ink-line)",
         }}
       />
       <span
         style={{
           position: "relative",
-          width: vertical ? 6 : 48,
-          height: vertical ? 48 : 6,
-          borderRadius: 6,
-          background: "var(--faint)",
+          width: vertical ? 10 : 52,
+          height: vertical ? 52 : 10,
+          borderRadius: 8,
+          border: "2px solid var(--ink-line)",
+          background: "var(--sticky-y)",
+          boxShadow: "var(--shadow-hard-sm)",
         }}
       />
     </div>

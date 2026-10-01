@@ -63,10 +63,10 @@ export default function SimEmbed({ sim, scaleRef, onMove, onResize, onCommit, on
         position: "fixed",
         display: "flex",
         flexDirection: "column",
-        border: "1px solid #ccc",
-        borderRadius: 8,
+        border: "2px solid var(--ink-line)",
+        borderRadius: 12,
         background: "#fff",
-        boxShadow: "0 2px 10px rgba(0,0,0,0.18)",
+        boxShadow: "4px 4px 0 var(--ink-line)",
         overflow: "hidden",
       }}
     >
@@ -79,17 +79,19 @@ export default function SimEmbed({ sim, scaleRef, onMove, onResize, onCommit, on
           alignItems: "center",
           gap: 6,
           padding: "0 8px",
-          background: "#f5f6f8",
-          borderBottom: "1px solid #eee",
+          background: "var(--paper)",
+          borderBottom: "2px solid var(--ink-line)",
           cursor: "grab",
           touchAction: "none",
         }}
       >
-        <Move size={13} color="#999" />
+        <Move size={13} color="var(--ink-2)" />
         <span
           style={{
-            fontSize: 11,
-            color: "#666",
+            fontFamily: "var(--font-display)",
+            fontSize: 12,
+            fontWeight: 700,
+            color: "var(--ink)",
             flex: 1,
             whiteSpace: "nowrap",
             overflow: "hidden",
@@ -104,7 +106,7 @@ export default function SimEmbed({ sim, scaleRef, onMove, onResize, onCommit, on
           aria-label="Remove simulation"
           style={{ border: "none", background: "transparent", cursor: "pointer", display: "flex", padding: 2 }}
         >
-          <X size={13} color="#999" />
+          <X size={14} color="var(--ink-2)" />
         </button>
       </div>
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>

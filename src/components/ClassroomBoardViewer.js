@@ -7,6 +7,7 @@ import ReferencePane from "./ReferencePane";
 import { renderGrid } from "@/lib/gridRenderer";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
 import { translateStroke, translateText, translateImage } from "@/lib/boardObjects";
+import cls from "./Classroom.module.css";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -538,17 +539,9 @@ export default function ClassroomBoardViewer({ boardId }) {
     <div style={{ width: "100dvw", height: "100dvh", overflow: "hidden", display: "flex" }}>
       {showReferencePane && (
         <div
-          style={{
-            width: "clamp(340px, 42%, 600px)",
-            height: "100%",
-            flexShrink: 0,
-            borderRight: "1px solid #ddd",
-            background: "#e8eaed",
-            display: "flex",
-            flexDirection: "column",
-          }}
+          className={cls.refColumn}
         >
-          <div style={{ padding: "10px 14px", background: "#fff", borderBottom: "1px solid #eee", fontSize: 13, color: "#333" }}>
+          <div className={cls.refHeader}>
             {referenceDoc.fileName}
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
@@ -581,37 +574,14 @@ export default function ClassroomBoardViewer({ boardId }) {
         ))}
         <button
           onClick={() => router.push("/join")}
-          style={{
-            position: "absolute",
-            top: "max(16px, env(safe-area-inset-top))",
-            left: 16,
-            zIndex: 10,
-            border: "none",
-            background: "#fff",
-            borderRadius: 10,
-            padding: "8px 14px",
-            fontSize: 13,
-            cursor: "pointer",
-            boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
-          }}
+          className={cls.floatBtn}
         >
           Leave
         </button>
 
         {connectionStatus !== "live" && (
           <div
-            style={{
-              position: "absolute",
-              top: "max(16px, env(safe-area-inset-top))",
-              left: "50%",
-              transform: "translateX(-50%)",
-              zIndex: 10,
-              background: "#1a1a1a",
-              color: "#fff",
-              borderRadius: 999,
-              padding: "6px 16px",
-              fontSize: 13,
-            }}
+            className={cls.statusPill}
           >
             {connectionStatus === "connecting" ? "Connecting…" : "Waiting for your teacher's board…"}
           </div>

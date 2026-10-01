@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { ArrowLeft } from "lucide-react";
+import cls from "./Classroom.module.css";
 
 // The teacher's read-only window into one student's mini-board
 // (StudentMiniBoard.js), opened by clicking a name in the live roster.
@@ -271,51 +272,24 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "#f5f6f8", display: "flex", flexDirection: "column" }}>
+    <div className={cls.studentView}>
       <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 14px",
-          background: "#fff",
-          borderBottom: "1px solid #eee",
-        }}
+        className={cls.studentBar}
       >
         <button
           onClick={onBack}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            border: "none",
-            background: "#f0f0f0",
-            borderRadius: 8,
-            padding: "8px 12px",
-            fontSize: 13,
-            cursor: "pointer",
-            color: "#333",
-          }}
+          className={cls.smallBtn} style={{ height: 40, display: "inline-flex", alignItems: "center", gap: 6 }}
         >
           <ArrowLeft size={15} /> Roster
         </button>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "#1a1a1a" }}>{`${student?.name || "Student"}'s board`}</div>
+        <div className={cls.studentName}>{`${student?.name || "Student"}'s board`}</div>
         {connectionStatus !== "live" && (
-          <span style={{ fontSize: 12, color: "#999" }}>Connecting…</span>
+          <span className={cls.connecting}>connecting…</span>
         )}
-        <div style={{ flex: 1 }} />
+        <div className={cls.grow} />
         <button
           onClick={() => setShowComments((v) => !v)}
-          style={{
-            border: "none",
-            background: showComments ? "#FFB300" : "#f0f0f0",
-            color: "#1a1a1a",
-            borderRadius: 8,
-            padding: "8px 12px",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
+          className={`${cls.smallBtn} ${showComments ? cls.smallBtnOn : ""}`} style={{ height: 40 }}
         >
           Comments{comments.length > 0 ? ` (${comments.length})` : ""}
         </button>
@@ -330,34 +304,14 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
           />
 
           <div
-            style={{
-              position: "absolute",
-              bottom: 12,
-              left: "50%",
-              transform: "translateX(-50%)",
-              background: "rgba(26,26,26,0.85)",
-              color: "#fff",
-              borderRadius: 999,
-              padding: "6px 14px",
-              fontSize: 12,
-            }}
+            className={`${cls.statusPill} ${cls.statusPillBottom}`}
           >
-            Click anywhere on the board to leave a comment
+            Tap anywhere on the board to leave a comment
           </div>
 
           {composer && (
             <div
-              style={{
-                position: "absolute",
-                left: `calc(${composer.x * 100}% - 130px)`,
-                top: `calc(${composer.y * 100}% + 16px)`,
-                width: 260,
-                background: "#fff",
-                borderRadius: 10,
-                boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
-                padding: 10,
-                zIndex: 5,
-              }}
+              className={cls.composer} style={{ left: `calc(${composer.x * 100}% - 135px)`, top: `calc(${composer.y * 100}% + 16px)` }}
             >
               <textarea
                 autoFocus
@@ -373,27 +327,18 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
                 }}
                 placeholder="What should they change?"
                 rows={2}
-                style={{
-                  width: "100%",
-                  border: "1px solid #ddd",
-                  borderRadius: 6,
-                  padding: 8,
-                  fontSize: 13,
-                  fontFamily: "inherit",
-                  resize: "none",
-                  boxSizing: "border-box",
-                }}
+                className={cls.composerInput}
               />
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+              <div className={cls.composerActions}>
                 <button
                   onClick={() => setComposer(null)}
-                  style={{ border: "none", background: "#f0f0f0", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}
+                  className={cls.smallBtn}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={submitComment}
-                  style={{ border: "none", background: "#1E88E5", color: "#fff", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}
+                  className={`${cls.smallBtn} ${cls.smallBtnPrimary}`}
                 >
                   Send
                 </button>
@@ -404,44 +349,25 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
 
         {showComments && (
           <div
-            style={{
-              width: 280,
-              flexShrink: 0,
-              background: "#fff",
-              borderLeft: "1px solid #eee",
-              overflowY: "auto",
-              padding: 14,
-            }}
+            className={cls.sidePanel}
           >
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#333", marginBottom: 10 }}>
+            <div className={cls.sideTitle}>
               Comments for {student?.name || "this student"}
             </div>
             {comments.length === 0 && (
-              <div style={{ fontSize: 13, color: "#999" }}>No comments yet — click the board to add one.</div>
+              <div className={cls.sideEmpty}>No comments yet — tap the board to add one.</div>
             )}
             {comments.map((c, i) => (
-              <div key={c.id} style={{ display: "flex", gap: 8, padding: "8px 0", borderBottom: "1px solid #f5f5f5" }}>
+              <div key={c.id} className={cls.commentRow}>
                 <span
-                  style={{
-                    flexShrink: 0,
-                    width: 20,
-                    height: 20,
-                    borderRadius: "50%",
-                    background: "#FFB300",
-                    color: "#1a1a1a",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
+                  className={cls.commentNum}
                 >
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 13, color: "#333", flex: 1 }}>{c.text}</span>
+                <span className={cls.commentText}>{c.text}</span>
                 <button
                   onClick={() => removeComment(c.id)}
-                  style={{ border: "none", background: "none", color: "#bbb", cursor: "pointer", fontSize: 14, padding: 0 }}
+                  className={cls.commentDelete}
                   title="Delete comment"
                 >
                   ×

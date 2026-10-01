@@ -3869,13 +3869,13 @@ export default function Whiteboard({ boardId }) {
             refStacked
               ? {
                   flex: "0 0 44px", display: "flex", alignItems: "center", gap: 8, padding: "0 16px",
-                  border: "none", borderBottom: "1px solid var(--border)", background: "var(--surface)",
-                  color: "var(--ink-2)", fontSize: 13, cursor: "pointer", textAlign: "left",
+                  border: "none", borderBottom: "2px solid var(--ink-line)", background: "var(--sticky-y)",
+                  color: "var(--ink)", fontSize: 13.5, cursor: "pointer", textAlign: "left",
                 }
               : {
                   flex: "0 0 44px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
-                  padding: "14px 0", border: "none", borderRight: "1px solid var(--border)",
-                  background: "var(--surface)", color: "var(--ink-2)", fontSize: 12.5, cursor: "pointer",
+                  padding: "14px 0", border: "none", borderRight: "2px solid var(--ink-line)",
+                  background: "var(--sticky-y)", color: "var(--ink)", fontSize: 13, cursor: "pointer",
                 }
           }
         >
@@ -3903,6 +3903,8 @@ export default function Whiteboard({ boardId }) {
             minHeight: refStacked ? 160 : 0,
             maxHeight: refStacked ? "calc(100% - 234px)" : "none",
             background: "#ECEAE4",
+            backgroundImage: "linear-gradient(rgba(27,29,36,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(27,29,36,0.04) 1px, transparent 1px)",
+            backgroundSize: "24px 24px",
             overflow: "hidden",
           }}
         >
@@ -3914,20 +3916,22 @@ export default function Whiteboard({ boardId }) {
               alignItems: "center",
               gap: 8,
               padding: "0 8px 0 14px",
-              background: "var(--surface)",
-              borderBottom: "1px solid var(--border)",
+              backgroundColor: "var(--paper)",
+              backgroundImage: "var(--paper-grid)",
+              backgroundSize: "24px 24px",
+              borderBottom: "2px solid var(--ink-line)",
               fontSize: 13,
               color: "var(--ink)",
             }}
           >
-            <FileText size={16} strokeWidth={1.8} color="var(--muted)" style={{ flexShrink: 0 }} />
-            <span style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <FileText size={16} strokeWidth={1.8} color="var(--ink-2)" style={{ flexShrink: 0 }} />
+            <span style={{ fontFamily: "var(--font-display)", fontSize: 14, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {referenceDoc.fileName}
             </span>
             <div
               role="group"
               aria-label="Reference document size"
-              style={{ display: "flex", flexShrink: 0, border: "1px solid var(--border-strong)", borderRadius: 8, overflow: "hidden" }}
+              style={{ display: "flex", flexShrink: 0, border: "1.5px solid var(--ink-line)", borderRadius: 10, overflow: "hidden", background: "var(--surface)" }}
             >
               {[["⅓", 1 / 3, "One third of the screen"], ["½", 1 / 2, "Half the screen"], ["⅔", 2 / 3, "Two thirds of the screen"]].map(
                 ([label, value, title], i) => (
@@ -3936,8 +3940,8 @@ export default function Whiteboard({ boardId }) {
                     aria-label={title}
                     onPress={() => handleRefSnap(value)}
                     style={{
-                      width: 32, height: 30, border: "none", borderLeft: i ? "1px solid var(--border-strong)" : "none",
-                      background: "var(--surface)", color: "var(--ink-2)", fontSize: 13, cursor: "pointer", padding: 0,
+                      width: 32, height: 30, border: "none", borderLeft: i ? "1.5px solid var(--ink-line)" : "none",
+                      background: "var(--surface)", color: "var(--ink)", fontSize: 14, fontWeight: 600, cursor: "pointer", padding: 0,
                     }}
                   >
                     {label}
@@ -3950,7 +3954,7 @@ export default function Whiteboard({ boardId }) {
               onPress={() => setRefCollapsed(true)}
               style={{
                 width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                border: "none", borderRadius: 8, background: "transparent", color: "var(--muted)", cursor: "pointer",
+                border: "1.5px solid var(--ink-line)", borderRadius: 10, background: "var(--surface)", color: "var(--ink)", cursor: "pointer",
               }}
             >
               {refStacked ? <PanelTopClose size={18} strokeWidth={1.8} /> : <PanelLeftClose size={18} strokeWidth={1.8} />}
@@ -3959,8 +3963,8 @@ export default function Whiteboard({ boardId }) {
               <PalmSafeButton
                 onPress={handleRemoveReferenceDoc}
                 style={{
-                  height: 32, flexShrink: 0, padding: "0 10px", border: "1px solid var(--danger-border)", borderRadius: 8,
-                  background: "var(--surface)", color: "var(--danger)", fontSize: 12.5, cursor: "pointer",
+                  height: 34, flexShrink: 0, padding: "0 11px", border: "1.5px solid var(--danger)", borderRadius: 10,
+                  background: "var(--surface)", color: "var(--danger)", fontSize: 13, fontWeight: 600, cursor: "pointer",
                 }}
               >
                 Remove
@@ -4256,11 +4260,12 @@ export default function Whiteboard({ boardId }) {
               <div
                 style={{
                   maxWidth: "min(92vw, 400px)",
-                  background: "var(--ink)",
+                  background: "var(--ink-line)",
                   color: "#fff",
+                  border: "2px solid var(--ink-line)",
                   borderRadius: 12,
                   padding: "12px 14px",
-                  boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+                  boxShadow: "3px 3px 0 var(--accent)",
                   display: "flex",
                   alignItems: "flex-start",
                   gap: 10,
@@ -4277,8 +4282,9 @@ export default function Whiteboard({ boardId }) {
                   onClick={() => setShowPencilOnlyNotice(false)}
                   style={{
                     border: "none",
-                    background: "rgba(255,255,255,0.15)",
-                    color: "#fff",
+                    background: "var(--sticky-y)",
+                    color: "var(--ink)",
+                    fontWeight: 700,
                     borderRadius: 8,
                     padding: "4px 8px",
                     fontSize: 12,
@@ -4294,11 +4300,12 @@ export default function Whiteboard({ boardId }) {
           <div
             style={{
               maxWidth: "min(92vw, 380px)",
-              background: "#1a1a1a",
+              background: "var(--ink-line)",
               color: "#fff",
+              border: "2px solid var(--ink-line)",
               borderRadius: 12,
               padding: "12px 14px",
-              boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+              boxShadow: "3px 3px 0 var(--accent)",
               display: "flex",
               alignItems: "flex-start",
               gap: 10,
@@ -4315,8 +4322,9 @@ export default function Whiteboard({ boardId }) {
               onClick={handleDismissPencilTip}
               style={{
                 border: "none",
-                background: "rgba(255,255,255,0.15)",
-                color: "#fff",
+                background: "var(--sticky-y)",
+                color: "var(--ink)",
+                fontWeight: 700,
                 borderRadius: 8,
                 padding: "4px 8px",
                 fontSize: 12,

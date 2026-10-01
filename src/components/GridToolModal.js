@@ -108,7 +108,7 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
   return createPortal(
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.45)",
+        position: "fixed", inset: 0, zIndex: 1000, background: "rgba(27,29,36,0.32)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
       }}
       onPointerDown={(e) => {
@@ -118,16 +118,16 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
       <div
         className="modal-card"
         style={{
-          background: "#fff", borderRadius: 16, width: "min(680px, 100%)",
-          overflow: "hidden", boxShadow: "0 12px 40px rgba(0,0,0,0.25)", display: "flex", flexDirection: "column",
+          background: "#fff", borderRadius: 18, width: "min(680px, 100%)", border: "2px solid var(--ink-line)",
+          overflow: "hidden", boxShadow: "6px 6px 0 var(--ink-line)", display: "flex", flexDirection: "column",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)", flex: 1 }}>Graph</div>
+        <div style={{ display: "flex", alignItems: "center", padding: "12px 16px", borderBottom: "2px solid var(--ink-line)", flexShrink: 0, ...paperStyle }}>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: 20, fontWeight: 800, color: "var(--ink)", flex: 1 }}>Graph</div>
           <button
             onClick={onClose}
             aria-label="Close"
-            style={{ border: "none", background: "var(--surface-hover)", borderRadius: 8, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            style={{ border: "1.5px solid var(--ink-line)", background: "#fff", borderRadius: 11, width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--ink)" }}
           >
             <X size={16} />
           </button>
@@ -138,7 +138,7 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
           <div style={{ flex: "0 0 auto" }}>
             <canvas
               ref={canvasRef}
-              style={{ border: "1px solid var(--border)", borderRadius: 10, display: "block" }}
+              style={{ border: "2px solid var(--ink-line)", borderRadius: 12, display: "block", boxShadow: "var(--shadow-hard)" }}
             />
           </div>
 
@@ -250,7 +250,7 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
               </Field>
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 10, padding: "2px 12px" }}>
+            <div style={{ display: "flex", flexDirection: "column", border: "1.5px solid var(--ink-line)", borderRadius: 12, padding: "2px 12px" }}>
               <ToggleRow label="Show axes" checked={config.showAxes} onChange={(v) => set({ showAxes: v })} />
               <ToggleRow label="Show numbers" checked={config.showNumbers} onChange={(v) => set({ showNumbers: v })} divider />
               <ToggleRow
@@ -270,7 +270,8 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
                     aria-label={`Color ${c}`}
                     style={{
                       width: 24, height: 24, borderRadius: "50%", background: c, padding: 0, cursor: "pointer",
-                      border: config.color === c ? "2px solid #1a1a1a" : "2px solid transparent", boxShadow: "0 0 0 1px #ddd",
+                      border: config.color === c ? "2px solid var(--ink-line)" : "1.5px solid rgba(27,29,36,0.35)",
+                      boxShadow: config.color === c ? "inset 0 0 0 2px #fff, 2px 2px 0 var(--ink-line)" : "none",
                     }}
                   />
                 ))}
@@ -280,7 +281,7 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
         </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 16px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 16px", borderTop: "2px solid var(--ink-line)", flexShrink: 0, background: "var(--paper)" }}>
           <button onClick={onClose} style={secondaryBtnStyle}>Cancel</button>
           <button onClick={() => onApply(config)} style={primaryBtnStyle}>
             {isNewGrid ? "Add to board" : "Apply changes"}
@@ -297,7 +298,7 @@ function ToggleRow({ label, checked, onChange, divider }) {
     <div
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: 44,
-        borderTop: divider ? "1px solid var(--border)" : "none",
+        borderTop: divider ? "1.5px dashed #D6D2C8" : "none",
       }}
     >
       <span style={{ fontSize: 13.5, color: "var(--ink)" }}>{label}</span>
@@ -310,7 +311,7 @@ function ToggleRow({ label, checked, onChange, divider }) {
 function Field({ label, children }) {
   return (
     <div>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 5, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 12.5, color: "var(--ink-2)", marginBottom: 6, fontWeight: 700 }}>{label}</div>
       {children}
     </div>
   );
@@ -321,9 +322,10 @@ function SegButton({ active, onClick, children }) {
     <button
       onClick={onClick}
       style={{
-        flex: 1, padding: "8px 12px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
-        border: active ? "2px solid #1E88E5" : "1px solid #ddd",
-        background: active ? "#E3F2FD" : "#fff", color: "#1a1a1a",
+        flex: 1, padding: "8px 12px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700,
+        border: active ? "2px solid var(--ink-line)" : "1.5px solid #CFCBC1",
+        background: active ? "var(--accent-soft)" : "#fff", color: "var(--ink)",
+        boxShadow: active ? "var(--shadow-hard-sm)" : "none",
       }}
     >
       {children}
@@ -356,14 +358,14 @@ function Toggle({ checked, onChange }) {
       role="switch"
       aria-checked={checked}
       style={{
-        width: 44, height: 26, borderRadius: 999, border: "none", cursor: "pointer", position: "relative",
-        background: checked ? "#1E88E5" : "#ddd", transition: "background 0.15s",
+        width: 46, height: 28, borderRadius: 999, border: "1.5px solid var(--ink-line)", cursor: "pointer", position: "relative",
+        background: checked ? "var(--accent)" : "#E9E6DE", transition: "background 0.15s", flexShrink: 0,
       }}
     >
       <span
         style={{
-          position: "absolute", top: 3, left: checked ? 21 : 3, width: 20, height: 20, borderRadius: "50%",
-          background: "#fff", transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.3)",
+          position: "absolute", top: 2.5, left: checked ? 20.5 : 2.5, width: 20, height: 20, borderRadius: "50%",
+          background: "#fff", transition: "left 0.15s", border: "1.5px solid var(--ink-line)", boxSizing: "border-box",
         }}
       />
     </button>
@@ -371,13 +373,21 @@ function Toggle({ checked, onChange }) {
 }
 
 const selectStyle = {
-  padding: "8px 10px", borderRadius: 8, border: "1px solid #ddd", fontSize: 13, color: "#1a1a1a", background: "#fff",
+  padding: "8px 10px", borderRadius: 10, border: "1.5px solid var(--ink-line)", fontSize: 13.5, color: "var(--ink)", background: "#fff",
+};
+
+const paperStyle = {
+  backgroundColor: "var(--paper)",
+  backgroundImage: "linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px)",
+  backgroundSize: "20px 20px",
 };
 
 const primaryBtnStyle = {
-  border: "none", background: "#1E88E5", color: "#fff", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  border: "2px solid var(--ink-line)", background: "var(--accent)", color: "#fff", borderRadius: 12, padding: "0 18px", height: 44,
+  fontSize: 14.5, fontWeight: 600, cursor: "pointer", boxShadow: "var(--shadow-hard)",
 };
 
 const secondaryBtnStyle = {
-  border: "none", background: "#f0f0f0", color: "#333", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+  border: "2px solid var(--ink-line)", background: "#fff", color: "var(--ink)", borderRadius: 12, padding: "0 18px", height: 44,
+  fontSize: 14.5, fontWeight: 600, cursor: "pointer",
 };

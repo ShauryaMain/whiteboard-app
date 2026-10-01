@@ -37,28 +37,32 @@ form.card {
   align-items: flex-start;
   gap: 8px;
   padding: 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
+  border-radius: 14px;
+  border: 1.5px solid #D6D2C8;
   background: var(--surface);
   color: var(--ink);
   text-align: left;
   cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .typeIcon {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 1.5px solid var(--ink-line);
   background: var(--surface-2);
-  color: var(--muted);
+  color: var(--ink-2);
+  transform: rotate(-3deg);
 }
 
 .typeTitle {
-  font-size: 14px;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
   line-height: 1.25;
 }
 
@@ -69,8 +73,8 @@ form.card {
 }
 
 .typeOn {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  border: 2px solid var(--ink-line);
+  box-shadow: var(--shadow-hard);
   background: var(--accent-soft);
 }
 
@@ -80,8 +84,8 @@ form.card {
 }
 
 .typeBugOn {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 1px var(--danger);
+  border: 2px solid var(--ink-line);
+  box-shadow: var(--shadow-hard);
   background: #FCEDEC;
 }
 
@@ -91,13 +95,13 @@ form.card {
 }
 
 .typeOtherOn {
-  border-color: var(--ink-2);
-  box-shadow: 0 0 0 1px var(--ink-2);
-  background: var(--surface-2);
+  border: 2px solid var(--ink-line);
+  box-shadow: var(--shadow-hard);
+  background: var(--sticky-y);
 }
 
 .typeOtherOn .typeIcon {
-  background: var(--ink-2);
+  background: var(--ink-line);
   color: #FFFFFF;
 }
 
@@ -105,9 +109,9 @@ form.card {
   width: 100%;
   min-height: 112px;
   max-height: 320px;
-  padding: 11px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border-strong);
+  padding: 11px 13px;
+  border-radius: 12px;
+  border: 2px solid var(--ink-line);
   background: var(--surface);
   color: var(--ink);
   font-size: 15px;
@@ -118,8 +122,7 @@ form.card {
 
 .textarea:focus {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 0 5px var(--accent);
 }
 
 .fieldFoot {
@@ -139,21 +142,19 @@ form.card {
 
 .chip {
   min-height: 36px;
-  padding: 0 12px;
+  padding: 0 13px;
   border-radius: 999px;
-  border: 1px solid var(--border-strong);
+  border: 1.5px solid var(--ink-line);
   background: var(--surface);
-  color: var(--ink-2);
+  color: var(--ink);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .chipOn {
-  border-color: var(--accent-border);
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-  font-weight: 600;
+  background: var(--ink-line);
+  color: #FFFFFF;
 }
 
 .optional {
@@ -166,9 +167,9 @@ form.card {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border-radius: var(--radius);
-  border: 1.5px dashed var(--border-strong);
-  background: var(--surface-2);
+  border-radius: 14px;
+  border: 2px dashed var(--ink-line);
+  background: var(--paper);
   color: var(--muted);
   font-size: 13px;
   font-weight: 400;
@@ -176,22 +177,22 @@ form.card {
 }
 
 .dropActive {
-  border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
 
 .dropIcon {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   flex-shrink: 0;
-  border-radius: 10px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--ink-2);
+  background: var(--sticky-y);
+  border: 1.5px solid var(--ink-line);
+  color: var(--ink);
+  transform: rotate(3deg);
 }
 
 .dropText {
@@ -215,9 +216,9 @@ form.card {
   position: relative;
   width: 88px;
   height: 66px;
-  border-radius: 8px;
+  border-radius: 10px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 2px solid var(--ink-line);
   background: var(--surface-2);
 }
 
@@ -257,7 +258,7 @@ form.card {
   flex-direction: column;
   gap: 2px;
   padding-top: 2px;
-  border-top: 1px solid var(--border);
+  border-top: 1.5px dashed #D6D2C8;
 }
 
 .check {
@@ -300,8 +301,9 @@ form.card {
 .techList {
   margin: 6px 0 0 28px;
   padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--surface-2);
+  border-radius: 10px;
+  border: 1.5px dashed #D6D2C8;
+  background: var(--paper);
   font-size: 12px;
   line-height: 1.6;
   color: var(--muted);
@@ -313,8 +315,8 @@ form.card {
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  border-radius: var(--radius);
-  border: 1px solid var(--danger-border);
+  border-radius: 12px;
+  border: 2px solid var(--danger);
   background: #FCEDEC;
   color: var(--danger);
   font-size: 13.5px;
@@ -331,17 +333,19 @@ form.card {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 22px;
-  padding-bottom: max(12px, env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  gap: 10px;
+  padding: 14px 22px;
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+  border-top: 2px solid var(--ink-line);
+  background: var(--paper);
 }
 
 .footNote {
   flex: 1 1 auto;
-  font-size: 12px;
-  color: var(--faint);
+  font-family: var(--font-hand);
+  font-size: 17px;
+  line-height: 1.1;
+  color: var(--hand-blue);
 }
 
 .spinner {
@@ -367,22 +371,25 @@ form.card {
 }
 
 .doneIcon {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border: 2px solid var(--ink-line);
   background: #E6F4EA;
   color: var(--success);
+  box-shadow: var(--shadow-hard);
+  transform: rotate(-3deg);
 }
 
 @media (hover: hover) {
   .type:hover:not(.typeOn):not(.typeBugOn):not(.typeOtherOn) {
-    background: var(--surface-hover);
+    border-color: var(--ink-line);
   }
   .chip:hover:not(.chipOn) {
-    background: var(--surface-hover);
+    background: var(--paper);
   }
 }
 

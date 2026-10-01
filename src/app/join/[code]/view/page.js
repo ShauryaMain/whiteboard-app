@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { getOrCreateStudentId } from "@/lib/classroomCode";
 import ClassroomBoardViewer from "@/components/ClassroomBoardViewer";
 import StudentMiniBoard from "@/components/StudentMiniBoard";
+import p from "@/components/Paper.module.css";
 
 // This route is where a student lands *after* the join handshake in
 // ../page.js resolves (it navigates here with ?board=<id>). It shows two
@@ -64,55 +65,34 @@ function JoinCodeViewInner() {
 
   if (!boardId) {
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f6f8", padding: 24 }}>
-        <div style={{ textAlign: "center", color: "#666" }}>Connecting…</div>
+      <div className={p.screen}>
+        <div className={p.sticky} role="status">
+          <h1 className={p.stickyTitle}>Opening the lesson…</h1>
+          <span className={p.dots} aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
       </div>
     );
   }
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
-      <div
-        style={{
-          display: "flex",
-          gap: 8,
-          padding: "10px 14px",
-          paddingTop: "max(10px, env(safe-area-inset-top))",
-          background: "#fff",
-          borderBottom: "1px solid #eee",
-          flexShrink: 0,
-        }}
-      >
-        <button
-          onClick={() => setTab("master")}
-          style={{
-            border: "none",
-            background: tab === "master" ? "#1E88E5" : "#f0f0f0",
-            color: tab === "master" ? "#fff" : "#333",
-            borderRadius: 999,
-            padding: "8px 16px",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          Master Board
+      <div className={p.tabBar} role="tablist" aria-label="Boards">
+        <span className={p.tabBrand} aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />
+          </svg>
+        </span>
+        <button type="button" role="tab" aria-selected={tab === "master"} className={`${p.tab} ${tab === "master" ? p.tabOn : ""}`} onClick={() => setTab("master")}>
+          Teacher&apos;s board
         </button>
-        <button
-          onClick={() => setTab("mine")}
-          style={{
-            border: "none",
-            background: tab === "mine" ? "#1E88E5" : "#f0f0f0",
-            color: tab === "mine" ? "#fff" : "#333",
-            borderRadius: 999,
-            padding: "8px 16px",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          My Board
+        <button type="button" role="tab" aria-selected={tab === "mine"} className={`${p.tab} ${tab === "mine" ? p.tabOn : ""}`} onClick={() => setTab("mine")}>
+          My board
         </button>
+        <span className={p.tabNote}>class {String(code).toUpperCase()}</span>
       </div>
 
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import cls from "./Classroom.module.css";
 
 // A student's own personal scratch board during a live class. Unlike the
 // teacher's board, this is intentionally NOT persisted to the database —
@@ -401,17 +402,7 @@ export default function StudentMiniBoard({ code, studentId }) {
 
         {connectionStatus !== "live" && (
           <div
-            style={{
-              position: "absolute",
-              top: 12,
-              left: "50%",
-              transform: "translateX(-50%)",
-              background: "#1a1a1a",
-              color: "#fff",
-              borderRadius: 999,
-              padding: "6px 16px",
-              fontSize: 13,
-            }}
+            className={cls.statusPill}
           >
             Connecting…
           </div>
@@ -420,20 +411,7 @@ export default function StudentMiniBoard({ code, studentId }) {
         {comments.length > 0 && (
           <button
             onClick={() => setShowComments((v) => !v)}
-            style={{
-              position: "absolute",
-              top: 12,
-              right: 12,
-              border: "none",
-              background: "#FFB300",
-              color: "#1a1a1a",
-              borderRadius: 999,
-              padding: "8px 14px",
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-              boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
-            }}
+            className={cls.commentsBtn}
           >
             {showComments ? "Hide" : `${comments.length} comment${comments.length === 1 ? "" : "s"} from teacher`}
           </button>
@@ -441,39 +419,16 @@ export default function StudentMiniBoard({ code, studentId }) {
 
         {showComments && (
           <div
-            style={{
-              position: "absolute",
-              top: 56,
-              right: 12,
-              width: "min(280px, calc(100% - 24px))",
-              maxHeight: "60%",
-              overflowY: "auto",
-              background: "#fff",
-              borderRadius: 12,
-              boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-              padding: 12,
-            }}
+            className={cls.commentsPanel}
           >
             {comments.map((c, i) => (
-              <div key={c.id} style={{ display: "flex", gap: 8, padding: "6px 0", borderBottom: i < comments.length - 1 ? "1px solid #f0f0f0" : "none" }}>
+              <div key={c.id} className={cls.commentRow}>
                 <span
-                  style={{
-                    flexShrink: 0,
-                    width: 20,
-                    height: 20,
-                    borderRadius: "50%",
-                    background: "#FFB300",
-                    color: "#1a1a1a",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
+                  className={cls.commentNum}
                 >
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 13, color: "#333" }}>{c.text}</span>
+                <span className={cls.commentText}>{c.text}</span>
               </div>
             ))}
           </div>
@@ -481,89 +436,41 @@ export default function StudentMiniBoard({ code, studentId }) {
       </div>
 
       <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 14px",
-          background: "#fff",
-          borderTop: "1px solid #eee",
-          flexWrap: "wrap",
-        }}
+        className={cls.miniBar}
       >
         <button
           onClick={() => setTool("pen")}
-          style={{
-            border: "none",
-            background: tool === "pen" ? "#1E88E5" : "#f0f0f0",
-            color: tool === "pen" ? "#fff" : "#333",
-            borderRadius: 8,
-            padding: "8px 14px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
+          className={`${cls.miniBtn} ${tool === "pen" ? cls.miniBtnOn : ""}`}
         >
           Pen
         </button>
         <button
           onClick={() => setTool("eraser")}
-          style={{
-            border: "none",
-            background: tool === "eraser" ? "#1E88E5" : "#f0f0f0",
-            color: tool === "eraser" ? "#fff" : "#333",
-            borderRadius: 8,
-            padding: "8px 14px",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
+          className={`${cls.miniBtn} ${tool === "eraser" ? cls.miniBtnOn : ""}`}
         >
           Eraser
         </button>
-        <div style={{ display: "flex", gap: 6 }}>
+        <div className={cls.swatches}>
           {PRESET_COLORS.map((c) => (
             <button
               key={c}
               onClick={() => { setColor(c); setTool("pen"); }}
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                background: c,
-                border: color === c && tool === "pen" ? "2px solid #1a1a1a" : "2px solid transparent",
-                cursor: "pointer",
-                padding: 0,
-              }}
+              className={`${cls.swatch} ${color === c && tool === "pen" ? cls.swatchOn : ""}`} style={{ background: c }}
             />
           ))}
         </div>
-        <div style={{ flex: 1 }} />
+        <div className={cls.grow} />
         <button
           onClick={handleUndo}
           disabled={strokes.length === 0}
-          style={{
-            border: "none",
-            background: "#f0f0f0",
-            color: strokes.length === 0 ? "#bbb" : "#333",
-            borderRadius: 8,
-            padding: "8px 14px",
-            fontSize: 13,
-            cursor: strokes.length === 0 ? "default" : "pointer",
-          }}
+          className={cls.miniBtn}
         >
           Undo
         </button>
         <button
           onClick={handleClear}
           disabled={strokes.length === 0}
-          style={{
-            border: "none",
-            background: "#f0f0f0",
-            color: strokes.length === 0 ? "#bbb" : "#333",
-            borderRadius: 8,
-            padding: "8px 14px",
-            fontSize: 13,
-            cursor: strokes.length === 0 ? "default" : "pointer",
-          }}
+          className={cls.miniBtn}
         >
           Clear
         </button>

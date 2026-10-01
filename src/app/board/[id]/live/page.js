@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import LiveClassTeacherView from "@/components/LiveClassTeacherView";
+import d from "@/components/Dialog.module.css";
+import p from "@/components/Paper.module.css";
 
 
 
@@ -35,13 +37,10 @@ export default function LiveClassPage() {
 
   if (status === "denied") {
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <p style={{ marginBottom: 16 }}>Only the board owner can start a live class.</p>
-          <button
-            onClick={() => router.push(`/board/${boardId}`)}
-            style={{ border: "none", background: "#1E88E5", color: "#fff", borderRadius: 10, padding: "10px 18px", cursor: "pointer" }}
-          >
+      <div className={p.screen}>
+        <div className={`${p.sticky} ${p.stickyPink}`} role="alert">
+          <h1 className={p.stickyTitle}>Only the board&apos;s owner can start a live class</h1>
+          <button type="button" className={`${d.btn} ${d.btnPrimary}`} onClick={() => router.push(`/board/${boardId}`)} style={{ marginTop: 6 }}>
             Back to board
           </button>
         </div>

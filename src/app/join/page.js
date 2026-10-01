@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import d from "@/components/Dialog.module.css";
+import p from "@/components/Paper.module.css";
 
 // Save this file as: src/app/join/page.js
 // No auth required to join a class — matches the low-friction,
@@ -18,7 +19,7 @@ export default function JoinPage() {
   // useSearchParams needs a Suspense boundary so the page can still be
   // pre-rendered at build time.
   return (
-    <Suspense fallback={<div style={{ minHeight: "100vh", background: "var(--bg)" }} />}>
+    <Suspense fallback={<div className={p.screen} />}>
       <JoinForm />
     </Suspense>
   );
@@ -44,19 +45,18 @@ function JoinForm() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: 16,
-      }}
-    >
-      <form onSubmit={handleJoin} className={d.card} style={{ width: 380, padding: 26, gap: 18 }}>
+    <div className={p.screen}>
+      <span className={p.brand}>
+        <span className={p.brandMark} aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />
+          </svg>
+        </span>
+        Clean Slate
+      </span>
+      <form onSubmit={handleJoin} className={d.card} style={{ width: 400, padding: "30px 26px 26px", gap: 18 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "center" }}>
-          <h1 className={d.title} style={{ fontSize: 22 }}>Join a class</h1>
+          <h1 className={d.title} style={{ fontSize: 26 }}>Join a class</h1>
           <p className={d.subtitle}>Type the code your teacher is showing, then your name.</p>
         </div>
         <label className={d.label}>
@@ -70,8 +70,7 @@ function JoinForm() {
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
-            className={d.input}
-            style={{ height: 56, fontSize: 26, fontWeight: 600, textAlign: "center", letterSpacing: "0.3em", textTransform: "uppercase" }}
+            className={`${d.input} ${p.codeInput}`}
           />
         </label>
         <label className={d.label}>
@@ -84,15 +83,13 @@ function JoinForm() {
             className={d.input}
           />
         </label>
-        <button
-          type="submit"
-          className={`${d.btn} ${d.btnPrimary}`}
-          disabled={!code.trim() || !name.trim()}
-          style={{ width: "100%", height: 48, fontSize: 15 }}
-        >
+        <button type="submit" className={`${d.btn} ${d.btnPrimary} ${p.btnWide}`} disabled={!code.trim() || !name.trim()}>
           Join class
         </button>
       </form>
+      <span className={p.hand} aria-hidden="true" style={{ transform: "rotate(-2deg)" }}>
+        no account needed
+      </span>
     </div>
   );
 }

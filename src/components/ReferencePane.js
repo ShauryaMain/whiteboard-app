@@ -310,7 +310,8 @@ function PdfPage({
         height,
         marginBottom: margin,
         background: "#fff",
-        boxShadow: "0 1px 6px rgba(0,0,0,0.15)",
+        outline: "1.5px solid var(--ink-line)",
+        boxShadow: "4px 4px 0 rgba(27,29,36,0.85)",
         position: "relative",
       }}
     >
@@ -701,8 +702,8 @@ export default function ReferencePane({
           alignItems: "center",
           gap: 4,
           padding: "4px 8px",
-          background: "var(--surface-2)",
-          borderBottom: "1px solid var(--border)",
+          background: "var(--paper)",
+          borderBottom: "1.5px dashed #D6D2C8",
           overflowX: "auto",
           flexShrink: 0,
           touchAction: "manipulation",
@@ -718,7 +719,7 @@ export default function ReferencePane({
         <ToolBtn active={tool === "eraser"} onClick={() => setTool("eraser")} label="Eraser">
           <Eraser size={18} />
         </ToolBtn>
-        <div style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0, margin: "0 2px" }} />
+        <div style={{ width: 0, height: 22, borderLeft: "2px dashed #CFCBC1", flexShrink: 0, margin: "0 3px" }} />
         {PRESET_COLORS.map((c) => (
           <PalmSafeButton
             key={c}
@@ -748,8 +749,9 @@ export default function ReferencePane({
                 height: 22,
                 borderRadius: "50%",
                 background: c,
-                border: "2px solid #fff",
-                boxShadow: color === c ? "0 0 0 2px var(--accent)" : "0 0 0 1px var(--border-strong)",
+                border: color === c ? "2px solid var(--ink-line)" : "1.5px solid rgba(27,29,36,0.35)",
+                boxShadow: color === c ? "inset 0 0 0 2px #fff, 2px 2px 0 var(--ink-line)" : "none",
+                boxSizing: "border-box",
                 display: "block",
               }}
             />
@@ -766,7 +768,7 @@ export default function ReferencePane({
         style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 16, boxSizing: "border-box" }}
       >
         {status === "loading" && (
-          <div style={{ textAlign: "center", color: "#888", fontSize: 14, marginTop: 40 }}>
+          <div style={{ textAlign: "center", color: "var(--hand-blue)", fontFamily: "var(--font-hand)", fontSize: 21, marginTop: 40 }}>
             Loading document…
           </div>
         )}
@@ -847,10 +849,12 @@ function ToolBtn({ children, active, disabled, onClick, label }) {
         justifyContent: "center",
         width: 40,
         height: 40,
-        border: active ? "1px solid var(--accent-border)" : "1px solid transparent",
-        borderRadius: 10,
+        border: active ? "1.5px solid var(--ink-line)" : "1.5px solid transparent",
+        borderRadius: 11,
         background: active ? "var(--accent-soft)" : "transparent",
-        color: disabled ? "#B5B4B0" : active ? "var(--accent-ink)" : "var(--ink-2)",
+        boxShadow: active ? "var(--shadow-hard-sm)" : "none",
+        transform: active ? "rotate(-3deg)" : "none",
+        color: disabled ? "#B5B4B0" : active ? "var(--accent)" : "var(--ink-2)",
         cursor: disabled ? "default" : "pointer",
         flexShrink: 0,
         touchAction: "manipulation",
