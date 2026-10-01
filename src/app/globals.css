@@ -35,6 +35,20 @@
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.14);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05);
 
+  /* Notebook look, shared with the landing page */
+  --paper: #FDFCF7;
+  --grid: #E6ECF7;
+  --margin: #F3B3A6;
+  --ink-line: #1B1D24;
+  --tape: rgba(255, 229, 138, 0.88);
+  --tape-ink: #6B4E00;
+  --hand-blue: #2451D6;
+  --hand-orange: #A35A00;
+  --shadow-hard: 3px 3px 0 var(--ink-line);
+  --shadow-hard-sm: 2px 2px 0 var(--ink-line);
+
+  --font-display: var(--font-shantell), "Comic Neue", "Trebuchet MS", sans-serif;
+  --font-hand: var(--font-caveat), "Segoe Print", "Bradley Hand", cursive;
   --font-sans: var(--font-geist), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 

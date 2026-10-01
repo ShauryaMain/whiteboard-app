@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
   Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
-  Check, ChevronDown, Info, Maximize, NotebookText, ImagePlus, ClipboardPaste, BoxSelect,
+  Check, ChevronDown, Maximize, NotebookText, ImagePlus, ClipboardPaste, BoxSelect,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
@@ -480,7 +480,12 @@ export default function Toolbar(props) {
           </>
         )}
         <div className={s.hint}>
-          <Info size={16} strokeWidth={1.9} className={s.hintIcon} />
+          {/* a hand-drawn arrow pointing back at the tools, like the
+              margin notes on the landing page */}
+          <svg className={s.hintIcon} width="32" height="22" viewBox="0 0 32 22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M29 5C24 14 14 17 5 13" />
+            <path d="M11.7 11.1 5 13l3.1 6.3" />
+          </svg>
           <span className={s.hintText}>
             <b>{hint[0]}</b> — {hint[1]}
           </span>
@@ -505,7 +510,7 @@ function ToolButton({ label, active, open, disabled, wide, menu, badge, onPress,
       data-menu-trigger={menu ? "true" : undefined}
       onPress={onPress}
     >
-      {children}
+      <span className={s.toolIcon}>{children}</span>
       <span className={s.toolLabel}>
         {label}
         {menu && <ChevronDown size={11} strokeWidth={2.4} />}

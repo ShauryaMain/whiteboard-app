@@ -12,6 +12,22 @@ const geist = localFont({
   display: "swap",
 });
 
+// The landing page's notebook fonts, bundled the same way: Shantell Sans
+// for headings (marker-pen style) and Caveat for handwritten notes.
+const shantell = localFont({
+  src: "./fonts/ShantellSans-Variable.woff2",
+  variable: "--font-shantell",
+  weight: "300 800",
+  display: "swap",
+});
+
+const caveat = localFont({
+  src: "./fonts/Caveat-Variable.woff2",
+  variable: "--font-caveat",
+  weight: "400 700",
+  display: "swap",
+});
+
 export const metadata = {
   title: "Clean Slate",
   description: "Clean Slate — live whiteboards for teaching maths, from any tablet.",
@@ -27,7 +43,7 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={geist.variable}>
+    <html lang="en" className={`${geist.variable} ${shantell.variable} ${caveat.variable}`}>
       <body>
         {/* Fills in a few browser features older iPads (iPadOS 15) lack,
             before any app code runs. No-op on modern browsers. */}
