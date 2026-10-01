@@ -7,6 +7,16 @@ import SignInScreen from "@/components/SignInScreen";
 
 const AuthContext = createContext(null);
 
+// Supabase hands over a brand-new user object on every token refresh (about
+// hourly) and every time the tab comes back into view. Keep the existing
+// one when it's the same person, so pages don't mistake that for a fresh
+// sign-in and reload everything (which used to make a long lesson's newest
+// work vanish from one person's screen).
+function sameUser(prev, next) {
+  if (!prev || !next) return next;
+  return prev.id === next.id && prev.email === next.email ? prev : next;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,12 +30,14 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
+      const next = data.session?.user ?? null;
+      setUser((prev) => sameUser(prev, next));
       setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      const next = session?.user ?? null;
+      setUser((prev) => sameUser(prev, next));
     });
 
     return () => listener.subscription.unsubscribe();

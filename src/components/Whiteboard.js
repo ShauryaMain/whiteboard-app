@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import Toolbar from "./Toolbar";
 import RulerOverlay from "./RulerOverlay";
 import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import SplitDivider from "./SplitDivider";
 import PalmSafeButton from "./PalmSafeButton";
-import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2 } from "lucide-react";
+import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon } from "lucide-react";
 import ReferencePane from "./ReferencePane";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
@@ -24,6 +25,24 @@ import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
 import { loadCalcPosition } from "@/lib/calcMath";
 import { detectScratchOut } from "@/lib/scratchOut";
+import {
+  createSyncTracker,
+  fetchBoardContents,
+  fetchBoardPart,
+  fetchBoardSettings,
+  forgetUnsaved,
+  mergeServerList,
+  noteList,
+  nudgeRealtime,
+  retryUnsaved,
+  saveRow,
+  setExistsCheck,
+  subscribeUnsaved,
+  syncSince,
+  touchBoard,
+  unsavedCount,
+} from "@/lib/boardSync";
+import { getServerIdlePaused, isIdlePaused, noteRemoteActivity, resumeFromIdle, startIdleWatch, subscribeIdle } from "@/lib/idleWatch";
 import {
   subscribeInkPrefs, getEraserMode, getServerEraserMode, setEraserMode,
   getScribbleErase, getServerScribbleErase, setScribbleErase,
@@ -150,6 +169,9 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
 
 export default function Whiteboard({ boardId }) {
   const { user } = useAuth();
+  // Only who's signed in matters here — not the session object, which is
+  // replaced on every token refresh and whenever the tab regains focus.
+  const userId = user ? user.id : null;
   const router = useRouter();
   const [isOwner, setIsOwner] = useState(false);
   const [liveClassCode, setLiveClassCode] = useState(null);
@@ -352,6 +374,20 @@ export default function Whiteboard({ boardId }) {
   const [scratchNotice, setScratchNotice] = useState(null);
   const scratchEntryRef = useRef(null);
   const scratchTimerRef = useRef(null);
+  // Saves in flight / waiting to retry, and what's arrived or left the
+  // screen recently — used to merge server data without wiping new work.
+  const [sync] = useState(createSyncTracker);
+  const unsaved = useSyncExternalStore(
+    (listener) => subscribeUnsaved(sync, listener),
+    () => unsavedCount(sync),
+    () => 0
+  );
+  const idlePaused = useSyncExternalStore(subscribeIdle, isIdlePaused, getServerIdlePaused);
+  // Live classes never pause (the teacher's board is the class's hub).
+  const syncPaused = idlePaused && !liveClassCode;
+  const [catchingUp, setCatchingUp] = useState(false);
+  const connectedOnceRef = useRef(false);
+  const catchUpRunningRef = useRef(false);
   const shortcutHandlersRef = useRef(null);
   // Boards-list preview picture (boards.thumbnail).
   const boardLoadedRef = useRef(false);
@@ -362,9 +398,18 @@ export default function Whiteboard({ boardId }) {
   const [referenceUploadStatus, setReferenceUploadStatus] = useState("");
   const referenceFileInputRef = useRef(null);
 
-  useEffect(() => { strokesRef.current = strokes; }, [strokes]);
-  useEffect(() => { textsRef.current = texts; }, [texts]);
-  useEffect(() => { imagesRef.current = images; }, [images]);
+  useEffect(() => {
+    strokesRef.current = strokes;
+    noteList(sync, "strokes", strokes);
+  }, [strokes]);
+  useEffect(() => {
+    textsRef.current = texts;
+    noteList(sync, "texts", texts);
+  }, [texts]);
+  useEffect(() => {
+    imagesRef.current = images;
+    noteList(sync, "images", images);
+  }, [images]);
   useEffect(() => { selectedTextIdRef.current = selectedTextId; }, [selectedTextId]);
   useEffect(() => {
     if (tool !== "select") setSelectedTextId(null);
@@ -904,7 +949,7 @@ export default function Whiteboard({ boardId }) {
 
   async function insertStroke(stroke) {
     if (!boardId || !stroke?.id) return;
-    const { error } = await supabase.from("strokes").upsert({
+    const error = await saveRow(sync, "strokes", {
       id: stroke.id,
       board_id: boardId,
       data: {
@@ -920,7 +965,7 @@ export default function Whiteboard({ boardId }) {
 
   async function insertText(t) {
     if (!boardId || !t?.id) return;
-    const { error } = await supabase.from("texts").upsert({
+    const error = await saveRow(sync, "texts", {
       id: t.id,
       board_id: boardId,
       x: t.x,
@@ -963,8 +1008,47 @@ export default function Whiteboard({ boardId }) {
     setZoomPercent(Math.round(newScale * 100));
   }
 
+  // Server copy + what's on screen -> what should be on screen. Work
+  // still saving (or drawn in the last minute) is kept; things someone
+  // else rubbed out while we were away are dropped.
+  function applyServerContents(contents, fetchStartedAt) {
+    const since = syncSince(fetchStartedAt);
+    if (contents.strokes) setStrokes((prev) => mergeServerList(prev, contents.strokes, sync, since));
+    if (contents.texts) setTexts((prev) => mergeServerList(prev, contents.texts, sync, since));
+    if (contents.images) setImages((prev) => mergeServerList(prev, contents.images, sync, since));
+  }
+
+  // Catch up after the live connection was down (idle pause, sleep,
+  // network drop): anything saved by others meanwhile appears, anything
+  // they rubbed out disappears, and our own unsaved work is re-sent.
+  async function catchUpWithServer() {
+    if (!boardId || catchUpRunningRef.current) return;
+    catchUpRunningRef.current = true;
+    setCatchingUp(true);
+    const fetchStartedAt = Date.now();
+    const [contents, settings] = await Promise.all([fetchBoardContents(boardId), fetchBoardSettings(boardId)]);
+    applyServerContents(contents, fetchStartedAt);
+    if (settings) {
+      if ("grid_config" in settings) gridConfigRef.current = settings.grid_config || null;
+      if ("background" in settings) {
+        backgroundRef.current = normalizeBackground(settings.background);
+        setBoardBackground(backgroundRef.current);
+      }
+      if ("sim_embeds" in settings) {
+        simsRef.current = settings.sim_embeds || [];
+        setSims(simsRef.current);
+      }
+      if (settings.name) setBoardName(settings.name);
+    }
+    retryUnsaved(sync);
+    catchUpRunningRef.current = false;
+    setCatchingUp(false);
+    fullRedraw();
+  }
+
   useEffect(() => {
-    if (!boardId || !user) return;
+    if (!boardId || !userId) return;
+    connectedOnceRef.current = false;
     async function loadBoard() {
       const { error: joinError } = await supabase.rpc("join_board_via_link", { board_id: boardId });
       if (joinError) console.error("Error joining board:", joinError);
@@ -992,43 +1076,10 @@ export default function Whiteboard({ boardId }) {
 
       if (!boardError && boardRow) {
         gridConfigRef.current = boardRow.grid_config || null;
-        setIsOwner(user.id === boardRow.owner_id);
+        setIsOwner(userId === boardRow.owner_id);
         setBoardName(boardRow.name || "");
       } else if (boardError) {
         console.error("Error loading board:", boardError);
-      }
-
-      const { data: strokeRows, error: strokesError } = await supabase
-        .from("strokes")
-        .select("id, data")
-        .eq("board_id", boardId)
-        .order("created_at", { ascending: true });
-      if (!strokesError && strokeRows) {
-        setStrokes(strokeRows.map((r) => ({ ...r.data, id: r.id })));
-      } else if (strokesError) {
-        console.error("Error loading strokes:", strokesError);
-      }
-
-      const { data: textRows, error: textsError } = await supabase
-        .from("texts")
-        .select("id, x, y, text, color, font_size, width, rotation")
-        .eq("board_id", boardId)
-        .order("created_at", { ascending: true });
-      if (!textsError && textRows) {
-        setTexts(
-          textRows.map((r) => ({
-            id: r.id,
-            x: r.x,
-            y: r.y,
-            text: r.text,
-            color: r.color,
-            fontSize: r.font_size,
-            width: r.width || 240,
-            rotation: r.rotation || 0,
-          }))
-        );
-      } else if (textsError) {
-        console.error("Error loading texts:", textsError);
       }
 
       // Kept as a separate, failure-tolerant query: `sim_embeds` is a new
@@ -1049,20 +1100,6 @@ export default function Whiteboard({ boardId }) {
         }
       });
 
-      // Images live in their own (newer) table.
-      supabase
-        .from("images")
-        .select("id, x, y, width, height, src")
-        .eq("board_id", boardId)
-        .order("created_at", { ascending: true })
-        .then(({ data, error }) => {
-          if (!error && Array.isArray(data)) {
-            setImages(data.map((r) => ({ id: r.id, x: r.x, y: r.y, width: r.width, height: r.height, src: r.src })));
-          } else if (error) {
-            console.warn("Could not load images (has the images table been created yet?):", error);
-          }
-        });
-
       // The saved preview picture, so an unchanged board isn't re-saved.
       supabase.from("boards").select("thumbnail").eq("id", boardId).maybeSingle().then(({ data, error }) => {
         if (!error && data) lastThumbRef.current = data.thumbnail || null;
@@ -1079,11 +1116,22 @@ export default function Whiteboard({ boardId }) {
         }
       });
 
+      // Everything drawn so far (all of it — Supabase hands rows back
+      // 1,000 at a time), merged with anything drawn while it loaded.
+      // Each part shows as soon as it arrives.
+      const fetchStartedAt = Date.now();
+      await Promise.all(
+        ["strokes", "texts", "images"].map((kind) =>
+          fetchBoardPart(boardId, kind).then((list) => applyServerContents({ [kind]: list }, fetchStartedAt))
+        )
+      );
       boardLoadedRef.current = true;
       fullRedraw();
+      touchBoard(boardId);
     }
     loadBoard();
-  }, [boardId, user]);
+  }, [boardId, userId]);
+
 
   async function saveGrid() {
     if (!boardId) return;
@@ -1146,7 +1194,7 @@ export default function Whiteboard({ boardId }) {
 
   async function insertImage(img) {
     if (!boardId || !img?.id) return;
-    const { error } = await supabase.from("images").upsert({
+    const error = await saveRow(sync, "images", {
       id: img.id,
       board_id: boardId,
       x: img.x,
@@ -1999,9 +2047,15 @@ export default function Whiteboard({ boardId }) {
   }, [sims]);
 
   useEffect(() => {
-    if (!boardId) return;
+    if (!boardId || syncPaused) return;
     const channel = supabase.channel(`board-${boardId}`, {
       config: { broadcast: { self: false } },
+    });
+
+    // Someone else changing the board keeps a watching viewer "active",
+    // so a student following along never gets paused.
+    channel.on("broadcast", { event: "*" }, ({ event }) => {
+      if (!/-request$/.test(String(event || ""))) noteRemoteActivity();
     });
 
     channel.on("broadcast", { event: "stroke-start" }, ({ payload }) => {
@@ -2179,18 +2233,35 @@ export default function Whiteboard({ boardId }) {
       });
     });
 
+    let joined = false;
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
+        joined = true;
         channel.send({ type: "broadcast", event: "reference-request", payload: {} });
+        // Re-joined after being away (idle pause, sleep, dropped Wi-Fi):
+        // fetch what changed meanwhile. The first join is covered by the
+        // initial load.
+        if (connectedOnceRef.current) catchUpWithServer();
+        else retryUnsaved(sync);
+        connectedOnceRef.current = true;
       }
     });
     channelRef.current = channel;
+    // If the join hasn't gone through after a few seconds (the old
+    // connection was still closing), give the connection a nudge.
+    const joinWatchdog = setInterval(() => {
+      if (joined) clearInterval(joinWatchdog);
+      else nudgeRealtime();
+    }, 4000);
 
     return () => {
+      clearInterval(joinWatchdog);
       supabase.removeChannel(channel);
       channelRef.current = null;
+      // Half-drawn strokes from others would otherwise stay stuck on screen.
+      remoteStrokes.current = {};
     };
-  }, [boardId]);
+  }, [boardId, syncPaused]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -3502,6 +3573,14 @@ export default function Whiteboard({ boardId }) {
 
   // Undo from the "Scribbled out" note — only if that's still the latest
   // thing you did (otherwise it would undo something else).
+  function handleResumeFromIdle(e) {
+    if (e && e.type === "pointerdown") {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    resumeFromIdle();
+  }
+
   function handleUndoScratch() {
     const stack = myStrokeStack.current;
     if (scratchEntryRef.current && stack[stack.length - 1] === scratchEntryRef.current) handleUndo();
@@ -3529,6 +3608,53 @@ export default function Whiteboard({ boardId }) {
       });
     }
   }
+
+  // ---------- idle pause + unsaved work ----------
+
+  useEffect(() => startIdleWatch(), []);
+
+  useEffect(() => {
+    if (idlePaused && liveClassCode) resumeFromIdle();
+  }, [idlePaused, liveClassCode]);
+
+  // While paused, the first key press wakes the board instead of acting
+  // as a shortcut on a board that's out of date.
+  useEffect(() => {
+    if (!syncPaused) return;
+    function onKey(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      resumeFromIdle();
+    }
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [syncPaused]);
+
+  useEffect(() => {
+    setExistsCheck(
+      sync,
+      (id) =>
+        strokesRef.current.some((o) => o.id === id) ||
+        textsRef.current.some((o) => o.id === id) ||
+        imagesRef.current.some((o) => o.id === id)
+    );
+    function onOnline() {
+      retryUnsaved(sync);
+    }
+    // Leaving with work that hasn't reached the server yet: ask first.
+    function onBeforeUnload(e) {
+      if (unsavedCount(sync) > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    }
+    window.addEventListener("online", onOnline);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, []);
 
   // Refresh the boards-list preview a few seconds after the board changes,
   // and straight away when leaving the page.
@@ -4057,7 +4183,35 @@ export default function Whiteboard({ boardId }) {
             style={{ display: "none" }}
           />
         )}
-        {(showPencilOnlyNotice || showPencilTip || boardNotice || scratchNotice) && (
+        {syncPaused &&
+          createPortal(
+          <div
+            className={chrome.idleOverlay}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="idle-title"
+            onPointerDown={handleResumeFromIdle}
+          >
+            <div className={chrome.idleCard}>
+              <span className={chrome.idleIcon} aria-hidden="true">
+                <Moon size={22} />
+              </span>
+              <h2 id="idle-title" className={chrome.idleTitle}>
+                Paused while you were away
+              </h2>
+              <p className={chrome.idleBody}>
+                Nothing happened on this board for 20 minutes, so live syncing paused to save data.{" "}
+                {unsaved > 0 ? "A few changes are still waiting to save — they'll go through when you continue." : "Everything is saved."}
+              </p>
+              <button type="button" className={chrome.idleBtn} onClick={handleResumeFromIdle} autoFocus>
+                Pick up where you left off
+              </button>
+              <span className={chrome.idleHint}>or tap anywhere</span>
+            </div>
+          </div>,
+            document.body
+          )}
+        {(showPencilOnlyNotice || showPencilTip || boardNotice || scratchNotice || catchingUp || unsaved > 0) && (
           <div
             style={{
               position: "fixed",
@@ -4071,6 +4225,18 @@ export default function Whiteboard({ boardId }) {
               gap: 8,
             }}
           >
+            {catchingUp && (
+              <div role="status" className={`${chrome.boardNotice} ${chrome.syncNotice}`}>
+                <span className={chrome.syncDot} aria-hidden="true" />
+                Catching up on changes…
+              </div>
+            )}
+            {unsaved > 0 && !catchingUp && (
+              <div role="status" className={`${chrome.boardNotice} ${chrome.syncNotice}`}>
+                <span className={`${chrome.syncDot} ${chrome.syncDotWarn}`} aria-hidden="true" />
+                {unsaved === 1 ? "1 change hasn't" : `${unsaved} changes haven't`} saved yet — retrying
+              </div>
+            )}
             {boardNotice && (
               <div role="status" className={chrome.boardNotice}>
                 {boardNotice}
