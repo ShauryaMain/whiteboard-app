@@ -23,6 +23,11 @@ import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/lo
 import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
 import { loadCalcPosition } from "@/lib/calcMath";
+import { detectScratchOut } from "@/lib/scratchOut";
+import {
+  subscribeInkPrefs, getEraserMode, getServerEraserMode, setEraserMode,
+  getScribbleErase, getServerScribbleErase, setScribbleErase,
+} from "@/lib/inkPrefs";
 import { renderBoardThumbnail } from "@/lib/boardThumbnail";
 import {
   emptySelection, selectionCount, selectionFromData, strokeBounds, imageBounds, textBounds, unionBounds,
@@ -312,6 +317,8 @@ export default function Whiteboard({ boardId }) {
   // always sees "off"; the saved values take over after hydration.
   const pencilOnly = useSyncExternalStore(subscribePencilPrefs, getPencilOnly, getServerPrefSnapshot);
   const penSeen = useSyncExternalStore(subscribePencilPrefs, getPenSeen, getServerPrefSnapshot);
+  const eraserMode = useSyncExternalStore(subscribeInkPrefs, getEraserMode, getServerEraserMode);
+  const scribbleErase = useSyncExternalStore(subscribeInkPrefs, getScribbleErase, getServerScribbleErase);
   const [referenceStrokes, setReferenceStrokes] = useState([]);
   const [referenceTool, setReferenceTool] = useState("pen");
   const [referenceColor, setReferenceColor] = useState("#E53935");
@@ -339,6 +346,12 @@ export default function Whiteboard({ boardId }) {
   const [boardNotice, setBoardNotice] = useState("");
   const noticeTimerRef = useRef(null);
   const rlsNoticeShownRef = useRef(false);
+  // Whole-stroke eraser drag in progress: { pointerId, last, removed[] }
+  const strokeEraseRef = useRef(null);
+  // "Scribbled out … · Undo" note after a scratch-out
+  const [scratchNotice, setScratchNotice] = useState(null);
+  const scratchEntryRef = useRef(null);
+  const scratchTimerRef = useRef(null);
   const shortcutHandlersRef = useRef(null);
   // Boards-list preview picture (boards.thumbnail).
   const boardLoadedRef = useRef(false);
@@ -2415,6 +2428,7 @@ export default function Whiteboard({ boardId }) {
 
     function commitFinishedStroke(finished) {
       setStrokes((prev) => [...prev, finished]);
+      setScratchNotice(null);
       myStrokeStack.current.push({ kind: "stroke", id: finished.id });
       myRedoStack.current = [];
       setMyUndoAvailable(true);
@@ -2631,6 +2645,59 @@ export default function Whiteboard({ boardId }) {
       setEditingText(info);
     }
 
+    // ---------- whole-stroke eraser ----------
+    function strokeEraseAt(from, to) {
+      const session = strokeEraseRef.current;
+      if (!session) return;
+      const scale = scaleRef.current;
+      const tolerance = widthForTool("eraser", widthRef.current) / 2 + 2 / scale;
+      const steps = Math.max(1, Math.ceil(distance(from, to) / 4));
+      let changed = false;
+      for (let i = 0; i <= steps; i++) {
+        const p = screenToWorld({ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps });
+        for (let guard = 0; guard < 20; guard++) {
+          const hit = hitTestStrokes(strokesRef.current, p, tolerance);
+          if (!hit) break;
+          session.removed.push(hit);
+          strokesRef.current = strokesRef.current.filter((x) => x.id !== hit.id);
+          changed = true;
+        }
+      }
+      if (changed) fullRedraw();
+    }
+
+    function finishStrokeErase() {
+      const session = strokeEraseRef.current;
+      strokeEraseRef.current = null;
+      if (!session || !session.removed.length) return;
+      const ids = session.removed.map((x) => x.id);
+      applyRemove({ strokes: ids, texts: [], images: [] });
+      pushUndo({ op: "remove", data: { strokes: session.removed, texts: [], images: [] } });
+    }
+
+    // ---------- scribble to erase ----------
+    function tryScratchOut(stroke) {
+      if (stroke.tool !== "pen" || !getScribbleErase()) return false;
+      if (rulerActiveRef.current || compassActiveRef.current) return false;
+      const hit = detectScratchOut(
+        stroke,
+        { strokes: strokesRef.current, texts: textsRef.current, textHeight: textHeightOf },
+        scaleRef.current
+      );
+      if (!hit) return false;
+      const data = getObjectsData({ strokes: hit.strokeIds, texts: hit.textIds, images: [] });
+      // The scribble itself goes too (other people already saw it arrive).
+      applyRemove({ strokes: [...hit.strokeIds, stroke.id], texts: hit.textIds, images: [] });
+      const entry = { op: "remove", data };
+      pushUndo(entry);
+      scratchEntryRef.current = entry;
+      setScratchNotice({ count: hit.strokeIds.length + hit.textIds.length, at: Date.now() });
+      if (scratchTimerRef.current) clearTimeout(scratchTimerRef.current);
+      scratchTimerRef.current = setTimeout(() => setScratchNotice(null), 5000);
+      fullRedraw();
+      return true;
+    }
+
     function startGroupMove(pos, pointerId) {
       const data = getObjectsData(selectionRef.current);
       groupMoveRef.current = {
@@ -2698,6 +2765,7 @@ export default function Whiteboard({ boardId }) {
       if (touchPoints.current.size >= 2) {
         cancelActiveDrawing();
         cancelSelectionDrag();
+        finishStrokeErase();
         movingTextRef.current = null;
         if (panDragActive.current) {
           panDragActive.current = false;
@@ -2867,6 +2935,13 @@ export default function Whiteboard({ boardId }) {
         } catch (err) {}
       }
 
+      if (toolRef.current === "eraser" && getEraserMode() === "stroke" && !compassActiveRef.current) {
+        strokeEraseRef.current = { pointerId: e.pointerId, last: pos, removed: [] };
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        strokeEraseAt(pos, pos);
+        return;
+      }
+
       isDrawing.current = true;
       activePointerId.current = e.pointerId;
       activePointerType.current = e.pointerType;
@@ -2959,6 +3034,14 @@ export default function Whiteboard({ boardId }) {
 
       if (gridDragMode.current) {
         handleGridPointerMove(getPos(e));
+        return;
+      }
+
+      if (strokeEraseRef.current) {
+        if (e.pointerId !== strokeEraseRef.current.pointerId) return;
+        const pos = getPos(e);
+        strokeEraseAt(strokeEraseRef.current.last, pos);
+        if (strokeEraseRef.current) strokeEraseRef.current.last = pos;
         return;
       }
 
@@ -3096,6 +3179,18 @@ export default function Whiteboard({ boardId }) {
     }
 
     function handleTouchMove(e) {
+      if (strokeEraseRef.current && e.changedTouches.length) {
+        // iPad: the Pencil's movement arrives here while it's on the glass.
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        for (let i = 0; i < e.changedTouches.length; i++) {
+          const t = e.changedTouches[i];
+          const pos = { x: t.clientX - rect.left, y: t.clientY - rect.top };
+          strokeEraseAt(strokeEraseRef.current.last, pos);
+          if (strokeEraseRef.current) strokeEraseRef.current.last = pos;
+        }
+        return;
+      }
       if (!touchDrivenStrokeActive.current) return;
       if (!isDrawing.current || !currentStroke.current) return;
       e.preventDefault();
@@ -3234,6 +3329,12 @@ export default function Whiteboard({ boardId }) {
         return;
       }
 
+      if (strokeEraseRef.current && strokeEraseRef.current.pointerId === e.pointerId) {
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        finishStrokeErase();
+        return;
+      }
+
       if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current) return;
       isDrawing.current = false;
@@ -3249,7 +3350,7 @@ export default function Whiteboard({ boardId }) {
 
       finalizeStroke(strokeId);
 
-      if (finished && finished.points.length > 1) {
+      if (finished && finished.points.length > 1 && !tryScratchOut(finished)) {
         commitFinishedStroke(finished);
       }
     }
@@ -3397,6 +3498,15 @@ export default function Whiteboard({ boardId }) {
 
     setMyRedoAvailable(myRedoStack.current.length > 0);
     setMyUndoAvailable(true);
+  }
+
+  // Undo from the "Scribbled out" note — only if that's still the latest
+  // thing you did (otherwise it would undo something else).
+  function handleUndoScratch() {
+    const stack = myStrokeStack.current;
+    if (scratchEntryRef.current && stack[stack.length - 1] === scratchEntryRef.current) handleUndo();
+    scratchEntryRef.current = null;
+    setScratchNotice(null);
   }
 
   function handleClear() {
@@ -3591,6 +3701,10 @@ export default function Whiteboard({ boardId }) {
         background={boardBackground}
         onSetBackground={handleSetBackground}
         onInsertImage={handleInsertImageClick}
+        eraserMode={eraserMode}
+        onSetEraserMode={setEraserMode}
+        scribbleErase={scribbleErase}
+        onSetScribbleErase={setScribbleErase}
         onPaste={handlePasteButton}
         onSelectAll={selectAll}
         hasSelection={selectionCount(selection) > 0}
@@ -3943,7 +4057,7 @@ export default function Whiteboard({ boardId }) {
             style={{ display: "none" }}
           />
         )}
-        {(showPencilOnlyNotice || showPencilTip || boardNotice) && (
+        {(showPencilOnlyNotice || showPencilTip || boardNotice || scratchNotice) && (
           <div
             style={{
               position: "fixed",
@@ -3960,6 +4074,16 @@ export default function Whiteboard({ boardId }) {
             {boardNotice && (
               <div role="status" className={chrome.boardNotice}>
                 {boardNotice}
+              </div>
+            )}
+            {scratchNotice && (
+              <div role="status" className={`${chrome.boardNotice} ${chrome.undoNotice}`}>
+                <span>
+                  Scribbled out {scratchNotice.count} {scratchNotice.count === 1 ? "item" : "items"}
+                </span>
+                <button type="button" className={chrome.undoNoticeBtn} onClick={handleUndoScratch}>
+                  Undo
+                </button>
               </div>
             )}
             {showPencilOnlyNotice && (

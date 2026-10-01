@@ -303,15 +303,131 @@
   flex-shrink: 0;
 }
 
-.sizeControl input {
-  width: 120px;
-  height: 32px;
-  accent-color: var(--accent);
+.sizeLabel {
+  white-space: nowrap;
+}
+
+.sizeDotBox {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sizePreview {
   border-radius: 50%;
   flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+
+.sizeValue {
+  min-width: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Custom range slider: slim filled track + soft thumb. The input itself is
+   36px tall so it's easy to grab with a finger or the Pencil. */
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 132px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-x;
+  --fill: 50%;
+  --fill-color: var(--accent);
+}
+
+.range:focus {
+  outline: none;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--fill-color) 0, var(--fill-color) var(--fill), var(--border-strong) var(--fill), var(--border-strong) 100%);
+}
+
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 0 rgba(36, 81, 214, 0);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.range:active::-webkit-slider-thumb {
+  transform: scale(1.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 6px rgba(36, 81, 214, 0.14);
+}
+
+.range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22), 0 0 0 4px var(--accent-soft), 0 0 0 6px var(--accent);
+}
+
+.range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.range::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fill-color);
+}
+
+.range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+/* Two-option switch (eraser mode) */
+.segmented {
+  display: flex;
+  flex-shrink: 0;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--border);
+}
+
+.segBtn {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.segBtnOn {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .ctxBtn {
@@ -690,6 +806,24 @@
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
+.undoNotice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.undoNoticeBtn {
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 @media (hover: hover) {
   .selBtn:hover {
     background: var(--surface-hover);
@@ -718,8 +852,8 @@
   .divider {
     margin: 0 4px;
   }
-  .sizeControl input {
-    width: 90px;
+  .range {
+    width: 96px;
   }
 }
 

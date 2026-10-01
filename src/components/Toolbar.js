@@ -27,13 +27,15 @@ const INK_COLORS = [
 const TOOL_HINTS = {
   select: ["Select", "Tap anything, or drag a box around several things. Then drag to move, or use Copy, Cut, Duplicate or Delete."],
   move: ["Move", "Drag to move around the board. Pinch with two fingers to zoom."],
-  pen: ["Pen", "Draw freehand. For straight lines, turn on the Ruler in Maths."],
+  pen: ["Pen", "Draw freehand. Scribble back and forth over a mistake to rub it out."],
   highlighter: ["Highlight", "See-through ink for marking things up."],
-  eraser: ["Eraser", "Rub out anything you drag across."],
+  eraser: ["Eraser", "Precise rubs out only where you drag."],
   text: ["Text", "Tap the board where you want to type."],
 };
 const RULER_HINT = ["Ruler", "Drag it to move, drag its round handle to rotate, then draw along its edge."];
 const COMPASS_HINT = ["Compass", "Drag the pin to set the centre and the pencil end to set the size, then draw to trace the circle."];
+const STROKE_ERASER_HINT = ["Eraser", "Whole stroke removes any line you touch, in one go."];
+const PEN_NO_SCRIBBLE_HINT = ["Pen", "Draw freehand. For straight lines, turn on the Ruler in Maths."];
 const SELECTED_HINT = ["Selected", "Drag to move it, or use the bar next to it. Tap empty space to deselect."];
 const GRAPH_MOVE_HINT = ["Graph", "Drag the graph to move it, or drag its blue corner dot to resize it."];
 
@@ -50,6 +52,7 @@ export default function Toolbar(props) {
     getHasGrid, gridToolActive, onOpenGraph, onFinishGraphMove, onRemoveGrid,
     background, onSetBackground,
     onInsertImage, onPaste, onSelectAll, hasSelection,
+    eraserMode, onSetEraserMode, scribbleErase, onSetScribbleErase,
     calculatorActive, onToggleCalculator,
     canInsertReference, hasReferenceDoc, onReferenceToolClick, onOpenSimModal,
     onCopyLink, onStartLiveClass, onEndSession,
@@ -101,6 +104,8 @@ export default function Toolbar(props) {
   const isInk = activeTool === "pen" || activeTool === "highlighter";
 
   let hint = TOOL_HINTS[activeTool] || TOOL_HINTS.pen;
+  if (activeTool === "eraser" && eraserMode === "stroke") hint = STROKE_ERASER_HINT;
+  if (activeTool === "pen" && scribbleErase === false) hint = PEN_NO_SCRIBBLE_HINT;
   if (gridToolActive) hint = GRAPH_MOVE_HINT;
   else if (activeTool === "select" && hasSelection) hint = SELECTED_HINT;
   else if (compassActive && activeTool !== "move") hint = COMPASS_HINT;
@@ -389,25 +394,51 @@ export default function Toolbar(props) {
                 <div className={s.ctxDivider} />
               </>
             )}
+            {activeTool === "eraser" && onSetEraserMode && (
+              <>
+                <div className={s.segmented} role="radiogroup" aria-label="Eraser mode">
+                  <PalmSafeButton
+                    role="radio"
+                    aria-checked={eraserMode !== "stroke"}
+                    className={`${s.segBtn} ${eraserMode !== "stroke" ? s.segBtnOn : ""}`}
+                    onPress={() => onSetEraserMode("precise")}
+                    title="Rub out only where you drag"
+                  >
+                    Precise
+                  </PalmSafeButton>
+                  <PalmSafeButton
+                    role="radio"
+                    aria-checked={eraserMode === "stroke"}
+                    className={`${s.segBtn} ${eraserMode === "stroke" ? s.segBtnOn : ""}`}
+                    onPress={() => onSetEraserMode("stroke")}
+                    title="Remove any whole line you touch"
+                  >
+                    Whole stroke
+                  </PalmSafeButton>
+                </div>
+                <div className={s.ctxDivider} />
+              </>
+            )}
             {(isInk || activeTool === "eraser") && (
-              <label className={s.sizeControl}>
-                <span
-                  className={s.sizePreview}
-                  style={{
-                    width: Math.max(6, Math.min(strokeWidth, 22)),
-                    height: Math.max(6, Math.min(strokeWidth, 22)),
-                    background: activeTool === "eraser" ? "#C9C7C1" : color,
-                  }}
-                />
-                {activeTool === "eraser" ? "Eraser size" : "Size"}
-                <input
-                  type="range"
-                  min={1}
-                  max={40}
-                  value={strokeWidth}
-                  onChange={(e) => setStrokeWidth(Number(e.target.value))}
-                />
-              </label>
+              <SizeSlider
+                label={activeTool === "eraser" ? "Eraser size" : "Size"}
+                value={strokeWidth}
+                onChange={setStrokeWidth}
+                color={activeTool === "eraser" ? "#9C9B97" : color}
+              />
+            )}
+            {activeTool === "pen" && onSetScribbleErase && (
+              <PalmSafeButton
+                aria-pressed={!!scribbleErase}
+                className={`${s.chip} ${scribbleErase ? s.chipOn : ""}`}
+                onPress={() => onSetScribbleErase(!scribbleErase)}
+                title="Scribble back and forth over ink to erase it"
+              >
+                <span className={`${s.switchTrack} ${scribbleErase ? s.switchTrackOn : ""}`}>
+                  <span className={`${s.switchKnob} ${scribbleErase ? s.switchKnobOn : ""}`} />
+                </span>
+                Scribble to erase
+              </PalmSafeButton>
             )}
             {activeTool === "select" && (
               <>
@@ -499,5 +530,32 @@ function MenuItem({ icon, title, desc, on, insert, danger, onPress }) {
         <span className={s.menuDesc}>{desc}</span>
       </span>
     </PalmSafeButton>
+  );
+}
+
+// The size control: a slim track that fills with the current ink colour,
+// a soft thumb with a big grab area, the size as a dot and a number. It's
+// still a real range input underneath, so keyboard and screen readers work.
+function SizeSlider({ label, value, onChange, color, min = 1, max = 40 }) {
+  const pct = ((value - min) / (max - min)) * 100;
+  const dot = Math.max(5, Math.min(value, 22));
+  return (
+    <label className={s.sizeControl}>
+      <span className={s.sizeLabel}>{label}</span>
+      <span className={s.sizeDotBox} aria-hidden="true">
+        <span className={s.sizePreview} style={{ width: dot, height: dot, background: color }} />
+      </span>
+      <input
+        type="range"
+        className={s.range}
+        min={min}
+        max={max}
+        value={value}
+        aria-label={label}
+        style={{ "--fill": `${pct}%`, "--fill-color": color }}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <span className={s.sizeValue} aria-hidden="true">{value}</span>
+    </label>
   );
 }
