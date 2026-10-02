@@ -167,7 +167,7 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
   ctx.stroke();
 }
 
-export default function Whiteboard({ boardId }) {
+export default function Whiteboard({ boardId, demo = false }) {
   const { user } = useAuth();
   // Only who's signed in matters here — not the session object, which is
   // replaced on every token refresh and whenever the tab regains focus.
@@ -3798,7 +3798,9 @@ export default function Whiteboard({ boardId }) {
   }
 
   const statusText =
-    referenceUploadStatus || saveStatus || (liveClassCode ? "Live class running" : "Saves automatically");
+    referenceUploadStatus ||
+    saveStatus ||
+    (demo ? "Demo board · nothing here is saved" : liveClassCode ? "Live class running" : "Saves automatically");
 
   return (
     <div className="wb-root">
@@ -3806,6 +3808,7 @@ export default function Whiteboard({ boardId }) {
         boardName={boardName}
         statusText={statusText}
         isOwner={isOwner}
+        demo={demo}
         tool={tool}
         panToolActive={panToolActive}
         onSelectTool={handleSelectTool}

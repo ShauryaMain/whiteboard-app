@@ -4,6 +4,13 @@ import Link from "next/link";
 import d from "./Dialog.module.css";
 import p from "./Paper.module.css";
 
+// The demo board runs on its own stand-in backend, which is chosen when a
+// page loads, so open it with a full page load rather than an in-app hop.
+function openDemo(e) {
+  e.preventDefault();
+  window.location.assign("/demo");
+}
+
 // The first screen a teacher sees (and the loading state before it).
 export default function SignInScreen({ loading, onSignIn }) {
   if (loading) {
@@ -39,6 +46,12 @@ export default function SignInScreen({ loading, onSignIn }) {
           </svg>
           Sign in with Google
         </button>
+        <p className={p.footNote} style={{ margin: 0 }}>
+          Just looking?{" "}
+          <Link href="/demo" prefetch={false} onClick={openDemo}>
+            Try the demo board, no sign-in
+          </Link>
+        </p>
         <p className={p.footNote} style={{ margin: 0 }}>
           Joining a class as a student? <Link href="/join">Enter your class code</Link>
         </p>

@@ -121,6 +121,7 @@ section{padding-block:clamp(64px,9vw,120px)}
 @keyframes draw{from{stroke-dashoffset:420}to{stroke-dashoffset:0}}
 .hero-lede{margin-top:40px;font-size:clamp(18px,1.6vw,21px);color:var(--ink-2);max-width:40em}
 .cta-row{margin-top:36px;display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
+.cta-note{margin-top:16px;font-family:var(--f-hand);font-size:22px;line-height:1.15;color:var(--hand-blue)}
 .subjects{margin-top:36px;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 12px;font-size:15px;color:var(--muted)}
 .chip{display:inline-flex;align-items:center;height:34px;padding:0 14px;border-radius:999px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);font-weight:600;font-size:15px}
 
@@ -310,6 +311,7 @@ section{padding-block:clamp(64px,9vw,120px)}
 .join label{font-size:15px;font-weight:600}
 .join input{width:140px;min-width:0;flex:1;height:40px;border:none;outline:none;font-size:16px;font-family:var(--f-mono);letter-spacing:.08em;background:transparent;color:#1B1D24}
 .join button{height:44px;padding:0 18px;border-radius:10px;border:none;background:#2451D6;color:#FFFFFF;font-size:15px;font-weight:600;font-family:var(--f-body);cursor:pointer}
+.homework .hw-demo{background:#FFFFFF;color:#1B1D24;border-color:#1B1D24}
 .join-msg:empty{display:none}
 .join-msg a{color:#1F46B8;font-weight:600}
 .join-msg{font-size:15px;color:#3A3B3F;min-height:1.4em}
@@ -397,10 +399,11 @@ footer a:hover{text-decoration:underline}
     <h1>A clean slate for <span class="mark">every<svg viewBox="0 0 300 30" preserveAspectRatio="none" fill="none" stroke-width="7" stroke-linecap="round" aria-hidden="true"><path d="M6 20c70-12 160-16 288-6"/></svg></span> lesson.</h1>
     <p class="hero-lede">The live whiteboard built for teaching. Write with Apple Pencil, keep the worksheet beside the board, and bring a whole class in with one code. Whatever you teach, it’s just as quick three hours in as it was at the start.</p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://whiteboard-app-beta.vercel.app/">Start a board. It’s free
+      <a class="btn btn-primary" href="https://whiteboard-app-beta.vercel.app/demo">Try it now, no sign-in
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-      <a class="btn btn-ghost" href="https://whiteboard-app-beta.vercel.app/join">I have a class code</a>
+      <a class="btn btn-ghost" href="https://whiteboard-app-beta.vercel.app/">Start free with Google</a>
     </div>
+    <p class="cta-note">The demo opens a real board in your browser. Nothing to install, nothing saved.</p>
     <ul class="proof" aria-label="Clean Slate in use today">
       <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span>In <b>daily lessons</b> for 3+ months</span></li>
       <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span><b>About 20 students</b> using it regularly</span></li>
@@ -544,7 +547,7 @@ footer a:hover{text-decoration:underline}
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12l-8 8-9-9V3h8zM7.5 7.5h.01"/></svg></span>
         <h3>Free, with no catch</h3>
-        <p>No board limit, no ads, no card and nothing to install. Sign in with Google and start teaching.</p>
+        <p>No board limit, no ads, no card and nothing to install. Try the demo board without even signing in.</p>
         <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>most free whiteboards stop at 3 boards</span></div>
       </article>
     </div>
@@ -880,6 +883,7 @@ footer a:hover{text-decoration:underline}
       </div>
       <div class="hw-actions">
         <a class="btn btn-dark" href="https://whiteboard-app-beta.vercel.app/">Start for free</a>
+        <a class="btn btn-ghost hw-demo" href="https://whiteboard-app-beta.vercel.app/demo">Try the demo first</a>
         <form class="join" id="joinForm" novalidate>
           <label for="classCode">Student?</label>
           <input id="classCode" name="classCode" placeholder="Class code" autocomplete="off" maxlength="8" autocapitalize="characters" spellcheck="false">

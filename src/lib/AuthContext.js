@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "./supabaseClient";
+import { isDemoPath } from "./demoBackend";
 import SignInScreen from "@/components/SignInScreen";
 
 const AuthContext = createContext(null);
@@ -26,7 +27,23 @@ export function AuthProvider({ children }) {
   // never sign in (see ClassroomBoardViewer.js) — so this gate must not
   // apply to them, or a student never gets past the sign-in wall to
   // even reach the join/waiting/board-viewer screens.
-  const isPublicRoute = pathname?.startsWith("/join");
+  // The demo board (/demo) is public too: it needs no account at all.
+  const isPublicRoute = pathname?.startsWith("/join") || isDemoPath(pathname);
+
+  // The demo board uses a stand-in backend that is chosen when the page
+  // loads. If someone moves between the demo and the real app without a
+  // full page load, this tab would be left on the wrong one, so reload.
+  // (At most once every few seconds, so it can never loop.)
+  useEffect(() => {
+    if (!pathname) return;
+    if (Boolean(supabase.__demo) === isDemoPath(pathname)) return;
+    let last = 0;
+    try {
+      last = Number(sessionStorage.getItem("cleanslate_demo_reload")) || 0;
+      sessionStorage.setItem("cleanslate_demo_reload", String(Date.now()));
+    } catch (err) {}
+    if (Date.now() - last > 5000) window.location.reload();
+  }, [pathname]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {

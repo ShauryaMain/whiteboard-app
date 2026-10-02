@@ -42,9 +42,16 @@ const GRAPH_MOVE_HINT = ["Graph", "Drag the graph to move it, or drag its blue c
 const ICON = { size: 22, strokeWidth: 1.8 };
 const SMALL_ICON = { size: 18, strokeWidth: 1.8 };
 
+// Leaving the demo board needs a full page load (not an in-app hop), so
+// the real app starts on its real backend.
+function leaveDemo(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  window.location.assign("/");
+}
+
 export default function Toolbar(props) {
   const {
-    boardName, statusText, isOwner,
+    boardName, statusText, isOwner, demo,
     tool, panToolActive, onSelectTool, onSelectMove,
     color, setColor, strokeWidth, setStrokeWidth,
     onUndo, onRedo, onClear, canUndo, canRedo,
@@ -254,7 +261,14 @@ export default function Toolbar(props) {
 
       {/* ---------- App bar ---------- */}
       <div className={s.appBar}>
-        <Link href="/" className={s.homeLink} aria-label="All boards">
+        {/* The demo board leaves with a full page load, so the real app
+            starts on its real backend (see supabaseClient.js). */}
+        <Link
+          href="/"
+          className={s.homeLink}
+          aria-label={demo ? "Leave the demo" : "All boards"}
+          onClick={demo ? leaveDemo : undefined}
+        >
           <House size={18} strokeWidth={1.8} />
         </Link>
         <div className={s.titleBlock}>
@@ -284,7 +298,15 @@ export default function Toolbar(props) {
           </div>
         )}
 
-        {isOwner && (
+        {demo && (
+          <PalmSafeButton className={`${s.appBtn} ${s.appBtnPrimary}`} onPress={leaveDemo}>
+            <Check size={16} strokeWidth={2.2} />
+            <span className={s.longLabel}>Sign in free to keep your work</span>
+            <span className={s.shortLabel}>Sign in free</span>
+          </PalmSafeButton>
+        )}
+
+        {isOwner && !demo && (
           <>
             <PalmSafeButton className={s.appBtn} onPress={onCopyLink}>
               <Link2 size={16} strokeWidth={1.8} />

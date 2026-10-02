@@ -6,8 +6,9 @@ Every button sends people to the app at https://whiteboard-app-beta.vercel.app:
 
 | Button | Goes to |
 | --- | --- |
-| Start free · Start a board · Start for free · Open the app | `/` (the app's Google sign-in) |
-| Join a class · I have a class code | `/join` |
+| Try it now, no sign-in · Try the demo first | `/demo` (the demo board: no sign-in, nothing saved) |
+| Start free · Start free with Google · Start for free · Open the app | `/` (the app's Google sign-in) |
+| Join a class | `/join` |
 | Student class-code box | `/join?code=XXXXXX` (the app pre-fills the code) |
 
 ## Tracking where visitors come from
