@@ -28,6 +28,7 @@
   --danger: #B3261E;
   --danger-border: #F0C9C6;
   --success: #2E9E5B;
+  --success-strong: #1E8449; /* dark enough for white text on top */
 
   --radius-sm: 8px;
   --radius: 10px;

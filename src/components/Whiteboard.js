@@ -283,6 +283,9 @@ export default function Whiteboard({ boardId, demo = false }) {
   const [color, setColor] = useState("#1a1a1a");
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [saveStatus, setSaveStatus] = useState("");
+  // What the "Finish & save" button shows: idle | saving | saved | error
+  const [saveState, setSaveState] = useState("idle");
+  const saveStateTimerRef = useRef(null);
   const [rulerActive, setRulerActive] = useState(false);
   const [rulerAngle, setRulerAngle] = useState(0);
   const [rulerPos, setRulerPos] = useState({ x: 300, y: 300 });
@@ -1540,11 +1543,22 @@ export default function Whiteboard({ boardId, demo = false }) {
   }
 
   async function handleEndSession() {
+    if (saveState === "saving") return;
+    if (saveStateTimerRef.current) clearTimeout(saveStateTimerRef.current);
     setSaveStatus("Saving…");
+    setSaveState("saving");
     saveThumbnail();
-    const ok = await saveGrid();
+    const gridOk = await saveGrid();
+    // Anything that failed to save earlier (dropped Wi-Fi) gets another go
+    // now, so "Saved" is only shown when everything really is.
+    await retryUnsaved(sync);
+    const ok = gridOk && unsavedCount(sync) === 0;
     setSaveStatus(ok ? "Saved" : "Save failed");
-    setTimeout(() => setSaveStatus(""), 3000);
+    setSaveState(ok ? "saved" : "error");
+    saveStateTimerRef.current = setTimeout(() => {
+      setSaveStatus("");
+      setSaveState("idle");
+    }, ok ? 2600 : 4000);
   }
 
   function handleCopyLink() {
@@ -3814,6 +3828,7 @@ export default function Whiteboard({ boardId, demo = false }) {
       <Toolbar
         boardName={boardName}
         statusText={statusText}
+        saveState={saveState}
         isOwner={isOwner}
         demo={demo}
         tool={tool}

@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
   Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
-  Check, ChevronDown, Maximize, NotebookText, ImagePlus, ClipboardPaste, BoxSelect,
+  Check, ChevronDown, Maximize, RotateCw, NotebookText, ImagePlus, ClipboardPaste, BoxSelect,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
@@ -51,7 +51,7 @@ function leaveDemo(e) {
 
 export default function Toolbar(props) {
   const {
-    boardName, statusText, isOwner, demo,
+    boardName, statusText, saveState = "idle", isOwner, demo,
     tool, panToolActive, onSelectTool, onSelectMove,
     color, setColor, strokeWidth, setStrokeWidth,
     onUndo, onRedo, onClear, canUndo, canRedo,
@@ -320,10 +320,30 @@ export default function Toolbar(props) {
                 <span className={s.shortLabel}>Live</span>
               </PalmSafeButton>
             )}
-            <PalmSafeButton className={`${s.appBtn} ${s.appBtnPrimary}`} onPress={onEndSession}>
-              <Check size={16} strokeWidth={2.2} />
-              <span className={s.longLabel}>Finish &amp; save</span>
-              <span className={s.shortLabel}>Save</span>
+            {/* Turns green with "Saved" once the save has gone through, so
+                it's obvious the tap worked (red if it didn't). */}
+            <PalmSafeButton
+              className={`${s.appBtn} ${s.appBtnPrimary} ${saveState === "saved" ? s.appBtnSaved : ""} ${saveState === "error" ? s.appBtnError : ""}`}
+              onPress={onEndSession}
+              aria-busy={saveState === "saving"}
+              data-save-state={saveState}
+            >
+              {saveState === "saving" ? (
+                <span className={s.btnSpinner} aria-hidden="true" />
+              ) : saveState === "error" ? (
+                <RotateCw size={16} strokeWidth={2.2} />
+              ) : (
+                <Check size={16} strokeWidth={saveState === "saved" ? 3 : 2.2} />
+              )}
+              {/* Every label sits in the same spot (only the current one
+                  shows), so the button keeps its width and its neighbours
+                  don't jump when the label changes. */}
+              <span className={s.longLabel}>
+                <SaveLabels state={saveState} labels={SAVE_LABELS_LONG} />
+              </span>
+              <span className={s.shortLabel}>
+                <SaveLabels state={saveState} labels={SAVE_LABELS_SHORT} />
+              </span>
             </PalmSafeButton>
           </>
         )}
@@ -514,6 +534,21 @@ export default function Toolbar(props) {
         </div>
       </div>
     </div>
+  );
+}
+
+const SAVE_LABELS_LONG = { idle: "Finish & save", saving: "Saving…", saved: "Saved", error: "Try again" };
+const SAVE_LABELS_SHORT = { idle: "Save", saving: "Saving…", saved: "Saved", error: "Retry" };
+
+function SaveLabels({ state, labels }) {
+  return (
+    <span className={s.labelStack} aria-live="polite">
+      {Object.keys(labels).map((key) => (
+        <span key={key} className={key === state ? s.labelNow : s.labelLater} aria-hidden={key !== state}>
+          {labels[key]}
+        </span>
+      ))}
+    </span>
   );
 }
 
