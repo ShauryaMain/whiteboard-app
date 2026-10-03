@@ -56,6 +56,28 @@
   box-shadow: 2px 2px 0 var(--accent);
 }
 
+.brand:focus-visible,
+.brandMarkLink:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.brand .brandMark,
+.brandMarkLink {
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+@media (hover: hover) {
+  a.brand:hover .brandMark {
+    transform: translate(1px, 1px) rotate(-4deg);
+    box-shadow: 1px 1px 0 var(--accent);
+  }
+  .brandMarkLink:hover {
+    transform: rotate(4deg);
+  }
+}
+
 .brandMarkBig {
   width: 56px;
   height: 56px;

@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import d from "@/components/Dialog.module.css";
 import p from "@/components/Paper.module.css";
+import { LANDING_URL } from "@/lib/links";
 
 // Save this file as: src/app/join/page.js
 // No auth required to join a class — matches the low-friction,
@@ -46,14 +47,14 @@ function JoinForm() {
 
   return (
     <div className={p.screen}>
-      <span className={p.brand}>
+      <a href={LANDING_URL} className={p.brand} aria-label="Clean Slate home page" title="About Clean Slate">
         <span className={p.brandMark} aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />
           </svg>
         </span>
         Clean Slate
-      </span>
+      </a>
       <form onSubmit={handleJoin} className={d.card} style={{ width: 400, padding: "30px 26px 26px", gap: 18 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "center" }}>
           <h1 className={d.title} style={{ fontSize: 26 }}>Join a class</h1>

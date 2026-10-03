@@ -3,6 +3,7 @@
 import Link from "next/link";
 import d from "./Dialog.module.css";
 import p from "./Paper.module.css";
+import { LANDING_URL } from "@/lib/links";
 
 // The demo board runs on its own stand-in backend, which is chosen when a
 // page loads, so open it with a full page load rather than an in-app hop.
@@ -25,11 +26,17 @@ export default function SignInScreen({ loading, onSignIn }) {
   return (
     <div className={p.screen}>
       <div className={d.card} style={{ width: 420, alignItems: "stretch", padding: "32px 28px 26px", gap: 18 }}>
-        <span className={`${p.brandMark} ${p.brandMarkBig}`} aria-hidden="true" style={{ margin: "0 auto" }}>
-          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+        <a
+          href={LANDING_URL}
+          className={`${p.brandMark} ${p.brandMarkBig} ${p.brandMarkLink}`}
+          aria-label="Clean Slate home page"
+          title="About Clean Slate"
+          style={{ margin: "0 auto" }}
+        >
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />
           </svg>
-        </span>
+        </a>
         <span className={p.tapeLabel}>free for every teacher</span>
         <h1 className={p.heroTitle}>
           A clean slate for <span className={p.underlined}>every</span> lesson.

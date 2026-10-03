@@ -7,6 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 import { verifyKeep, keepSecret } from "@/lib/keepToken";
 import { esc } from "@/lib/cleanupEmail";
 import { BRAND_MARK_PNG_BASE64 } from "@/lib/emailBrandMark";
+import { LANDING_URL } from "@/lib/links";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ function page({ title, body, action }) {
     box-shadow: 6px 6px 0 #1B1D24; padding: 30px 26px 24px; text-align: center; }
   .card::before { content: ""; position: absolute; top: -13px; left: 50%; width: 96px; height: 26px; margin-left: -48px;
     background: rgba(255,229,138,.9); transform: rotate(-3deg); }
-  .brand { display: inline-flex; align-items: center; gap: 10px; font-family: "Shantell Sans", sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 20px; }
+  .brand { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; font-family: "Shantell Sans", sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 20px; }
   .brand img { width: 32px; height: 32px; border-radius: 9px; }
   h1 { font-family: "Shantell Sans", sans-serif; font-weight: 800; font-size: 23px; line-height: 1.25; margin: 0 0 10px; }
   p { font-size: 15px; line-height: 1.55; color: #5F5E5A; margin: 0 0 20px; }
@@ -48,7 +49,7 @@ function page({ title, body, action }) {
 </style>
 </head><body>
 <main class="card">
-  <div class="brand"><img src="data:image/png;base64,${BRAND_MARK_PNG_BASE64}" alt="">Clean Slate</div>
+  <a class="brand" href="${esc(LANDING_URL)}"><img src="data:image/png;base64,${BRAND_MARK_PNG_BASE64}" alt="">Clean Slate</a>
   <h1>${esc(title)}</h1>
   ${body}
   ${action || ""}

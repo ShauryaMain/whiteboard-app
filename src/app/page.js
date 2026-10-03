@@ -11,6 +11,7 @@ import NewBoardModal from "@/components/NewBoardModal";
 import ShareModal from "@/components/ShareModal";
 import FeedbackModal from "@/components/FeedbackModal";
 import s from "./Home.module.css";
+import { LANDING_URL } from "@/lib/links";
 import d from "@/components/Dialog.module.css";
 
 const BASE_COLUMNS = "id, name, created_at, owner_id, shared_with";
@@ -241,14 +242,15 @@ export default function Home() {
   return (
     <div className={s.page}>
       <header className={s.topBar}>
-        <div className={s.brand}>
+        {/* The logo and name go to the landing page (the public "about" site). */}
+        <a href={LANDING_URL} className={s.brand} aria-label="Clean Slate home page" title="About Clean Slate">
           <span className={s.brandMark} aria-hidden="true">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />
             </svg>
           </span>
           <span className={s.brandName}>Clean Slate</span>
-        </div>
+        </a>
         <label className={s.search}>
           <Search size={16} aria-hidden="true" />
           <input type="search" placeholder="Search boards" aria-label="Search boards" value={query} onChange={(e) => setQuery(e.target.value)} />
