@@ -111,6 +111,8 @@ export default function GridToolModal({ initialConfig, currentZoomScale, onApply
         position: "fixed", inset: 0, zIndex: 1000, background: "rgba(27,29,36,0.32)",
         display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
       }}
+      // keys pressed in this dialog aren't board shortcuts
+      data-board-shortcuts="off"
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -3685,10 +3685,17 @@ export default function Whiteboard({ boardId, demo = false }) {
   });
 
   useEffect(() => {
+    // True when the keys / clipboard belong to something other than the
+    // board: a text field, the calculator (its maths box is a <math-field>,
+    // which isn't an input as far as the browser is concerned), or anything
+    // else that marks itself with data-board-shortcuts="off". Without this,
+    // Cmd+A in the calculator selected the whole board, and Backspace there
+    // deleted whatever was selected on it.
     function isTypingTarget(el) {
-      if (!el) return false;
+      if (!el || !el.tagName) return false;
       const tag = el.tagName;
-      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "MATH-FIELD" || el.isContentEditable) return true;
+      return !!(el.closest && el.closest('math-field, [data-board-shortcuts="off"]'));
     }
     function hasSelection() {
       return toolRef.current === "select" && selectionCount(selectionRef.current) > 0;

@@ -252,6 +252,21 @@ export default function Calculator({ position, setPosition, onClose, onInsertToB
     flash("Added to the board");
   }
 
+  // Cmd/Ctrl+A anywhere in the calculator selects the calculation, even
+  // when one of its buttons has the focus rather than the maths box.
+  function onCalcKeyDown(e) {
+    if (!(e.metaKey || e.ctrlKey) || String(e.key).toLowerCase() !== "a") return;
+    const mf = mfRef.current;
+    if (!mf || status !== "full") {
+      e.preventDefault(); // nothing to select: at least don't select the page
+      return;
+    }
+    if (e.target === mf) return; // the maths box handles it itself
+    e.preventDefault();
+    mf.focus();
+    mf.executeCommand("selectAll");
+  }
+
   // ---------- dragging (anywhere on the header) ----------
 
   function onHeaderPointerDown(e) {
@@ -427,6 +442,10 @@ export default function Calculator({ position, setPosition, onClose, onInsertToB
       style={{ left: position.x, top: position.y }}
       role="dialog"
       aria-label="Calculator"
+      // Keyboard shortcuts typed anywhere in here are the calculator's,
+      // not the board's (see isTypingTarget in Whiteboard.js).
+      data-board-shortcuts="off"
+      onKeyDown={onCalcKeyDown}
     >
       <div
         className={s.header}
