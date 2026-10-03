@@ -1,0 +1,23 @@
+<section id="start" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wrap">
+    <div class="homework">
+      <div class="due">Homework, due next lesson:</div>
+      <h2>Start your next lesson on a <span class="mark">clean slate.<svg viewBox="0 0 300 30" preserveAspectRatio="none" fill="none" stroke-width="6" stroke-linecap="round" aria-hidden="true"><path d="M6 20c70-12 160-16 288-6"/></svg></span></h2>
+      <div class="checks">
+        <label for="hw1"><input type="checkbox" id="hw1"><span>Sign in with Google (free)</span></label>
+        <label for="hw2"><input type="checkbox" id="hw2"><span>Make a board and choose your paper</span></label>
+        <label for="hw3"><input type="checkbox" id="hw3"><span>Share the class code with your students</span></label>
+      </div>
+      <div class="hw-actions">
+        <a class="btn btn-dark" href="[[app]]/">Start for free</a>
+        <a class="btn btn-ghost hw-demo" href="[[app]]/demo">Try the demo first</a>
+        <form class="join" id="joinForm" novalidate>
+          <label for="classCode">Student?</label>
+          <input id="classCode" name="classCode" placeholder="Class code" autocomplete="off" maxlength="8" autocapitalize="characters" spellcheck="false">
+          <button type="submit">Join</button>
+        </form>
+      </div>
+      <div class="join-msg" id="joinMsg" aria-live="polite"></div>
+    </div>
+  </div>
+</section>

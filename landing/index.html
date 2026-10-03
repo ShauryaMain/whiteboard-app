@@ -3,389 +3,177 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Free Online Whiteboard for Teachers and Tutors | Clean Slate</title>
+<meta name="description" content="Clean Slate is a free online whiteboard for teaching. Try it with no sign-up, keep the worksheet beside the board, and give every student their own board.">
+<link rel="canonical" href="https://whiteboard-app-landing.vercel.app/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#FDFCF7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#15171C" media="(prefers-color-scheme: dark)">
-<title>Clean Slate · Free live whiteboard for every lesson</title>
-<meta name="description" content="A free, fast online whiteboard for teachers and tutors, and a free alternative to Microsoft Whiteboard. Apple Pencil ready, works on older iPads, and runs a whole class from one code.">
+<meta property="og:site_name" content="Clean Slate">
 <meta property="og:type" content="website">
-<meta property="og:title" content="Clean Slate · Free live whiteboard for every lesson">
-<meta property="og:description" content="A free, fast online whiteboard for teachers and tutors, and a free alternative to Microsoft Whiteboard. Apple Pencil ready, works on older iPads, and runs a whole class from one code.">
-<meta name="twitter:card" content="summary">
-
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shantell+Sans:wght@500;700;800&family=Geist:wght@400;500;600;700&family=Caveat:wght@500;700&display=swap">
-<style>
-/* Layout: an exercise book. Graph-paper ground with a red margin rule, marker headings,
-   handwritten notes, tape and sticky notes; the product shots sit on it like taped-in screenshots. */
-:root{
-  --paper:#FDFCF7; --grid:#E6ECF7; --margin:#F3B3A6;
-  --ink:#1B1D24; --ink-2:#3A3B3F; --muted:#5F5E5A;
-  --card:#FFFFFF; --line:#E4E2DC; --nav-bg:rgba(253,252,247,.88);
-  --accent:#2451D6; --accent-ink:#1F46B8; --on-accent:#FFFFFF;
-  --pen:#C2410C; --hand-blue:#2451D6; --hand-orange:#A35A00;
-  --tape:rgba(255,229,138,.88); --tape-ink:#6B4E00; --hilite:rgba(255,229,138,.95);
-  --sticky-y:#FFF3B0; --sticky-b:#DDE7FF; --sticky-p:#FFE1D6; --sticky-ink:#1B1D24; --sticky-muted:#3A3B3F;
-  --chalk:#1B1D24; --chalk-line:rgba(255,255,255,.05); --chalk-fg:#FFFFFF; --chalk-muted:#D2D1CC; --chalk-hi:#FFE58A; --chalk-panel:#2A2C33; --chalk-panel-line:#3A3D45;
-  --soft-shadow:0 10px 24px rgba(27,29,36,.10);
-  /* screenshot surfaces: the app is light, so these stay light in both themes */
-  --shot-bg:#FFFFFF; --shot-ink:#18191C; --shot-muted:#5F5E5A; --shot-line:#E4E2DC; --shot-soft:#F8F7F4; --shot-grid:#E7EAF1; --shot-rule:#C7D5FB;
-
-  --f-display:"Shantell Sans","Comic Neue","Trebuchet MS",sans-serif;
-  --f-body:Geist,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  --f-hand:Caveat,"Segoe Print","Bradley Hand",cursive;
-  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  --gutter:clamp(16px,5vw,80px);
+<meta property="og:url" content="https://whiteboard-app-landing.vercel.app/">
+<meta property="og:title" content="Free Online Whiteboard for Teachers and Tutors">
+<meta property="og:description" content="Clean Slate is a free online whiteboard for teaching. Try it with no sign-up, keep the worksheet beside the board, and give every student their own board.">
+<meta property="og:image" content="https://whiteboard-app-landing.vercel.app/img/clean-slate-online-whiteboard.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Clean Slate, a free online whiteboard for teaching, with a worksheet open beside the board">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preload" href="/fonts/ShantellSans-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/styles.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "WebSite",
+   "@id": "https://whiteboard-app-landing.vercel.app/#website",
+   "url": "https://whiteboard-app-landing.vercel.app/",
+   "name": "Clean Slate",
+   "description": "Clean Slate is a free online whiteboard for teaching. Try it with no sign-up, keep the worksheet beside the board, and give every student their own board.",
+   "inLanguage": "en"
+  },
+  {
+   "@type": "WebPage",
+   "@id": "https://whiteboard-app-landing.vercel.app/#webpage",
+   "url": "https://whiteboard-app-landing.vercel.app/",
+   "name": "Free Online Whiteboard for Teachers and Tutors | Clean Slate",
+   "description": "Clean Slate is a free online whiteboard for teaching. Try it with no sign-up, keep the worksheet beside the board, and give every student their own board.",
+   "isPartOf": {
+    "@id": "https://whiteboard-app-landing.vercel.app/#website"
+   },
+   "about": {
+    "@id": "https://whiteboard-app-landing.vercel.app/#app"
+   },
+   "primaryImageOfPage": "https://whiteboard-app-landing.vercel.app/img/clean-slate-online-whiteboard.png",
+   "inLanguage": "en"
+  },
+  {
+   "@type": "SoftwareApplication",
+   "@id": "https://whiteboard-app-landing.vercel.app/#app",
+   "name": "Clean Slate",
+   "url": "https://whiteboard-app-landing.vercel.app/",
+   "applicationCategory": "EducationalApplication",
+   "applicationSubCategory": "Online whiteboard",
+   "operatingSystem": "Any modern web browser: iPadOS, Android, ChromeOS, Windows, macOS, Linux",
+   "description": "Clean Slate is a free online whiteboard for teaching. Try it with no sign-up, keep the worksheet beside the board, and give every student their own board.",
+   "isAccessibleForFree": true,
+   "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+   },
+   "image": "https://whiteboard-app-landing.vercel.app/img/clean-slate-online-whiteboard.png",
+   "screenshot": [
+    "https://whiteboard-app-landing.vercel.app/img/clean-slate-worksheet-beside-whiteboard-1600.webp",
+    "https://whiteboard-app-landing.vercel.app/img/clean-slate-scientific-calculator-1200.webp",
+    "https://whiteboard-app-landing.vercel.app/img/clean-slate-compass-tool-1200.webp",
+    "https://whiteboard-app-landing.vercel.app/img/clean-slate-graph-on-board-1200.webp"
+   ],
+   "featureList": [
+    "Demo board with no sign-up",
+    "PDF or image worksheet beside the board",
+    "Live class: every student gets their own board and joins with a code",
+    "Ruler and compass",
+    "Cartesian and polar graph paper",
+    "Scientific calculator with exact answers",
+    "Blank, lined, squared, dot grid and isometric paper",
+    "Apple Pencil support with palm rejection"
+   ]
+  },
+  {
+   "@type": "FAQPage",
+   "@id": "https://whiteboard-app-landing.vercel.app/#faq",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "Is Clean Slate really free?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. There is no paid plan, no board limit and no ads."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Can I try it without signing up?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. The demo board opens with no sign-up, no login and nothing to download. Nothing you draw there is saved. Sign in with a Google account when you want to save and share boards."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Do my students need accounts?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No. Students join a live class with a six-character code and their first name."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Does it work on an iPad with Apple Pencil?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See the whiteboard for iPad."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Can I open a PDF on the whiteboard?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. Open a PDF of up to 30 pages, or an image, in a pane beside the board, and write on it."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Is it a replacement for Microsoft Whiteboard or Jamboard?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works with any Google account in any browser. See the Microsoft Whiteboard alternative and the Jamboard alternative."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Does it have video or audio calls?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No. Use it beside Zoom, Google Meet or Teams."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Are my boards saved?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. When you're signed in, boards save automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Which devices and browsers does it work on?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Chrome, Edge, Firefox and Safari, on iPads, Android tablets, Chromebooks, Windows, Mac and Linux. There is nothing to install."
+     }
+    }
+   ]
+  }
+ ]
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --paper:#15171C; --grid:#1D2027; --margin:#5A302C;
-  --ink:#F2F1EC; --ink-2:#D3D4D9; --muted:#A7A9B0;
-  --card:#1F2229; --line:#30343D; --nav-bg:rgba(21,23,28,.88);
-  --accent:#7C9BFF; --accent-ink:#A9BCFF; --on-accent:#0E1014;
-  --pen:#FF8A5C; --hand-blue:#9DB2FF; --hand-orange:#F0B060;
-  --tape:rgba(255,229,138,.8); --hilite:rgba(255,214,90,.45);
-  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2;
-  --chalk:#0D0E11; --chalk-panel:#1E2026; --chalk-panel-line:#30333B;
-  --soft-shadow:0 10px 24px rgba(0,0,0,.4);
-  color-scheme:dark;
-}}
-:root[data-theme="dark"]{
-  --paper:#15171C; --grid:#1D2027; --margin:#5A302C;
-  --ink:#F2F1EC; --ink-2:#D3D4D9; --muted:#A7A9B0;
-  --card:#1F2229; --line:#30343D; --nav-bg:rgba(21,23,28,.88);
-  --accent:#7C9BFF; --accent-ink:#A9BCFF; --on-accent:#0E1014;
-  --pen:#FF8A5C; --hand-blue:#9DB2FF; --hand-orange:#F0B060;
-  --tape:rgba(255,229,138,.8); --hilite:rgba(255,214,90,.45);
-  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2;
-  --chalk:#0D0E11; --chalk-panel:#1E2026; --chalk-panel-line:#30333B;
-  --soft-shadow:0 10px 24px rgba(0,0,0,.4);
-  color-scheme:dark;
-}
-
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
-body{
-  margin:0; font-family:var(--f-body); font-size:17px; line-height:1.55; color:var(--ink);
-  background-color:var(--paper);
-  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
-  background-size:32px 32px;
-  overflow-x:hidden; position:relative;
-}
-body::before{content:"";position:absolute;top:0;bottom:0;left:clamp(6px,2.4vw,40px);width:2px;background:var(--margin);pointer-events:none}
-a{color:var(--accent-ink)}
-:focus-visible{outline:3px solid var(--accent);outline-offset:3px;border-radius:6px}
-h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;letter-spacing:-.02em}
-p{margin:0}
-.wrap{max-width:1280px;margin-inline:auto;padding-inline:var(--gutter);position:relative}
-.wide{max-width:1440px;margin-inline:auto;padding-inline:var(--gutter);position:relative}
-section{padding-block:clamp(64px,9vw,120px)}
-.hand{font-family:var(--f-hand)}
-
-/* tape label */
-.tape-label{display:inline-flex;align-items:center;min-height:36px;padding:2px 16px;background:var(--tape);color:var(--tape-ink);font-family:var(--f-hand);font-size:clamp(20px,2.2vw,25px);font-weight:700;transform:rotate(-2deg);line-height:1.1}
-.tape{position:absolute;width:96px;height:26px;background:var(--tape);pointer-events:none}
-
-/* buttons */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:56px;padding:0 26px;border-radius:14px;font-family:var(--f-body);font-size:17px;font-weight:600;text-decoration:none;border:2px solid var(--ink);cursor:pointer;transition:transform .12s ease,box-shadow .12s ease}
-.btn-primary{background:var(--accent);color:var(--on-accent);box-shadow:4px 4px 0 var(--ink)}
-.btn-dark{background:var(--ink);color:var(--paper);box-shadow:4px 4px 0 var(--accent)}
-.btn-ghost{background:var(--card);color:var(--ink)}
-.btn-primary:hover,.btn-dark:hover{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--ink)}
-.btn-dark:hover{box-shadow:2px 2px 0 var(--accent)}
-.btn-ghost:hover{background:var(--paper)}
-.btn svg{flex-shrink:0}
-
-/* nav */
-.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--nav-bg);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-.nav .wrap{height:76px;display:flex;align-items:center;gap:32px}
-.brand{display:flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font-family:var(--f-display);font-size:21px;font-weight:800;flex-shrink:0}
-.brand-mark{width:36px;height:36px;border-radius:10px;background:var(--ink);color:var(--paper);display:flex;align-items:center;justify-content:center;transform:rotate(-4deg)}
-.nav-links{display:flex;gap:28px;flex:1;font-weight:500;font-size:16px}
-.nav-links a,.nav-join{color:var(--ink-2);text-decoration:none}
-.nav-links a:hover,.nav-join:hover{color:var(--ink);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:5px}
-.nav-join{font-weight:600;font-size:16px}
-.nav .btn{min-height:46px;padding:0 20px;font-size:16px;border-radius:12px;box-shadow:3px 3px 0 var(--accent)}
-.nav .btn:hover{box-shadow:1px 1px 0 var(--accent)}
-@media (max-width:900px){.nav-links{display:none}.nav .wrap{justify-content:space-between}}
-@media (max-width:480px){.nav-join{display:none}}
-
-/* hero */
-.hero{padding-block:clamp(48px,6vw,72px) clamp(72px,8vw,110px);text-align:center}
-.hero-copy{display:flex;flex-direction:column;align-items:center}
-.hero h1{margin-top:28px;font-weight:800;font-size:clamp(46px,7.6vw,108px);line-height:1.02;letter-spacing:-.03em;max-width:16ch}
-.mark{position:relative;display:inline-block;color:var(--accent);white-space:nowrap}
-.mark svg{position:absolute;left:-2%;width:104%;bottom:-.14em;height:.3em;overflow:visible}
-.mark path{stroke:var(--accent);stroke-dasharray:420;stroke-dashoffset:0;animation:draw .9s .35s ease-out backwards}
-@keyframes draw{from{stroke-dashoffset:420}to{stroke-dashoffset:0}}
-.hero-lede{margin-top:40px;font-size:clamp(18px,1.6vw,21px);color:var(--ink-2);max-width:40em}
-.cta-row{margin-top:36px;display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
-.cta-note{margin-top:16px;font-family:var(--f-hand);font-size:22px;line-height:1.15;color:var(--hand-blue)}
-.subjects{margin-top:36px;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px 12px;font-size:15px;color:var(--muted)}
-.chip{display:inline-flex;align-items:center;height:34px;padding:0 14px;border-radius:999px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);font-weight:600;font-size:15px}
-
-/* hero screenshot row */
-.shot-row{margin-top:clamp(56px,7vw,88px);display:grid;grid-template-columns:150px minmax(0,1fr) 150px;grid-template-areas:"l shot r";gap:28px;align-items:stretch;text-align:left}
-.shot-wrap{grid-area:shot;position:relative}
-.shot-frame{border:2px solid var(--ink);border-radius:18px;background:var(--shot-bg);box-shadow:8px 8px 0 var(--ink);overflow:hidden}
-.shot-wrap .tape.t1{left:-18px;top:-12px;transform:rotate(-9deg)}
-.shot-wrap .tape.t2{right:-18px;top:-10px;transform:rotate(8deg)}
-.note{font-family:var(--f-hand);font-size:27px;line-height:1.08;font-weight:500}
-.note-l{grid-area:l;align-self:center;color:var(--hand-blue);transform:rotate(-4deg);display:flex;flex-direction:column;gap:10px}
-.note-r{grid-area:r;display:flex;flex-direction:column;justify-content:space-between;gap:24px;padding-block:20px}
-.note-r .n1{color:var(--hand-blue);transform:rotate(3deg)}
-.note-r .n2{color:var(--hand-orange);transform:rotate(-3deg)}
-.note svg{display:block}
-.note .arrow-mobile{display:none}
-@media (max-width:1180px){
-  .shot-row{grid-template-columns:1fr 1fr;grid-template-areas:"shot shot" "l r";gap:28px 40px}
-  .note-l,.note-r .n1,.note-r .n2{transform:none}
-  .note-r{padding:0;justify-content:flex-start}
-  .note .arrow-desk{display:none}
-  .note{font-size:24px;display:flex;gap:10px;align-items:flex-start}
-  .note-l{flex-direction:row}
-  .note .arrow-mobile{display:block;flex-shrink:0;margin-top:2px}
-}
-@media (max-width:640px){.shot-row{grid-template-columns:1fr;grid-template-areas:"shot" "l" "r";gap:22px}.shot-frame{box-shadow:5px 5px 0 var(--ink)}}
-
-/* scaled fixed-size mockups */
-.fit{position:relative;width:100%;max-width:100%;overflow:hidden}
-.fit-inner{position:absolute;left:0;top:0;transform-origin:0 0;transform:scale(var(--k,1))}
-
-/* ----- app mockup (fixed 1100x660, scaled) ----- */
-.app{width:1100px;height:660px;display:flex;flex-direction:column;background:var(--shot-bg);color:var(--shot-ink);font-family:var(--f-body);font-size:13px;line-height:1.3}
-.appbar{height:52px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid var(--shot-line)}
-.appbar .logo{width:26px;height:26px;border-radius:7px;background:var(--shot-ink);color:#fff;display:flex;align-items:center;justify-content:center}
-.appbar b{font-size:14px;font-weight:600}
-.appbar .saved{font-size:12px;color:var(--shot-muted)}
-.appbar .sp{flex:1}
-.live{height:28px;padding:0 10px;border-radius:99px;background:#FDECEB;color:#B3261E;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
-.live i{width:7px;height:7px;border-radius:9px;background:#B3261E}
-.pill{height:30px;padding:0 12px;border-radius:8px;background:#F4F3EF;font-size:13px;font-weight:600;display:flex;align-items:center}
-.pill.blue{background:#2451D6;color:#fff}
-.toolrow{height:64px;flex-shrink:0;display:flex;align-items:center;gap:4px;padding:0 12px;border-bottom:1px solid var(--shot-line);font-size:11px;font-weight:500;color:#3A3B3F}
-.tool{width:64px;height:52px;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
-.tool.on{background:#EAF0FF;color:#1F46B8}
-.vsep{width:1px;height:30px;background:var(--shot-line);margin:0 8px}
-.menu{height:36px;padding:0 12px;border-radius:8px;background:var(--shot-soft);border:1px solid var(--shot-line);display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
-.menu.insert{background:#FDF1E3;color:#A35A00;border-color:#FDF1E3}
-.sw{width:22px;height:22px;border-radius:99px}
-.ctx{height:36px;flex-shrink:0;display:flex;align-items:center;gap:8px;padding:0 16px;background:var(--shot-soft);border-bottom:1px solid var(--shot-line);color:var(--shot-muted)}
-.ctx b{color:var(--shot-ink);font-weight:600}
-.appbody{flex:1;display:flex;min-height:0}
-.refpane{width:340px;flex-shrink:0;background:#EDECE7;padding:18px}
-.sheet{height:100%;background:#fff;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1);padding:22px;display:flex;flex-direction:column;gap:10px}
-.sheet .eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--shot-muted)}
-.sheet .ttl{font-family:var(--f-display);font-weight:700;font-size:22px;line-height:1.05}
-.sheet .q{font-size:13px;line-height:1.5;color:#3A3B3F;margin-top:6px}
-.bar{height:8px;border-radius:4px;background:#EDECE7}
-.divider{width:10px;flex-shrink:0;background:#F4F3EF;border-left:1px solid var(--shot-line);border-right:1px solid var(--shot-line);display:flex;align-items:center;justify-content:center}
-.divider i{width:3px;height:36px;border-radius:3px;background:#9C9B97}
-.board{flex:1;position:relative}
-
-/* paper patterns (light, like the app) */
-.p-sq{background-color:#fff;background-image:linear-gradient(var(--shot-grid) 1px,transparent 1px),linear-gradient(90deg,var(--shot-grid) 1px,transparent 1px);background-size:36px 36px;background-position:0 6px}
-.p-sq-s{background-color:#fff;background-image:linear-gradient(#DDE3EF 1px,transparent 1px),linear-gradient(90deg,#DDE3EF 1px,transparent 1px);background-size:14px 14px}
-.p-lined{background-color:#fff;background-image:linear-gradient(var(--shot-rule) 1px,transparent 1px);background-size:100% 30px;background-position:0 14px}
-.p-lined-s{background-color:#fff;background-image:linear-gradient(var(--shot-rule) 1px,transparent 1px);background-size:100% 13px}
-.p-dot{background-color:#fff;background-image:radial-gradient(#9C9B97 1.2px,transparent 1.5px);background-size:14px 14px}
-.p-iso{background-color:#fff;background-image:linear-gradient(60deg,transparent 48%,#DDE3EF 49%,#DDE3EF 51%,transparent 52%),linear-gradient(-60deg,transparent 48%,#DDE3EF 49%,#DDE3EF 51%,transparent 52%),linear-gradient(90deg,transparent 48%,#DDE3EF 49%,#DDE3EF 51%,transparent 52%);background-size:14px 24px}
-
-/* section heads */
-.head{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:24px 72px;align-items:end;margin-bottom:clamp(40px,5vw,64px)}
-.head h2{font-weight:800;font-size:clamp(38px,5vw,64px);line-height:1.04}
-.head p{font-size:clamp(17px,1.4vw,19px);color:var(--ink-2);max-width:34em}
-.hl{background:linear-gradient(transparent 56%,var(--hilite) 56%);padding:0 .12em}
-@media (max-width:860px){.head{grid-template-columns:1fr}}
-
-/* subject cards */
-.subject-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:28px}
-.subject{background:var(--card);border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink);overflow:hidden;display:flex;flex-direction:column}
-.subject .mini{aspect-ratio:26/15;max-width:100%;border-bottom:2px solid var(--ink);position:relative}
-.subject .mini svg{position:absolute;inset:0;width:100%;height:100%}
-.subject .txt{padding:20px 22px 24px;display:flex;flex-direction:column;gap:6px}
-.subject h3{font-size:24px;font-weight:700}
-.subject p{font-size:16px;color:var(--ink-2)}
-@media (max-width:1100px){.subject-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:560px){.subject-grid{grid-template-columns:1fr}}
-
-/* tools */
-.tool-group+.tool-group{margin-top:clamp(56px,6vw,80px)}
-.group-label{display:flex;align-items:center;gap:16px;margin-bottom:34px;font-family:var(--f-hand);font-size:clamp(26px,2.4vw,32px);font-weight:700;color:var(--hand-blue)}
-.group-label::after{content:"";flex:1;height:2px;background:repeating-linear-gradient(90deg,var(--hand-blue) 0 10px,transparent 10px 18px);opacity:.6}
-.tool-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:40px 28px}
-.tcard{position:relative;background:var(--card);border:1px solid var(--line);box-shadow:var(--soft-shadow);padding:30px 22px 26px;display:flex;flex-direction:column;gap:14px;transition:transform .15s ease}
-.tcard:hover{transform:translateY(-3px)}
-.tcard .tape{left:50%;top:-13px;margin-left:-48px;transform:rotate(-3deg)}
-.tcard:nth-child(even) .tape{transform:rotate(2.5deg)}
-.illus{aspect-ratio:13/8;max-width:100%;border:1.5px solid var(--ink);border-radius:10px;background:var(--shot-bg);overflow:hidden;position:relative}
-.illus>svg{position:absolute;inset:0;width:100%;height:100%}
-.illus .swatches{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:18px 16px 30px;background:var(--shot-soft)}
-.illus .swatches div{border:1px solid #DCDAD3;border-radius:6px}
-.illus .swatch-labels{position:absolute;left:16px;right:16px;bottom:7px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;text-align:center;font-size:11px;font-weight:600;color:var(--shot-muted)}
-.tcard h3{font-size:21px;font-weight:700;line-height:1.15}
-.tcard p{font-size:15.5px;color:var(--ink-2)}
-@media (max-width:1180px){.tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:560px){.tool-grid{grid-template-columns:1fr}}
-
-/* classroom chalkboard */
-.chalk{margin-inline:clamp(0px,2vw,24px);border-radius:28px;border:2px solid var(--ink);box-shadow:8px 8px 0 var(--accent);background-color:var(--chalk);background-image:linear-gradient(var(--chalk-line) 1px,transparent 1px),linear-gradient(90deg,var(--chalk-line) 1px,transparent 1px);background-size:32px 32px;color:var(--chalk-fg);padding:clamp(40px,6vw,96px) clamp(22px,5vw,80px);display:grid;grid-template-columns:minmax(0,470px) minmax(0,1fr);gap:clamp(40px,5vw,72px);align-items:center}
-.chalk .tape-label{align-self:flex-start}
-.chalk-copy{display:flex;flex-direction:column;gap:24px}
-.chalk h2{font-weight:800;font-size:clamp(38px,4.4vw,56px);line-height:1.06}
-.chalk h2 span{color:var(--chalk-hi)}
-.chalk-copy>p{font-size:18px;color:var(--chalk-muted)}
-.steps{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:18px}
-.steps li{display:flex;gap:16px;align-items:flex-start;font-size:17px;line-height:1.45}
-.steps .num{width:36px;height:36px;flex-shrink:0;border-radius:99px;border:2px solid var(--chalk-hi);color:var(--chalk-hi);display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-weight:700;font-size:16px}
-.steps li:nth-child(1) .num{transform:rotate(-6deg)}.steps li:nth-child(2) .num{transform:rotate(5deg)}.steps li:nth-child(3) .num{transform:rotate(-4deg)}
-.steps .t{padding-top:6px}
-.steps b{font-weight:600}
-.steps .t span{color:var(--chalk-muted)}
-.roster-col{display:flex;flex-direction:column;align-items:flex-end;min-width:0}
-.roster{width:100%;border-radius:18px;background:var(--chalk-panel);border:1px solid var(--chalk-panel-line);padding:22px;display:flex;flex-direction:column;gap:16px}
-.roster-top{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
-.roster-top .ttl{font-size:15px;font-weight:600;flex:1}
-.code{display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:8px;border:1.5px dashed var(--chalk-hi);color:var(--chalk-hi);font-family:var(--f-mono);font-size:14px;letter-spacing:.12em}
-.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.tile{position:relative;aspect-ratio:10/8.6;max-width:100%;background:#fff;border-radius:10px;padding:9px 12px 30px;color:#18191C;font-family:var(--f-hand);font-size:clamp(16px,1.4vw,20px);line-height:1.12;overflow:hidden}
-.tile .ok{color:#2451D6}
-.tile .who{position:absolute;left:10px;bottom:6px;font-family:var(--f-body);font-size:12px;font-weight:600;color:#3A3B3F}
-.tile.flag{box-shadow:0 0 0 3px #D9480F}
-.pin{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:99px 99px 99px 3px;background:#D9480F;color:#fff;font-family:var(--f-body);font-size:11px;font-weight:700}
-.tile .pin{position:absolute;right:10px;top:10px}
-.comment{margin-top:-10px;margin-right:clamp(0px,2vw,24px);width:min(270px,100%);background:var(--sticky-b);color:var(--sticky-ink);padding:16px 18px 20px;box-shadow:0 16px 36px rgba(0,0,0,.35);transform:rotate(2.5deg);position:relative;z-index:1}
-.comment .who{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.06em;color:#1F46B8}
-.comment .msg{font-family:var(--f-hand);font-size:27px;line-height:1.1;margin-top:8px}
-@media (max-width:980px){.chalk{grid-template-columns:1fr}}
-@media (max-width:520px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.tiles .tile:nth-child(n+5){display:none}}
-
-/* tablets */
-.tablet-sec{display:grid;grid-template-columns:minmax(0,540px) minmax(0,1fr);gap:clamp(48px,7vw,96px);align-items:center}
-.tablet-col{display:flex;flex-direction:column;gap:22px}
-.tablet-stage{position:relative;padding-right:40px;padding-bottom:40px}
-.tablet{border-radius:34px;background:#1B1D24;padding:16px;box-shadow:10px 10px 0 var(--accent)}
-.tablet .fit{border-radius:20px}
-.screen{width:488px;height:348px;padding:40px 40px 0;color:#18191C;font-family:var(--f-hand)}
-.screen .t1{font-size:30px;color:#5F5E5A}
-.screen .eq{font-size:40px;line-height:1.3;letter-spacing:.01em;margin-top:12px}
-.screen .eq.b{color:#2451D6;padding-left:30px;margin-top:4px}
-.screen sub{font-size:.62em;vertical-align:-.28em;line-height:0;margin:0 .04em}
-.screen .ul{width:320px;height:14px;margin:4px 0 0 30px}
-.pencil{position:absolute;right:120px;bottom:0;width:16px;height:220px;border-radius:8px;background:#E9E8E3;border:1.5px solid #1B1D24;transform:rotate(28deg);transform-origin:bottom center}
-.pencil::after{content:"";position:absolute;left:3px;bottom:-12px;border-left:4px solid transparent;border-right:4px solid transparent;border-top:12px solid #1B1D24}
-.tablet-note{font-family:var(--f-hand);font-size:27px;line-height:1.1;color:var(--hand-orange);transform:rotate(-2deg);align-self:flex-start;padding-left:8px}
-.tablet-sec h2{font-weight:800;font-size:clamp(38px,4.4vw,56px);line-height:1.06}
-.points{display:flex;flex-direction:column;gap:24px;margin-top:30px}
-.point{display:flex;gap:18px}
-.point svg{flex-shrink:0;margin-top:2px;color:var(--accent)}
-.point h3{font-size:21px;font-weight:700;letter-spacing:-.01em}
-.point p{font-size:17px;color:var(--ink-2);margin-top:4px}
-@media (max-width:980px){.tablet-sec{grid-template-columns:1fr}.tablet-col{max-width:540px}}
-
-/* sticky notes */
-.stickies{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(28px,4vw,48px)}
-.sticky{padding:30px 30px 34px;box-shadow:0 12px 26px rgba(27,29,36,.14);color:var(--sticky-ink)}
-.sticky h3{font-size:27px;font-weight:700;line-height:1.15}
-.sticky p{margin-top:12px;font-size:16px;color:var(--sticky-muted)}
-.sticky.y{background:var(--sticky-y);transform:rotate(-2deg)}
-.sticky.b{background:var(--sticky-b);transform:rotate(1.5deg)}
-.sticky.p{background:var(--sticky-p);transform:rotate(-1deg)}
-@media (max-width:900px){.stickies{grid-template-columns:1fr;max-width:520px;margin-inline:auto}}
-
-/* homework CTA */
-.homework{max-width:860px;margin-inline:auto;background:var(--sticky-y);color:var(--sticky-ink);padding:clamp(32px,5vw,56px) clamp(22px,5vw,64px) clamp(36px,5vw,60px);box-shadow:0 18px 40px rgba(27,29,36,.16);transform:rotate(-1deg);display:flex;flex-direction:column;gap:24px}
-.homework .due{font-family:var(--f-hand);font-size:30px;font-weight:700;color:#6B4E00}
-.homework h2{font-weight:800;font-size:clamp(36px,5vw,62px);line-height:1.08}
-.homework .mark{color:#2451D6}
-.homework .mark path{stroke:#2451D6}
-.checks{display:flex;flex-direction:column;gap:12px;font-family:var(--f-hand);font-size:clamp(25px,2.6vw,32px);line-height:1.1;margin-top:6px}
-.checks label{display:flex;align-items:center;gap:14px;cursor:pointer}
-.checks input{width:24px;height:24px;flex-shrink:0;accent-color:#2451D6}
-.checks input:checked+span{text-decoration:line-through;text-decoration-color:#C2410C;text-decoration-thickness:2px}
-.hw-actions{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:6px}
-.homework .btn-dark{background:#1B1D24;color:#FFFFFF;border-color:#1B1D24;box-shadow:4px 4px 0 #2451D6}
-.homework .btn-dark:hover{box-shadow:2px 2px 0 #2451D6}
-.join{display:flex;align-items:center;gap:8px;min-height:58px;padding:6px 6px 6px 16px;border-radius:14px;background:#FFFFFF;border:2px solid #1B1D24;color:#1B1D24;flex-wrap:wrap}
-.join label{font-size:15px;font-weight:600}
-.join input{width:140px;min-width:0;flex:1;height:40px;border:none;outline:none;font-size:16px;font-family:var(--f-mono);letter-spacing:.08em;background:transparent;color:#1B1D24}
-.join button{height:44px;padding:0 18px;border-radius:10px;border:none;background:#2451D6;color:#FFFFFF;font-size:15px;font-weight:600;font-family:var(--f-body);cursor:pointer}
-.homework .hw-demo{background:#FFFFFF;color:#1B1D24;border-color:#1B1D24}
-.join-msg:empty{display:none}
-.join-msg a{color:#1F46B8;font-weight:600}
-.join-msg{font-size:15px;color:#3A3B3F;min-height:1.4em}
-
-/* footer */
-footer{border-top:2px solid var(--ink);background:var(--paper);position:relative}
-footer .wrap{padding-block:40px;display:flex;flex-wrap:wrap;align-items:center;gap:16px 32px;font-size:15px;color:var(--muted)}
-footer .fname{font-family:var(--f-display);font-size:19px;font-weight:800;color:var(--ink)}
-footer .grow{flex:1;min-width:220px}
-footer nav{display:flex;flex-wrap:wrap;gap:12px 28px}
-footer a{color:var(--ink-2);text-decoration:none}
-footer a:hover{text-decoration:underline}
-
-/* ---- selling points update ---- */
-:root{--accent-soft:#EAF0FF;--us-row:#FFF6C8}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--accent-soft:#23304F;--us-row:#3A3620}}
-:root[data-theme="dark"]{--accent-soft:#23304F;--us-row:#3A3620}
-
-.proof{list-style:none;margin:30px 0 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 28px;font-size:16px;color:var(--ink-2)}
-.proof li{display:flex;align-items:center;gap:8px}
-.proof svg{color:var(--accent);flex-shrink:0}
-.proof b{color:var(--ink);font-weight:700}
-
-.why-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px 28px}
-.why{background:var(--card);border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink);padding:28px 26px 24px;display:flex;flex-direction:column;gap:12px}
-.why .ico{width:52px;height:52px;border-radius:14px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;border:1.5px solid var(--ink);transform:rotate(-3deg)}
-.why:nth-child(even) .ico{transform:rotate(3deg)}
-.why h3{font-size:clamp(23px,2vw,26px);font-weight:800;line-height:1.1;margin-top:4px}
-.why p{font-size:16px;color:var(--ink-2)}
-.why .scribble{margin-top:auto;padding-top:6px;font-family:var(--f-hand);font-size:23px;line-height:1.1;color:var(--hand-blue);display:flex;gap:8px;align-items:flex-start}
-.why .scribble svg{flex-shrink:0;margin-top:3px}
-@media (max-width:1100px){.why-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:640px){.why-grid{grid-template-columns:1fr}}
-
-.switch{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(44px,6vw,80px);align-items:start}
-.switch h2{font-weight:800;font-size:clamp(36px,4.4vw,56px);line-height:1.06;margin-top:22px}
-.switch .lede{margin-top:18px;font-size:18px;color:var(--ink-2)}
-.move-steps{list-style:none;margin:28px 0 0;padding:0;display:flex;flex-direction:column;gap:16px}
-.move-steps li{display:flex;gap:14px;align-items:flex-start;font-size:17px;line-height:1.45}
-.move-steps .num{width:34px;height:34px;flex-shrink:0;border-radius:99px;border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;font-family:var(--f-display);font-weight:700;font-size:15px;margin-top:-4px}
-.move-steps b{font-weight:600}
-.switch-cta{margin-top:32px;display:flex;flex-direction:column;align-items:flex-start;gap:12px}
-.src{font-size:13px;color:var(--muted)}
-.src a{color:var(--muted)}
-.freecard{background:var(--card);border:2px solid var(--ink);border-radius:18px;box-shadow:6px 6px 0 var(--ink);padding:30px 26px 22px;position:relative;min-width:0}
-.freecard .tape{left:50%;top:-13px;margin-left:-48px;transform:rotate(-2deg)}
-.freecard h3{font-size:24px;font-weight:700}
-.freecard table{width:100%;border-collapse:collapse;margin-top:14px;font-size:15.5px;line-height:1.4}
-.freecard th,.freecard td{text-align:left;padding:12px 10px;border-top:1px solid var(--line);vertical-align:top}
-.freecard thead th{font-family:var(--f-body);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);border-top:0;padding-top:4px}
-.freecard tbody th{font-weight:600;width:38%}
-.freecard tr.us th,.freecard tr.us td{background:var(--us-row);border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);color:var(--ink);font-weight:700}
-.freecard .src{margin-top:14px}
-@media (max-width:980px){.switch{grid-template-columns:1fr}}
-
-.support{white-space:nowrap}
-</style>
-
-<!-- NAV -->
-<style>html,body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</script>
 </head>
 <body>
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="#top" aria-label="Clean Slate home">
-      <span class="brand-mark"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5"/></svg></span>
+    <a class="brand" href="/" aria-label="Clean Slate home">
+      <span class="brand-mark"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5"/></svg></span>
       Clean Slate
     </a>
-    <nav class="nav-links" aria-label="Sections">
-      <a href="#why">Why Clean Slate</a>
-      <a href="#tools">Tools</a>
-      <a href="#classroom">Classroom mode</a>
-      <a href="#switch">Switching?</a>
-    </nav>
+    <nav class="nav-links" aria-label="Clean Slate for"><a href="/online-whiteboard-for-teaching">Teaching</a><a href="/online-whiteboard-for-tutoring">Tutoring</a><a href="/online-whiteboard-for-math">Maths</a><a href="/online-whiteboard-for-classroom">Classroom</a><a href="/whiteboard-for-ipad">iPad</a></nav>
     <a class="nav-join" href="https://whiteboard-app-beta.vercel.app/join">Join a class</a>
     <a class="btn btn-dark" href="https://whiteboard-app-beta.vercel.app/">Start free</a>
   </div>
@@ -395,9 +183,8 @@ footer a:hover{text-decoration:underline}
 <!-- HERO -->
 <section class="hero">
   <div class="wrap hero-copy">
-    <span class="tape-label">free for every teacher · runs in your browser</span>
-    <h1>A clean slate for <span class="mark">every<svg viewBox="0 0 300 30" preserveAspectRatio="none" fill="none" stroke-width="7" stroke-linecap="round" aria-hidden="true"><path d="M6 20c70-12 160-16 288-6"/></svg></span> lesson.</h1>
-    <p class="hero-lede">The live whiteboard built for teaching. Write with Apple Pencil, keep the worksheet beside the board, and bring a whole class in with one code. Whatever you teach, it’s just as quick three hours in as it was at the start.</p>
+    <h1><span class="tape-label">free online whiteboard for teachers and tutors</span> <span class="h1-main">A clean slate for <span class="mark">every<svg viewBox="0 0 300 30" preserveAspectRatio="none" fill="none" stroke-width="7" stroke-linecap="round" aria-hidden="true"><path d="M6 20c70-12 160-16 288-6"/></svg></span> lesson.</span></h1>
+    <p class="hero-lede">Clean Slate is a free online whiteboard built for teaching. Write with Apple Pencil, keep the worksheet beside the board, and bring a whole class in with one code. Whatever you teach, it’s just as quick three hours in as it was at the start.</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="https://whiteboard-app-beta.vercel.app/demo">Try it now, no sign-in
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
@@ -407,7 +194,7 @@ footer a:hover{text-decoration:underline}
     <ul class="proof" aria-label="Clean Slate in use today">
       <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span>In <b>daily lessons</b> for 3+ months</span></li>
       <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span><b>About 20 students</b> using it regularly</span></li>
-      <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span>Replaced <b>Microsoft Whiteboard</b> for a working maths tutor</span></li>
+      <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 7"/></svg><span><b>Free</b>, with no limit on boards</span></li>
     </ul>
     <div class="subjects" aria-label="Made for any subject">
       <span>Made for</span>
@@ -424,71 +211,7 @@ footer a:hover{text-decoration:underline}
       </div>
 
       <div class="shot-wrap">
-        <div class="shot-frame">
-          <div class="fit" data-fit="1100" style="aspect-ratio:1100/660">
-            <div class="fit-inner" aria-label="The Clean Slate board: a worksheet on the left and a sketched quadratic graph on the right" role="img">
-              <div class="app">
-                <div class="appbar">
-                  <span class="logo"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5"/></svg></span>
-                  <b>Quadratics · Year 10</b><span class="saved">Saved</span><span class="sp"></span>
-                  <span class="live"><i></i>LIVE · 24 students</span><span class="pill">100%</span><span class="pill blue">Share</span>
-                </div>
-                <div class="toolrow">
-                  <div class="tool on"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg>Pen</div>
-                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l-5 5v4h4l5-5M9 11l6-6 4 4-6 6z"/></svg>Highlight</div>
-                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20h11M4 15l8-8 7 7-6 6H9z"/></svg>Eraser</div>
-                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 8-6 2-2 7z"/></svg>Select</div>
-                  <div class="tool"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M5 5h14M12 5v14"/></svg>Text</div>
-                  <div class="vsep"></div>
-                  <div class="menu">Maths<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
-                  <div class="menu insert">Insert<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
-                  <div class="menu">Page: Squared<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
-                  <span style="flex:1"></span>
-                  <span class="sw" style="background:#18191C;border:2px solid #fff;box-shadow:0 0 0 2px #2451D6"></span>
-                  <span class="sw" style="background:#2451D6"></span><span class="sw" style="background:#D9480F"></span><span class="sw" style="background:#2E9E5B"></span>
-                </div>
-                <div class="ctx"><b>Pen</b> Draw freely. Pencil-only is on, so resting your hand won’t leave marks.</div>
-                <div class="appbody">
-                  <div class="refpane">
-                    <div class="sheet">
-                      <div class="eyebrow">WORKSHEET 3</div>
-                      <div class="ttl">Quadratic graphs</div>
-                      <div class="q">1. Sketch the graph of y = x² − 4x + 3. Label the roots and the turning point.</div>
-                      <div class="bar"></div><div class="bar" style="width:86%"></div>
-                      <div class="q">2. Hence solve x² − 4x + 3 &lt; 0.</div>
-                      <div class="bar" style="width:92%"></div><div class="bar" style="width:70%"></div>
-                      <div class="q">3. Find the equation of the line of symmetry.</div>
-                      <div class="bar" style="width:80%"></div>
-                      <span style="flex:1"></span>
-                      <div style="font-size:12px;color:#5F5E5A;text-align:center">Page 1 of 4</div>
-                    </div>
-                  </div>
-                  <div class="divider"><i></i></div>
-                  <div class="board p-sq">
-                    <svg width="750" height="508" viewBox="0 0 750 508" fill="none" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:0;top:0">
-                      <path d="M180 24V486M40 330H460" stroke="#18191C" stroke-width="2.2"/>
-                      <path d="M452 324l8 6-8 6M174 32l6-8 6 8" stroke="#18191C" stroke-width="2.2"/>
-                      <path d="M144 42Q252 690 360 42" stroke="#2451D6" stroke-width="3.6"/>
-                      <circle cx="216" cy="330" r="12" stroke="#D9480F" stroke-width="2.6"/>
-                      <circle cx="288" cy="330" r="12" stroke="#D9480F" stroke-width="2.6"/>
-                      <circle cx="252" cy="366" r="4" fill="#18191C"/>
-                      <path d="M330 440c-30-10-58-34-72-62" stroke="#18191C" stroke-width="2"/>
-                      <path d="M252 382l6-6 3 10" stroke="#18191C" stroke-width="2"/>
-                      <text x="336" y="456" font-family="Caveat, cursive" font-size="30" fill="#18191C">turning point (2, −1)</text>
-                      <text x="470" y="90" font-family="Caveat, cursive" font-size="40" font-weight="700" fill="#2451D6">y = x² − 4x + 3</text>
-                      <text x="500" y="146" font-family="Caveat, cursive" font-size="36" fill="#2451D6">= (x − 1)(x − 3)</text>
-                      <text x="490" y="236" font-family="Caveat, cursive" font-size="36" font-weight="700" fill="#D9480F">x = 1  or  x = 3</text>
-                      <path d="M480 250c60 6 140 4 196-4" stroke="#D9480F" stroke-width="2.4"/>
-                      <text x="196" y="360" font-family="Caveat, cursive" font-size="24" fill="#5F5E5A">1</text>
-                      <text x="280" y="360" font-family="Caveat, cursive" font-size="24" fill="#5F5E5A">3</text>
-                      <text x="160" y="232" font-family="Caveat, cursive" font-size="24" fill="#5F5E5A">3</text>
-                    </svg>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <div class="shot-frame"><img src="/img/clean-slate-worksheet-beside-whiteboard-1600.webp" srcset="/img/clean-slate-worksheet-beside-whiteboard-900.webp 900w, /img/clean-slate-worksheet-beside-whiteboard-1600.webp 1600w" sizes="(min-width:1181px) 924px, 92vw" width="1600" height="822" alt="Clean Slate online whiteboard with a quadratics worksheet open beside the board, a hand-drawn parabola with its roots circled, and typed working" fetchpriority="high" decoding="async"></div>
         <span class="tape t1"></span><span class="tape t2"></span>
       </div>
 
@@ -511,42 +234,42 @@ footer a:hover{text-decoration:underline}
   <div class="wrap">
     <div class="head">
       <h2>Why teachers <span class="hl">switch</span> to Clean Slate.</h2>
-      <p>It started as a fix for one tutor’s lagging whiteboard. These are the six things that made her class stay.</p>
+      <p>Most online whiteboards are built for office meetings. These six things are built for lessons.</p>
     </div>
     <div class="why-grid">
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
-        <h3>Fast in hour three</h3>
+        <h3><a href="/online-whiteboard-for-tutoring">Fast in hour three</a></h3>
         <p>Drawing happens on your device first, and saving runs quietly in the background. The pen never waits for the internet, even late in a long lesson.</p>
-        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>built after Microsoft Whiteboard kept slowing down mid-lesson</span></div>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>your writing never waits on the Wi-Fi</span></div>
       </article>
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3.5 3.5 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.6"/></svg></span>
-        <h3>Every student gets a board</h3>
+        <h3><a href="/online-whiteboard-for-classroom">Every student gets a board</a></h3>
         <p>Students join with a 6-character code and no account. They follow your board, work on their own, and you can look in on anyone and pin a comment.</p>
         <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>free, with no 2-hour session limit</span></div>
       </article>
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v16H4zM14 4h6v16h-6"/></svg></span>
-        <h3>The worksheet beside the board</h3>
+        <h3><a href="/online-whiteboard-for-teaching">The worksheet beside the board</a></h3>
         <p>Open a PDF or photo in a side pane, size it how you like and write on it. Nothing to print and nothing to screenshot.</p>
         <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>no work or school account needed</span></div>
       </article>
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2"/></svg></span>
-        <h3>Real teaching tools</h3>
+        <h3><a href="/online-whiteboard-for-math">Real teaching tools</a></h3>
         <p>A ruler and compass, graph and grid paper, simulations, and a scientific calculator that gives exact answers.</p>
         <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>new: a Casio-style calculator</span></div>
       </article>
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg></span>
-        <h3>Made for the Pencil</h3>
+        <h3><a href="/whiteboard-for-ipad">Made for the Pencil</a></h3>
         <p>Rest your hand on the screen without stray marks or switched tools. Pencil-only mode turns on by itself the first time you write.</p>
         <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>works on iPads back to 2014</span></div>
       </article>
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12l-8 8-9-9V3h8zM7.5 7.5h.01"/></svg></span>
-        <h3>Free, with no catch</h3>
+        <h3><a href="/free-online-whiteboard-no-sign-up">Free, with no catch</a></h3>
         <p>No board limit, no ads, no card and nothing to install. Try the demo board without even signing in.</p>
         <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>most free whiteboards stop at 3 boards</span></div>
       </article>
@@ -758,6 +481,22 @@ footer a:hover{text-decoration:underline}
   </div>
 </section>
 
+<!-- SCREENSHOTS -->
+<section id="screenshots" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wrap">
+    <div class="head">
+      <h2>See the <span class="hl">real</span> board.</h2>
+      <p>These are screenshots of Clean Slate itself, not mock-ups. Everything in them is free, and you can try it all on the demo board.</p>
+    </div>
+    <div class="gallery">
+      <figure><div class="shot-frame"><img src="/img/clean-slate-scientific-calculator-1200.webp" srcset="/img/clean-slate-scientific-calculator-700.webp 700w, /img/clean-slate-scientific-calculator-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="616" alt="Scientific calculator on the Clean Slate whiteboard showing sin(30) = 1/2 as an exact fraction, with an Add to board button" loading="lazy" decoding="async"></div><figcaption>exact answers: sin(30) gives ½, not 0.5</figcaption></figure>
+      <figure><div class="shot-frame"><img src="/img/clean-slate-compass-tool-1200.webp" srcset="/img/clean-slate-compass-tool-700.webp 700w, /img/clean-slate-compass-tool-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="616" alt="Compass tool on the Clean Slate whiteboard drawing a perfect circle of radius 100 on squared paper" loading="lazy" decoding="async"></div><figcaption>a compass for perfect circles and arcs</figcaption></figure>
+      <figure><div class="shot-frame"><img src="/img/clean-slate-graph-on-board-1200.webp" srcset="/img/clean-slate-graph-on-board-700.webp 700w, /img/clean-slate-graph-on-board-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="616" alt="Cartesian axes from -5 to 5 placed on the Clean Slate whiteboard with the graph tool" loading="lazy" decoding="async"></div><figcaption>axes with the scale you choose, ready to draw on</figcaption></figure>
+      <figure><div class="shot-frame"><img src="/img/clean-slate-paper-styles-1200.webp" srcset="/img/clean-slate-paper-styles-700.webp 700w, /img/clean-slate-paper-styles-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="616" alt="Page background menu in Clean Slate with blank, lined, squared, dot grid and isometric paper" loading="lazy" decoding="async"></div><figcaption>blank, lined, squared, dot grid or isometric paper</figcaption></figure>
+    </div>
+  </div>
+</section>
+
 <!-- CLASSROOM -->
 <section id="classroom" style="padding-top:clamp(24px,3vw,40px)">
   <div class="wide">
@@ -771,6 +510,7 @@ footer a:hover{text-decoration:underline}
           <li><span class="num">2</span><span class="t"><b>Students join with the code.</b> <span>Each one gets their own mini-board to work on.</span></span></li>
           <li><span class="num">3</span><span class="t"><b>Check in on anyone.</b> <span>Open a student’s board live and pin a comment exactly where it matters.</span></span></li>
         </ol>
+        <p class="more"><a href="/online-whiteboard-for-classroom">How the classroom whiteboard works</a></p>
       </div>
       <div class="roster-col">
         <div class="roster">
@@ -821,6 +561,7 @@ footer a:hover{text-decoration:underline}
         <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg><div><h3>Pencil-only switches on by itself</h3><p>The first time you write with a stylus, fingers go back to scrolling and zooming. You can always turn it off.</p></div></div>
         <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></svg><div><h3>Runs on the tablet you already own</h3><p>Works on iPads going back to 2014, on Samsung and other Android tablets, and on laptops. Nothing to install.</p></div></div>
       </div>
+      <p class="more"><a href="/whiteboard-for-ipad">More about the whiteboard on iPad</a></p>
     </div>
   </div>
 </section>
@@ -831,7 +572,7 @@ footer a:hover{text-decoration:underline}
     <div>
       <span class="tape-label">switching from Microsoft Whiteboard?</span>
       <h2>Your lessons have somewhere to go.</h2>
-      <p class="lede">Microsoft Whiteboard no longer works with personal Microsoft accounts. It’s now only for work and school Microsoft 365 accounts. Clean Slate was built to replace it for a working tutor, so the pen, eraser and menus are where you expect them.</p>
+      <p class="lede">Microsoft Whiteboard no longer works with personal Microsoft accounts. It’s now only for work and school Microsoft 365 accounts. Clean Slate works with any Google account, and the pen, eraser and menus are where you expect them. <a href="/microsoft-whiteboard-alternative">See how it compares as a Microsoft Whiteboard alternative</a>.</p>
       <ol class="move-steps">
         <li><span class="num">1</span><span><b>Sign in to Clean Slate</b> with any Google account. It’s free.</span></li>
         <li><span class="num">2</span><span><b>Bring your old work across.</b> If you exported boards as pictures, drop them straight onto a new board.</span></li>
@@ -855,7 +596,7 @@ footer a:hover{text-decoration:underline}
           <tr><th scope="row">Whiteboard.fi</th><td>20 students, 1 session at a time, sessions end after 2 hours</td></tr>
           <tr><th scope="row">Microsoft Whiteboard</th><td>Work or school Microsoft 365 accounts only</td></tr>
         </tbody>
-      </table>
+      </table></div>
       <p class="src">Free-plan limits as published in September 2026 (<a href="https://huddleiq.com/online-whiteboard-pricing-2026-what-tools-really-cost/" target="_blank" rel="noopener">HuddleIQ</a>, <a href="https://www.softwaresuggest.com/whiteboard-fi" target="_blank" rel="noopener">SoftwareSuggest</a>). Check each site for the latest.</p>
     </div>
   </div>
@@ -864,13 +605,53 @@ footer a:hover{text-decoration:underline}
 <!-- MORE REASONS -->
 <section style="padding-top:0">
   <div class="wrap stickies">
-    <div class="sticky y"><h3>Tell us what to build</h3><p>Send an idea or a bug report from inside the app, screenshots and all. It goes straight to the person building Clean Slate.</p></div>
+    <div class="sticky y"><h3>Tell us what to build</h3><p>Send an idea or a bug report from inside the app, screenshots and all. It goes straight to the developer.</p></div>
     <div class="sticky b"><h3>Share with an email</h3><p>Add a student or co-teacher and you can all write on the same board at once, live.</p></div>
     <div class="sticky p"><h3>Easy to find last week’s lesson</h3><p>Every board gets a preview picture, so the lesson you need is one glance away.</p></div>
   </div>
 </section>
 
-<!-- HOMEWORK CTA -->
+<!-- POPULAR USES -->
+<section id="uses" style="padding-top:0">
+  <div class="wrap">
+    <div class="head">
+      <h2>One whiteboard, <span class="hl">however</span> you teach.</h2>
+      <p>Looking for something specific? Each of these pages goes into the detail.</p>
+    </div>
+    <div class="uses-grid">
+      <a class="use" href="/online-whiteboard-for-teaching"><b>Whiteboard for teaching</b><span>A free online whiteboard built around how lessons actually run.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/online-whiteboard-for-tutoring"><b>Whiteboard for tutoring</b><span>One-to-one and small-group lessons, with the worksheet beside the board.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/online-whiteboard-for-math"><b>Whiteboard for math</b><span>Ruler, compass, graph paper and a calculator with exact answers.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/online-whiteboard-for-classroom"><b>Whiteboard for the classroom</b><span>Every student gets their own board. Join with a code, no accounts.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/free-online-whiteboard-no-sign-up"><b>Whiteboard with no sign-up</b><span>Open a board and draw. No account, no login, no download.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/whiteboard-for-ipad"><b>Whiteboard for iPad</b><span>Made for Apple Pencil, with palm rejection, in Safari.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/microsoft-whiteboard-alternative"><b>Microsoft Whiteboard alternative</b><span>Free, works with any Google account, on any device.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/jamboard-alternative"><b>Jamboard alternative</b><span>A free replacement for teachers, with no student sign-in.</span><i aria-hidden="true">Read more →</i></a>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" style="padding-top:clamp(24px,3vw,40px)">
+  <div class="wrap">
+    <div class="head">
+      <h2>Questions, <span class="hl">answered.</span></h2>
+      <p>Short, straight answers about what Clean Slate does and doesn’t do.</p>
+    </div>
+    <div class="faq-grid">
+      <div class="faq-item"><h3>Is Clean Slate really free?</h3><p>Yes. There is no paid plan, no board limit and no ads.</p></div>
+      <div class="faq-item"><h3>Can I try it without signing up?</h3><p>Yes. The <a href="https://whiteboard-app-beta.vercel.app/demo">demo board</a> opens with no sign-up, no login and nothing to download. Nothing you draw there is saved. Sign in with a Google account when you want to save and share boards.</p></div>
+      <div class="faq-item"><h3>Do my students need accounts?</h3><p>No. Students join a live class with a six-character code and their first name.</p></div>
+      <div class="faq-item"><h3>Does it work on an iPad with Apple Pencil?</h3><p>Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See <a href="/whiteboard-for-ipad">the whiteboard for iPad</a>.</p></div>
+      <div class="faq-item"><h3>Can I open a PDF on the whiteboard?</h3><p>Yes. Open a PDF of up to 30 pages, or an image, in a pane beside the board, and write on it.</p></div>
+      <div class="faq-item"><h3>Is it a replacement for Microsoft Whiteboard or Jamboard?</h3><p>Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works with any Google account in any browser. See <a href="/microsoft-whiteboard-alternative">the Microsoft Whiteboard alternative</a> and <a href="/jamboard-alternative">the Jamboard alternative</a>.</p></div>
+      <div class="faq-item"><h3>Does it have video or audio calls?</h3><p>No. Use it beside Zoom, Google Meet or Teams.</p></div>
+      <div class="faq-item"><h3>Are my boards saved?</h3><p>Yes. When you're signed in, boards save automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it.</p></div>
+      <div class="faq-item"><h3>Which devices and browsers does it work on?</h3><p>Chrome, Edge, Firefox and Safari, on iPads, Android tablets, Chromebooks, Windows, Mac and Linux. There is nothing to install.</p></div>
+    </div>
+  </div>
+</section>
+
 <section id="start" style="padding-top:clamp(24px,3vw,40px)">
   <div class="wrap">
     <div class="homework">
@@ -897,49 +678,19 @@ footer a:hover{text-decoration:underline}
 </main>
 
 <footer>
-  <div class="wrap">
-    <span class="fname">Clean Slate</span>
-    <span class="grow">The live whiteboard for every lesson.</span>
-    <nav aria-label="Footer">
-      <a href="#why">Why Clean Slate</a><a href="#tools">Tools</a><a href="#switch">Switching</a><a href="https://whiteboard-app-beta.vercel.app/join">Join a class</a><a href="https://whiteboard-app-beta.vercel.app/">Open the app</a><a href="privacy.html">Privacy</a>
-    </nav>
-    <span class="grow" style="flex-basis:100%">Questions? Email <span class="support">cleanslatesupportoffical@gmail.com</span></span>
+  <div class="wrap foot">
+    <div>
+      <a class="fname" href="/">Clean Slate</a>
+      <p>The free online whiteboard for every lesson.</p>
+      <p>Questions? Email <span class="support">cleanslatesupportoffical@gmail.com</span></p>
+    </div>
+    <nav aria-label="Clean Slate for"><p class="foot-h">Clean Slate for</p><ul><li><a href="/online-whiteboard-for-teaching">Online whiteboard for teaching</a></li><li><a href="/online-whiteboard-for-tutoring">Online whiteboard for tutoring</a></li><li><a href="/online-whiteboard-for-math">Online whiteboard for math</a></li><li><a href="/online-whiteboard-for-classroom">Online whiteboard for the classroom</a></li><li><a href="/whiteboard-for-ipad">Whiteboard for iPad</a></li></ul></nav>
+    <nav aria-label="Compare"><p class="foot-h">Compare</p><ul><li><a href="/free-online-whiteboard-no-sign-up">Free whiteboard, no sign-up</a></li><li><a href="/microsoft-whiteboard-alternative">Microsoft Whiteboard alternative</a></li><li><a href="/jamboard-alternative">Jamboard alternative</a></li></ul></nav>
+    <nav aria-label="Get started"><p class="foot-h">Get started</p><ul><li><a href="https://whiteboard-app-beta.vercel.app/demo">Try the demo board</a></li><li><a href="https://whiteboard-app-beta.vercel.app/">Sign in free</a></li><li><a href="https://whiteboard-app-beta.vercel.app/join">Join a class</a></li><li><a href="/privacy">Privacy</a></li></ul></nav>
   </div>
 </footer>
-
-<script>
-(function(){
-  // Scale fixed-size mockups to their box.
-  var boxes = Array.prototype.slice.call(document.querySelectorAll('[data-fit]'));
-  function fit(box){ var w = +box.getAttribute('data-fit'); var k = box.clientWidth / w; if (k > 0) box.style.setProperty('--k', k); }
-  boxes.forEach(fit);
-  if ('ResizeObserver' in window) { var ro = new ResizeObserver(function(es){ es.forEach(function(e){ fit(e.target); }); }); boxes.forEach(function(b){ ro.observe(b); }); }
-  else { window.addEventListener('resize', function(){ boxes.forEach(fit); }); }
-
-  // Join form: check the code, then open the app's join screen with it filled in.
-  var APP_URL = 'https://whiteboard-app-beta.vercel.app';
-  // Pass ?ref= (which post or partner sent the visitor) on to every app link.
-  var REF = null;
-  try { REF = new URLSearchParams(window.location.search).get('ref'); } catch (err) {}
-  if (!REF || !/^[A-Za-z0-9_-]{1,40}$/.test(REF)) REF = null;
-  function withRef(url){ return REF ? url + (url.indexOf('?') < 0 ? '?' : '&') + 'ref=' + encodeURIComponent(REF) : url; }
-  if (REF) Array.prototype.forEach.call(document.querySelectorAll('a[href^="' + APP_URL + '"]'), function(a){ a.href = withRef(a.getAttribute('href')); });
-  var CODE_RE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
-  var form = document.getElementById('joinForm'), input = document.getElementById('classCode'), msg = document.getElementById('joinMsg');
-  form.addEventListener('submit', function(e){
-    e.preventDefault();
-    var code = input.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (!code) { msg.textContent = 'Type the code shown on your teacher’s board, like 7KQ42M.'; input.focus(); return; }
-    if (!CODE_RE.test(code)) { msg.textContent = 'Class codes are 6 letters and numbers, like 7KQ42M. Check the code on your teacher’s board.'; input.focus(); return; }
-    var url = withRef(APP_URL + '/join?code=' + encodeURIComponent(code));
-    var inFrame = false; try { inFrame = window.top !== window.self; } catch (err) { inFrame = true; }
-    if (!inFrame) { window.location.assign(url); return; }
-    msg.innerHTML = '';
-    var a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = 'Continue to class ' + code + ' →';
-    msg.appendChild(a);
-  });
-})();
-</script>
+<script src="/site.js" defer></script>
+<script>window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };</script>
 <script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>

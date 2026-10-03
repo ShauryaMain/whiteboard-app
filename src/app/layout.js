@@ -2,6 +2,7 @@ import "./globals.css";
 import localFont from "next/font/local";
 import Script from "next/script";
 import { AuthProvider } from "@/lib/AuthContext";
+import Analytics from "@/components/Analytics";
 
 // Geist, bundled with the app (no request to Google at runtime or build
 // time). One variable-weight file covers every weight the UI uses.
@@ -30,7 +31,8 @@ const caveat = localFont({
 
 export const metadata = {
   title: "Clean Slate",
-  description: "Clean Slate — live whiteboards for teaching maths, from any tablet.",
+  description:
+    "Clean Slate is a free online whiteboard for teaching. Write with a stylus, keep the worksheet beside the board, and bring a whole class in with one code.",
 };
 
 export const viewport = {
@@ -49,6 +51,8 @@ export default function RootLayout({ children }) {
             before any app code runs. No-op on modern browsers. */}
         <Script src="/legacy-polyfills.js" strategy="beforeInteractive" />
         <AuthProvider>{children}</AuthProvider>
+        {/* Anonymous visit counts (Vercel Web Analytics). */}
+        <Analytics />
       </body>
     </html>
   );
