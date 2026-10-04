@@ -201,6 +201,7 @@ export default function Toolbar(props) {
                     insert
                     icon={<Shapes {...SMALL_ICON} />}
                     title="Shape"
+                    tour="insert-shape"
                     desc="Polygons, circles and 3D solids, with angles and lengths labelled."
                     onPress={runAndClose(onOpenShapeModal)}
                   />
@@ -394,7 +395,7 @@ export default function Toolbar(props) {
         >
           <Ruler {...ICON} />
         </ToolButton>
-        <ToolButton wide menu label="Insert" open={menu?.id === "insert"} onPress={(e) => toggleMenu("insert", e)}>
+        <ToolButton wide menu label="Insert" tour="insert-menu" open={menu?.id === "insert"} onPress={(e) => toggleMenu("insert", e)}>
           <SquarePlus {...ICON} />
         </ToolButton>
         {onSetBackground && (
@@ -561,7 +562,7 @@ function SaveLabels({ state, labels }) {
   );
 }
 
-function ToolButton({ label, active, open, disabled, wide, menu, badge, onPress, children }) {
+function ToolButton({ label, active, open, disabled, wide, menu, badge, tour, onPress, children }) {
   const classes = [s.toolBtn];
   if (wide) classes.push(s.toolBtnWide);
   if (active) classes.push(s.toolBtnActive);
@@ -574,6 +575,8 @@ function ToolButton({ label, active, open, disabled, wide, menu, badge, onPress,
       aria-expanded={menu ? !!open : undefined}
       aria-haspopup={menu ? "menu" : undefined}
       data-menu-trigger={menu ? "true" : undefined}
+      // lets a walkthrough point at this button (see src/lib/tours.js)
+      data-tour={tour}
       onPress={onPress}
     >
       <span className={s.toolIcon}>{children}</span>
@@ -586,12 +589,12 @@ function ToolButton({ label, active, open, disabled, wide, menu, badge, onPress,
   );
 }
 
-function MenuItem({ icon, title, desc, on, insert, danger, onPress }) {
+function MenuItem({ icon, title, desc, on, insert, danger, tour, onPress }) {
   const iconClass = [s.menuIcon];
   if (insert) iconClass.push(s.menuIconInsert);
   if (danger) iconClass.push(s.menuIconDanger);
   return (
-    <PalmSafeButton role="menuitem" className={`${s.menuItem} ${on ? s.menuItemOn : ""}`} onPress={onPress}>
+    <PalmSafeButton role="menuitem" className={`${s.menuItem} ${on ? s.menuItemOn : ""}`} data-tour={tour} onPress={onPress}>
       <span className={iconClass.join(" ")}>{icon}</span>
       <span className={s.menuText}>
         <span className={`${s.menuTitle} ${danger ? s.menuDangerTitle : ""}`}>

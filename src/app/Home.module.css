@@ -581,3 +581,24 @@
     min-height: 120px;
   }
 }
+
+/* ---------- Phones ---------- */
+
+/* The top bar has room for search, What's new, joining a class and the
+   account button. Feedback is in the account menu too, so its own button
+   steps aside here. */
+@media (max-width: 480px) {
+  .topBar {
+    gap: 10px;
+  }
+  .search {
+    min-width: 0;
+    margin-left: 2px;
+  }
+  .search svg {
+    flex-shrink: 0;
+  }
+  .hideOnPhone {
+    display: none;
+  }
+}

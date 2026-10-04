@@ -166,7 +166,8 @@ export default function ShapeToolModal({ zoomScale = 1, penColor = "#1a1a1a", pe
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={s.card} role="dialog" aria-modal="true" aria-labelledby="shape-tool-title" tabIndex={-1} ref={cardRef}>
+      {/* data-tour tags let the walkthrough point at parts of this window (src/lib/tours.js) */}
+      <div className={s.card} role="dialog" aria-modal="true" aria-labelledby="shape-tool-title" tabIndex={-1} ref={cardRef} data-tour="shape-dialog">
         <div className={s.header}>
           <h2 className={s.title} id="shape-tool-title">Shape</h2>
           <button type="button" className={s.closeBtn} onClick={onClose} aria-label="Close">
@@ -174,7 +175,7 @@ export default function ShapeToolModal({ zoomScale = 1, penColor = "#1a1a1a", pe
           </button>
         </div>
 
-        <div className={s.tabs} role="group" aria-label="Kind of shape">
+        <div className={s.tabs} role="group" aria-label="Kind of shape" data-tour="shape-kinds">
           {FAMILIES.map((f) => (
             <button
               key={f.id}
@@ -190,7 +191,7 @@ export default function ShapeToolModal({ zoomScale = 1, penColor = "#1a1a1a", pe
 
         <div className={s.scroll}>
           <div className={s.body}>
-            <div className={s.previewCol}>
+            <div className={s.previewCol} data-tour="shape-preview">
               <div className={s.previewBox}>
                 <canvas
                   ref={canvasRef}
@@ -230,7 +231,7 @@ export default function ShapeToolModal({ zoomScale = 1, penColor = "#1a1a1a", pe
               {cfg.family === "circle" && <CircleFields c={cfg.circle} set={(patch) => setPart("circle", patch)} unit={cfg.unit} />}
               {is3d && <SolidFields v={cfg.solid} set={(patch) => setPart("solid", patch)} unit={cfg.unit} round={roundSolid} />}
 
-              <div>
+              <div data-tour="shape-labels">
                 <div className={s.label}>Labels</div>
                 <div className={s.group}>
                   {allowed.angles && (
@@ -318,7 +319,7 @@ export default function ShapeToolModal({ zoomScale = 1, penColor = "#1a1a1a", pe
             {is3d ? "Drag the picture to turn it round." : "It lands as pen lines you can move, copy or rub out."}
           </div>
           <button type="button" className={s.btn} onClick={onClose}>Cancel</button>
-          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={add} disabled={!!built.error}>Add to board</button>
+          <button type="button" className={`${s.btn} ${s.btnPrimary}`} onClick={add} disabled={!!built.error} data-tour="shape-add">Add to board</button>
         </div>
       </div>
     </div>,

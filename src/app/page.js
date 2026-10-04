@@ -10,6 +10,7 @@ import { BOARD_BACKGROUNDS, backgroundCss, normalizeBackground } from "@/lib/boa
 import NewBoardModal from "@/components/NewBoardModal";
 import ShareModal from "@/components/ShareModal";
 import FeedbackModal from "@/components/FeedbackModal";
+import WhatsNew from "@/components/WhatsNew";
 import s from "./Home.module.css";
 import { LANDING_URL } from "@/lib/links";
 import d from "@/components/Dialog.module.css";
@@ -256,9 +257,11 @@ export default function Home() {
           <input type="search" placeholder="Search boards" aria-label="Search boards" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
         <div className={s.spacer} />
+        {/* Announced updates: the button, and the pop-up that opens by itself after a new one */}
+        <WhatsNew user={user} className={`${s.topBtn} ${s.feedbackBtn}`} labelClassName={s.longLabel} />
         <button
           type="button"
-          className={`${s.topBtn} ${s.feedbackBtn}`}
+          className={`${s.topBtn} ${s.feedbackBtn} ${s.hideOnPhone}`}
           onClick={() => setFeedbackOpen(true)}
           aria-label="Send feedback"
           title="Send feedback — ideas, bugs or anything else"
