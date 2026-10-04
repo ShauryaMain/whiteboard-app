@@ -1,7 +1,9 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Whiteboard from "@/components/Whiteboard";
+import TourGuide from "@/components/TourGuide";
+import { TOURS } from "@/lib/tours";
 import { supabase } from "@/lib/supabaseClient";
 import { DEMO_BOARD_ID } from "@/lib/demoBackend";
 import p from "@/components/Paper.module.css";
@@ -18,6 +20,8 @@ export default function DemoPage() {
   // Only show the board once this tab is confirmed to be on the stand-in
   // backend. (If it somehow isn't, AuthContext reloads the page.)
   const ready = useSyncExternalStore(subscribe, demoReady, notOnServer);
+  // "Try a live class" starts a short walkthrough of the pretend class.
+  const [classTour, setClassTour] = useState(0);
   if (!ready) {
     return (
       <div className={p.screen}>
@@ -27,5 +31,10 @@ export default function DemoPage() {
       </div>
     );
   }
-  return <Whiteboard boardId={DEMO_BOARD_ID} demo />;
+  return (
+    <>
+      <Whiteboard boardId={DEMO_BOARD_ID} demo onDemoClassStart={() => setClassTour((n) => (n > 0 ? n + 1 : 1))} onDemoClassEnd={() => setClassTour(-1)} />
+      {classTour > 0 && <TourGuide key={classTour} tour={TOURS.demoClass} onEnd={() => setClassTour(-1)} />}
+    </>
+  );
 }

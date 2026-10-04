@@ -11,6 +11,7 @@ import NewBoardModal from "@/components/NewBoardModal";
 import ShareModal from "@/components/ShareModal";
 import FeedbackModal from "@/components/FeedbackModal";
 import WhatsNew from "@/components/WhatsNew";
+import DemoCarryOver from "@/components/DemoCarryOver";
 import s from "./Home.module.css";
 import { LANDING_URL } from "@/lib/links";
 import d from "@/components/Dialog.module.css";
@@ -356,6 +357,10 @@ export default function Home() {
           </>
         )}
       </main>
+
+      {/* A demo board someone asked to keep before signing in is saved to
+          their account here, then opened. */}
+      <DemoCarryOver userId={user?.id} />
 
       {feedbackOpen && (
         <FeedbackModal userEmail={user?.email} boardCount={myBoards.length} onClose={() => setFeedbackOpen(false)} />

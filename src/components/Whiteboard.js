@@ -14,7 +14,7 @@ import ReferencePane from "./ReferencePane";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-import { getStoredClassCode, clearClassCode } from "@/lib/classroomCode";
+import { getStoredClassCode, clearClassCode, generateClassCode } from "@/lib/classroomCode";
 import TeacherStudentBoardView from "./TeacherStudentBoardView";
 import GridToolModal from "./GridToolModal";
 import SimEmbed from "./SimEmbed";
@@ -172,7 +172,7 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
   ctx.stroke();
 }
 
-export default function Whiteboard({ boardId, demo = false }) {
+export default function Whiteboard({ boardId, demo = false, onDemoClassStart, onDemoClassEnd }) {
   const { user } = useAuth();
   // Only who's signed in matters here — not the session object, which is
   // replaced on every token refresh and whenever the tab regains focus.
@@ -1600,12 +1600,19 @@ export default function Whiteboard({ boardId, demo = false }) {
   }
 
   function handleStartLiveClass() {
+    if (demo) {
+      // The demo's class is a pretend one, run right here: no waiting
+      // room, and the students are played by src/lib/demoClassroom.js.
+      setLiveClassCode(generateClassCode());
+      onDemoClassStart?.();
+      return;
+    }
     router.push(`/board/${boardId}/live`);
   }
 
   async function handleEndLiveClass() {
     if (!liveClassCode) return;
-    if (!window.confirm("End the live class? Students currently watching will be disconnected.")) return;
+    if (!demo && !window.confirm("End the live class? Students currently watching will be disconnected.")) return;
 
     if (liveClassChannelRef.current) {
       await liveClassChannelRef.current.send({ type: "broadcast", event: "class-ended", payload: {} });
@@ -1615,6 +1622,7 @@ export default function Whiteboard({ boardId, demo = false }) {
     setLiveClassCode(null);
     setShowRoster(false);
     setViewingStudent(null);
+    if (demo) onDemoClassEnd?.();
   }
 
   function handleToggleRuler() {
@@ -3878,7 +3886,13 @@ export default function Whiteboard({ boardId, demo = false }) {
   const statusText =
     referenceUploadStatus ||
     saveStatus ||
-    (demo ? "Demo board · nothing here is saved" : liveClassCode ? "Live class running" : "Saves automatically");
+    (demo
+      ? liveClassCode
+        ? "Demo class · pretend students"
+        : "Demo board · nothing here is saved"
+      : liveClassCode
+        ? "Live class running"
+        : "Saves automatically");
 
   return (
     <div className="wb-root">

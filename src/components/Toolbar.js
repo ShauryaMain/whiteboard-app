@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
+import { stashDemoBoard } from "@/lib/demoCarry";
 import s from "./StudioChrome.module.css";
 
 const INK_COLORS = [
@@ -47,6 +48,29 @@ const SMALL_ICON = { size: 18, strokeWidth: 1.8 };
 function leaveDemo(e) {
   if (e && e.preventDefault) e.preventDefault();
   window.location.assign("/");
+}
+
+// "Sign in free to keep your work": keep a copy of the demo board on this
+// device first, so it can be saved to their account once they're signed
+// in (see src/lib/demoCarry.js).
+let leavingDemo = false;
+async function keepDemoAndSignIn(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (leavingDemo) return;
+  leavingDemo = true;
+  try {
+    // A text box still being typed in is only added to the board when the
+    // keyboard leaves it (on an iPad that hasn't happened yet when this
+    // button is tapped). Finish it now, then give the board a moment to
+    // record it before the copy is taken.
+    const active = document.activeElement;
+    if (active && active !== document.body && typeof active.blur === "function") active.blur();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    stashDemoBoard();
+  } catch (err) {
+    console.warn("Couldn't keep the demo board for sign-in:", err);
+  }
+  leaveDemo();
 }
 
 export default function Toolbar(props) {
@@ -251,6 +275,8 @@ export default function Toolbar(props) {
                     <PalmSafeButton
                       key={student.studentId}
                       className={s.rosterItem}
+                      // lets a walkthrough point at one student (see src/lib/tours.js)
+                      data-tour={`roster-${student.studentId}`}
                       onPress={runAndClose(() => onViewStudent(student))}
                     >
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2E9E5B", flexShrink: 0 }} />
@@ -270,7 +296,7 @@ export default function Toolbar(props) {
       {menuPortal}
 
       {/* ---------- App bar ---------- */}
-      <div className={s.appBar}>
+      <div className={`${s.appBar} ${demo ? s.appBarDemo : ""} ${demo && liveClassCode ? s.appBarDemoLive : ""}`}>
         {/* The demo board leaves with a full page load, so the real app
             starts on its real backend (see supabaseClient.js). */}
         <Link
@@ -290,10 +316,11 @@ export default function Toolbar(props) {
         {liveClassCode && (
           <div className={s.livePill}>
             <span className={s.liveDot} />
-            <span style={{ fontWeight: 600 }}>LIVE</span>
+            <span className={s.liveWord} style={{ fontWeight: 600 }}>LIVE</span>
             <span className={s.liveCode}>{liveClassCode}</span>
             <PalmSafeButton
               data-menu-trigger="true"
+              data-tour="live-students"
               aria-expanded={menu?.id === "roster"}
               className={`${s.livePillBtn} ${menu?.id === "roster" ? s.livePillBtnOn : ""}`}
               onPress={(e) => toggleMenu("roster", e, 280)}
@@ -308,8 +335,18 @@ export default function Toolbar(props) {
           </div>
         )}
 
+        {/* The demo has nobody else in it, so its live class is run with
+            pretend students (see src/lib/demoClassroom.js). */}
+        {demo && !liveClassCode && (
+          <PalmSafeButton className={s.appBtn} data-tour="demo-live" onPress={onStartLiveClass}>
+            <Users size={16} strokeWidth={1.8} />
+            <span className={s.longLabel}>Try a live class</span>
+            <span className={s.shortLabel}>Live class</span>
+          </PalmSafeButton>
+        )}
+
         {demo && (
-          <PalmSafeButton className={`${s.appBtn} ${s.appBtnPrimary}`} onPress={leaveDemo}>
+          <PalmSafeButton className={`${s.appBtn} ${s.appBtnPrimary}`} data-tour="demo-signin" onPress={keepDemoAndSignIn}>
             <Check size={16} strokeWidth={2.2} />
             <span className={s.longLabel}>Sign in free to keep your work</span>
             <span className={s.shortLabel}>Sign in free</span>

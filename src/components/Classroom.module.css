@@ -261,6 +261,14 @@
   color: var(--hand-blue);
 }
 
+/* The student's board, with the comments list beside it */
+.studentBody {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
 .sidePanel {
   width: 290px;
   flex-shrink: 0;
@@ -268,6 +276,21 @@
   padding: 14px;
   background: var(--sticky-y);
   border-left: 2px solid var(--ink-line);
+}
+
+/* On a phone there's no room beside the board, so the comments list goes
+   underneath it and the board keeps the full width. */
+@media (max-width: 640px) {
+  .studentBody {
+    flex-direction: column;
+  }
+  .sidePanel {
+    width: auto;
+    max-height: 30%;
+    padding: 10px 14px;
+    border-left: 0;
+    border-top: 2px solid var(--ink-line);
+  }
 }
 
 .sideTitle {

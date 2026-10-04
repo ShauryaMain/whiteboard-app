@@ -1056,6 +1056,41 @@
   }
 }
 
+/* Phones: the red dot alone says "live", which leaves room for the
+   buttons beside the pill. */
+@media (max-width: 480px) {
+  .livePill .liveWord {
+    display: none;
+  }
+}
+
+/* The demo board's top bar on a phone: it carries "Try a live class" (or
+   the live pill) as well as the sign-in button, so it is packed tighter. */
+@media (max-width: 480px) {
+  .appBarDemo {
+    gap: 6px;
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+  }
+  .appBarDemoLive .titleBlock {
+    display: none;
+  }
+}
+
+@media (max-width: 400px) {
+  .appBarDemo .appBtn svg {
+    display: none;
+  }
+}
+
+/* The smallest phones: the house button goes to the same sign-in page as
+   the sign-in button beside it, so it gives up its place to the pill. */
+@media (max-width: 340px) {
+  .appBarDemoLive .homeLink {
+    display: none;
+  }
+}
+
 /* Short screens (small tablets in landscape): trim chrome height. */
 @media (max-height: 640px) {
   .appBar {

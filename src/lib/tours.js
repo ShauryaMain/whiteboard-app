@@ -40,7 +40,58 @@ const SHAPES = {
 // the window any other way goes back to the start.
 const inShapeWindow = () => (has(SHAPES.dialog) ? null : "insert");
 
+// The demo board's "Try a live class": the class is a pretend one (see
+// src/lib/demoClassroom.js), and this walks a visitor through the part a
+// teacher actually does: open a student's board and pin a comment on it.
+const CLASS = {
+  students: '[data-tour="live-students"]',
+  anyStudent: '[data-tour^="roster-"]',
+  ben: '[data-tour="roster-demo-ben"]',
+  board: '[data-tour="student-board"]',
+  comment: '[data-tour="student-comment"]',
+  signIn: '[data-tour="demo-signin"]',
+};
+
 export const TOURS = {
+  demoClass: {
+    id: "demoClass",
+    name: "A live class",
+    steps: [
+      {
+        id: "students",
+        title: "Your class is joining",
+        body: "Five pretend students are each solving 2x + 3 = 11 on their own board. Tap Students to see who's here.",
+        target: CLASS.students,
+        place: "below",
+        watch: () => (has(CLASS.board) ? "comment" : has(CLASS.anyStudent) ? "pick" : null),
+      },
+      {
+        id: "pick",
+        title: "Open a student's board",
+        body: "Tap a name to see that student's working, live. Try Ben: he has slipped up somewhere.",
+        target: CLASS.ben,
+        beside: CLASS.anyStudent,
+        place: "left",
+        watch: () => (has(CLASS.board) ? "comment" : has(CLASS.anyStudent) ? null : "students"),
+      },
+      {
+        id: "comment",
+        title: "Pin a comment on the mistake",
+        body: "This is the student's own board. Tap right where they went wrong, type a note and press Send. They see it straight away.",
+        target: CLASS.board,
+        place: "left",
+        watch: () => (has(CLASS.comment) ? "done" : has(CLASS.board) ? null : "students"),
+      },
+      {
+        id: "done",
+        title: "That's a live class",
+        body: "Watch Ben read your note and fix his working. In a real class your students join with a code on their own devices, with no accounts. Sign in free to run one.",
+        target: CLASS.signIn,
+        place: "below",
+        last: true,
+      },
+    ],
+  },
   shapes: {
     id: "shapes",
     name: "Shapes",

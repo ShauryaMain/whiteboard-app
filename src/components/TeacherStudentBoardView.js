@@ -295,8 +295,8 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
         </button>
       </div>
 
-      <div style={{ position: "relative", flex: 1, minHeight: 0, display: "flex" }}>
-        <div ref={paneRef} style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "#fff" }}>
+      <div className={cls.studentBody}>
+        <div ref={paneRef} data-tour="student-board" style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "#fff" }}>
           <canvas
             ref={canvasRef}
             onClick={handleCanvasClick}
@@ -311,7 +311,11 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
 
           {composer && (
             <div
-              className={cls.composer} style={{ left: `calc(${composer.x * 100}% - 135px)`, top: `calc(${composer.y * 100}% + 16px)` }}
+              className={cls.composer} style={{
+                // Centred under the tap, but kept inside the board near its edges.
+                left: `clamp(8px, calc(${composer.x * 100}% - 135px), max(8px, calc(100% - 278px)))`,
+                top: `calc(${composer.y * 100}% + 16px)`,
+              }}
             >
               <textarea
                 autoFocus
@@ -358,7 +362,7 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
               <div className={cls.sideEmpty}>No comments yet — tap the board to add one.</div>
             )}
             {comments.map((c, i) => (
-              <div key={c.id} className={cls.commentRow}>
+              <div key={c.id} className={cls.commentRow} data-tour="student-comment">
                 <span
                   className={cls.commentNum}
                 >

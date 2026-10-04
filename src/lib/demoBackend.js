@@ -5,6 +5,14 @@
 // file uploads, sign-in) but keeps everything in this browser tab's memory.
 // Nothing a demo visitor draws is sent anywhere or saved, and the real
 // database is never contacted. Reloading the page starts a fresh demo.
+//
+// Two extras:
+//   - "Try a live class" is answered by pretend students (demoClassroom.js).
+//   - "Sign in free to keep your work" asks this file for a copy of the
+//     board (carrySnapshot below), which demoCarry.js holds on to until
+//     the visitor has signed in and it can be saved as a real board.
+
+import { createDemoClassroom } from "./demoClassroom";
 
 export const DEMO_BOARD_ID = "demo";
 const DEMO_USER = { id: "demo-user", email: "", user_metadata: { full_name: "Demo visitor" } };
@@ -249,24 +257,53 @@ class DemoQuery {
 
 // ---------- live channels ----------
 
-// Nobody else is on a demo board, so a channel only has to accept what the
-// board sends and report that it joined.
-function makeChannel(topic) {
+// Nobody else is on a demo board, so most channels only have to accept
+// what the board sends and report that they joined. The two live-class
+// channels are the exception: the pretend class (demoClassroom.js) listens
+// and answers on those, the way real students would.
+function makeChannel(topic, classroom) {
+  const live = classroom && classroom.handles(topic) ? classroom : null;
+  const handlers = [];
   const channel = {
     topic,
     closed: false,
-    on() { return channel; },
+    on(type, filter, callback) {
+      if (typeof callback === "function") handlers.push({ type, event: filter && filter.event, callback });
+      return channel;
+    },
     subscribe(callback) {
       setTimeout(() => {
-        if (!channel.closed && callback) callback("SUBSCRIBED");
+        if (channel.closed) return;
+        if (live) live.attach(channel);
+        if (callback) callback("SUBSCRIBED");
       }, 0);
       return channel;
     },
-    send() { return Promise.resolve("ok"); },
+    send(message) {
+      if (live && !channel.closed) live.receive(channel, message);
+      return Promise.resolve("ok");
+    },
     track() { return Promise.resolve("ok"); },
     untrack() { return Promise.resolve("ok"); },
-    presenceState() { return {}; },
-    unsubscribe() { channel.closed = true; return Promise.resolve("ok"); },
+    presenceState() { return live ? live.presenceState(channel) : {}; },
+    unsubscribe() {
+      channel.closed = true;
+      if (live) live.detach(channel);
+      return Promise.resolve("ok");
+    },
+    // Delivers a message "from a student" to whatever the board registered
+    // with on(). Used only by the pretend class.
+    __emit(type, event, payload) {
+      if (channel.closed) return;
+      handlers.forEach((h) => {
+        if (h.type !== type || h.event !== event) return;
+        try {
+          h.callback(type === "broadcast" ? { type, event, payload } : {});
+        } catch (err) {
+          console.error("Demo class message failed:", err);
+        }
+      });
+    },
   };
   return channel;
 }
@@ -304,8 +341,68 @@ function makeStorage() {
 
 // ---------- the client ----------
 
+// ---------- a copy of the board, for "keep your work" ----------
+
+function sorted(rows) {
+  return rows.slice().sort((a, b) => compare(a.created_at, b.created_at) || compare(String(a.id), String(b.id)));
+}
+
+// What the visitor has on the demo board, in a form that can be saved as a
+// real board once they've signed in: the ink, the text boxes, the page
+// style, the graph and any simulations. Returns null when the board is
+// still exactly as it started (there is nothing of theirs to keep).
+//
+// The demo's own instruction notes are left behind unless they were
+// edited. Pictures and the worksheet aren't included: in the demo they
+// only exist in this tab's memory.
+function carrySnapshot(tables, pristine) {
+  const board = (tables.boards || []).find((b) => b.id === DEMO_BOARD_ID) || {};
+  const strokes = sorted(tables.strokes || []);
+  const texts = sorted(tables.texts || []);
+  const images = tables.images || [];
+  const key = JSON.stringify({
+    strokes: strokes.map((r) => [r.id, r.data]),
+    texts: texts.map((r) => [r.id, r.x, r.y, r.text, r.color, r.font_size, r.width, r.rotation || 0]),
+    images: images.length,
+    background: board.background || null,
+    grid: board.grid_config || null,
+    sims: board.sim_embeds || [],
+  });
+  if (key === pristine.key) return null;
+  const starterText = pristine.texts;
+  const keptTexts = texts.filter((r) => !(starterText.has(r.id) && starterText.get(r.id) === r.text));
+  return {
+    version: 1,
+    name: "My demo board",
+    background: board.background || null,
+    grid_config: board.grid_config || null,
+    sim_embeds: Array.isArray(board.sim_embeds) ? board.sim_embeds : [],
+    strokes: strokes.map((r) => r.data).filter((d) => d && Array.isArray(d.points) && d.points.length),
+    texts: keptTexts.map((r) => ({
+      x: r.x, y: r.y, text: r.text, color: r.color, font_size: r.font_size, width: r.width, rotation: r.rotation || 0,
+    })),
+    leftBehind: { pictures: images.length },
+  };
+}
+
+function pristineState(tables) {
+  const texts = new Map((tables.texts || []).map((r) => [r.id, r.text]));
+  const board = tables.boards[0];
+  const key = JSON.stringify({
+    strokes: sorted(tables.strokes).map((r) => [r.id, r.data]),
+    texts: sorted(tables.texts).map((r) => [r.id, r.x, r.y, r.text, r.color, r.font_size, r.width, r.rotation || 0]),
+    images: 0,
+    background: board.background || null,
+    grid: board.grid_config || null,
+    sims: board.sim_embeds || [],
+  });
+  return { key, texts };
+}
+
 export function createDemoClient() {
   const tables = starterTables();
+  const pristine = pristineState(tables);
+  const classroom = createDemoClassroom();
   const leaveDemo = () => {
     window.location.assign("/");
     return Promise.resolve({ data: null, error: null });
@@ -313,11 +410,14 @@ export function createDemoClient() {
 
   return {
     __demo: true,
+    // A copy of the visitor's board for "Sign in free to keep your work"
+    // (null if they haven't changed anything). See demoCarry.js.
+    __carry: () => carrySnapshot(tables, pristine),
     from: (table) => new DemoQuery(tables, table),
     rpc: () => later({ data: null, error: null }),
-    channel: (topic) => makeChannel(topic),
+    channel: (topic) => makeChannel(topic, classroom),
     removeChannel(channel) {
-      if (channel) channel.closed = true;
+      if (channel) channel.unsubscribe();
       return Promise.resolve("ok");
     },
     realtime: { connect() {}, disconnect() {} },
@@ -332,6 +432,7 @@ export function createDemoClient() {
       startAutoRefresh: () => Promise.resolve(),
       stopAutoRefresh: () => Promise.resolve(),
       signInWithOAuth: leaveDemo,
+      signInWithIdToken: leaveDemo,
       signOut: leaveDemo,
     },
   };
