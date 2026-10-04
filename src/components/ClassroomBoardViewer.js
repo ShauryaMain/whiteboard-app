@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import ReferencePane from "./ReferencePane";
 import { renderGrid } from "@/lib/gridRenderer";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
-import { translateStroke, translateText, translateImage } from "@/lib/boardObjects";
+import { translateStroke, translateText, translateImage, strokeDash } from "@/lib/boardObjects";
 import cls from "./Classroom.module.css";
 
 const MIN_SCALE = 0.1;
@@ -65,7 +65,11 @@ function drawStroke(ctx, stroke) {
     ctx.strokeStyle = stroke.color;
     ctx.lineWidth = stroke.width;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const dash = strokeDash(stroke);
+    if (dash) ctx.setLineDash(dash);
     smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
+    if (dash) ctx.setLineDash([]);
   }
   ctx.globalAlpha = 1;
 }

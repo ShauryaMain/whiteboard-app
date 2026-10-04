@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
   Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
-  Check, ChevronDown, Maximize, RotateCw, NotebookText, ImagePlus, ClipboardPaste, BoxSelect,
+  Check, ChevronDown, Maximize, RotateCw, NotebookText, ImagePlus, ClipboardPaste, BoxSelect, Shapes,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
@@ -61,7 +61,7 @@ export default function Toolbar(props) {
     onInsertImage, onPaste, onSelectAll, hasSelection,
     eraserMode, onSetEraserMode, scribbleErase, onSetScribbleErase,
     calculatorActive, onToggleCalculator,
-    canInsertReference, hasReferenceDoc, onReferenceToolClick, onOpenSimModal,
+    canInsertReference, hasReferenceDoc, onReferenceToolClick, onOpenSimModal, onOpenShapeModal,
     onCopyLink, onStartLiveClass, onEndSession,
     liveClassCode, classRoster, onViewStudent, onEndLiveClass,
     penSeen, pencilOnly, onSetPencilOnly,
@@ -194,6 +194,15 @@ export default function Toolbar(props) {
                     title="Image"
                     desc="Add a picture or diagram from your files. You can also paste one or drag it in."
                     onPress={runAndClose(onInsertImage)}
+                  />
+                )}
+                {onOpenShapeModal && (
+                  <MenuItem
+                    insert
+                    icon={<Shapes {...SMALL_ICON} />}
+                    title="Shape"
+                    desc="Polygons, circles and 3D solids, with angles and lengths labelled."
+                    onPress={runAndClose(onOpenShapeModal)}
                   />
                 )}
                 <MenuItem

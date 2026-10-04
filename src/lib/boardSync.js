@@ -227,6 +227,40 @@ export async function saveRow(tracker, table, row) {
   return error;
 }
 
+// Upserts several rows in one request — a pasted selection or an inserted
+// shape is many strokes at once. Each row is still tracked on its own, so
+// if the request fails every one of them is queued and retried exactly
+// like a single save.
+export async function saveRows(tracker, table, rows) {
+  if (!rows.length) return null;
+  if (rows.length === 1) return saveRow(tracker, table, rows[0]);
+  for (const row of rows) tracker.pending.set(row.id, (tracker.pending.get(row.id) || 0) + 1);
+  let error = null;
+  try {
+    const result = await supabase.from(table).upsert(rows);
+    error = result.error;
+  } catch (err) {
+    error = err || new Error("save failed");
+  }
+  const retry = !!error && isRetryable(error);
+  let changed = false;
+  for (const row of rows) {
+    const left = (tracker.pending.get(row.id) || 1) - 1;
+    if (left > 0) tracker.pending.set(row.id, left);
+    else tracker.pending.delete(row.id);
+    if (!error) {
+      if (tracker.failed.delete(row.id)) changed = true;
+    } else if (retry) {
+      const prev = tracker.failed.get(row.id);
+      tracker.failed.set(row.id, { table, row, attempts: prev ? prev.attempts : 0 });
+      changed = true;
+    }
+  }
+  if (changed) emit(tracker);
+  if (retry) scheduleRetry(tracker);
+  return error;
+}
+
 // Drop queued saves for things that no longer exist (rubbed out, undone).
 export function forgetUnsaved(tracker, ids) {
   let changed = false;

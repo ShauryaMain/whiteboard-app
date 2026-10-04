@@ -19,6 +19,8 @@ import TeacherStudentBoardView from "./TeacherStudentBoardView";
 import GridToolModal from "./GridToolModal";
 import SimEmbed from "./SimEmbed";
 import SimEmbedModal from "./SimEmbedModal";
+import ShapeToolModal from "./ShapeToolModal";
+import { shapeToBoardObjects, browserTextEnv } from "@/lib/shapeBuilder";
 import { renderGrid, withDefaults as withGridDefaults, WORLD_UNITS_PER_CM } from "@/lib/gridRenderer";
 import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
 import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
@@ -35,7 +37,7 @@ import {
   noteList,
   nudgeRealtime,
   retryUnsaved,
-  saveRow,
+  saveRow, saveRows,
   setExistsCheck,
   subscribeUnsaved,
   syncSince,
@@ -51,7 +53,7 @@ import { renderBoardThumbnail } from "@/lib/boardThumbnail";
 import {
   emptySelection, selectionCount, selectionFromData, strokeBounds, imageBounds, textBounds, unionBounds,
   rectFromPoints, hitTestStrokes, hitTestImages, objectsInRect, translateStroke, translateText,
-  translateImage, cloneObjects, chunkObjects, newId, writeInternalClipboard, readInternalClipboard,
+  translateImage, cloneObjects, chunkObjects, newId, strokeDash, writeInternalClipboard, readInternalClipboard,
   CLIPBOARD_MARKER, prepareImageFile, makeInlineImage, imageFilesFrom, writeClipboardMarker, readSystemClipboard,
 } from "@/lib/boardObjects";
 import chrome from "./StudioChrome.module.css";
@@ -126,6 +128,9 @@ function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
     strokeSegment(ctx, pts[i], pts[i + 1], (w0 + w1) / 2);
   }
 }
+
+// How many strokes / text boxes go to the server in one request.
+const SAVE_BATCH = 40;
 
 function roundPoints(points) {
   return points.map((p) => {
@@ -323,6 +328,9 @@ export default function Whiteboard({ boardId, demo = false }) {
   const pendingSimBroadcast = useRef(null);
   const simBroadcastTimer = useRef(null);
   const [simModalOpen, setSimModalOpen] = useState(false);
+  // The Shape dialog: null when closed, otherwise the zoom and the room on
+  // screen noted as it opened (never read from a ref during render).
+  const [shapeModal, setShapeModal] = useState(null);
   // Reference pane layout: side-by-side on wide screens, stacked (document
   // on top, board below) on narrower tablets / portrait, so it's usable on
   // every tablet instead of hidden below 680px as before.
@@ -590,7 +598,12 @@ export default function Whiteboard({ boardId, demo = false }) {
       ctx.strokeStyle = stroke.color;
       ctx.lineWidth = stroke.width;
       ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      // dashed lines: hidden edges and construction lines of inserted shapes
+      const dash = strokeDash(stroke);
+      if (dash) ctx.setLineDash(dash);
       smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
+      if (dash) ctx.setLineDash([]);
     }
   }
 
@@ -950,25 +963,22 @@ export default function Whiteboard({ boardId, demo = false }) {
     console.error(`Error saving ${kind}: ${detail || String(error)}`);
   }
 
-  async function insertStroke(stroke) {
-    if (!boardId || !stroke?.id) return;
-    const error = await saveRow(sync, "strokes", {
-      id: stroke.id,
-      board_id: boardId,
-      data: {
-        tool: stroke.tool,
-        color: stroke.color,
-        width: stroke.width,
-        opacity: stroke.opacity,
-        points: roundPoints(stroke.points),
-      },
-    });
-    if (error) reportSaveError("stroke", error);
+  // The row a stroke / text box is saved as.
+  function strokeRow(stroke) {
+    const dash = strokeDash(stroke);
+    const data = {
+      tool: stroke.tool,
+      color: stroke.color,
+      width: stroke.width,
+      opacity: stroke.opacity,
+      points: roundPoints(stroke.points),
+    };
+    if (dash) data.dash = dash;
+    return { id: stroke.id, board_id: boardId, data };
   }
 
-  async function insertText(t) {
-    if (!boardId || !t?.id) return;
-    const error = await saveRow(sync, "texts", {
+  function textRow(t) {
+    return {
       id: t.id,
       board_id: boardId,
       x: t.x,
@@ -978,8 +988,30 @@ export default function Whiteboard({ boardId, demo = false }) {
       font_size: t.fontSize,
       width: t.width,
       rotation: t.rotation || 0,
-    });
+    };
+  }
+
+  async function insertStroke(stroke) {
+    if (!boardId || !stroke?.id) return;
+    const error = await saveRow(sync, "strokes", strokeRow(stroke));
+    if (error) reportSaveError("stroke", error);
+  }
+
+  async function insertText(t) {
+    if (!boardId || !t?.id) return;
+    const error = await saveRow(sync, "texts", textRow(t));
     if (error) reportSaveError("text", error);
+  }
+
+  // Several things added at once (a paste, a duplicate, an inserted shape)
+  // go to the server a batch at a time instead of one request each.
+  function saveBatch(table, rows, kind) {
+    if (!boardId) return;
+    for (let i = 0; i < rows.length; i += SAVE_BATCH) {
+      saveRows(sync, table, rows.slice(i, i + SAVE_BATCH)).then((error) => {
+        if (error) reportSaveError(kind, error);
+      });
+    }
   }
 
   function performClear() {
@@ -1210,8 +1242,8 @@ export default function Whiteboard({ boardId, demo = false }) {
   }
 
   function persistAdd(data) {
-    data.strokes.forEach((s) => insertStroke(s));
-    data.texts.forEach((t) => insertText(t));
+    saveBatch("strokes", data.strokes.filter((s) => s && s.id).map(strokeRow), "stroke");
+    saveBatch("texts", data.texts.filter((t) => t && t.id).map(textRow), "text");
     data.images.forEach((img) => insertImage(img));
   }
 
@@ -1801,6 +1833,31 @@ export default function Whiteboard({ boardId, demo = false }) {
 
   function handleCloseSimModal() {
     setSimModalOpen(false);
+  }
+
+  // Insert ▸ Shape
+  function handleOpenShapeModal() {
+    const { width, height } = getPaneSize();
+    setShapeModal({ zoom: scaleRef.current, maxSize: Math.floor(Math.min(width, height) * 0.85) });
+  }
+
+  function handleCloseShapeModal() {
+    setShapeModal(null);
+  }
+
+  // The shape lands in the middle of the view as ordinary pen strokes and
+  // text labels, already selected so it can be dragged straight into place.
+  function handleAddShape({ built, color: shapeColor, lineWidth }) {
+    const objects = shapeToBoardObjects(built, {
+      at: viewportCenterWorld(),
+      scale: scaleRef.current,
+      color: shapeColor,
+      lineWidth,
+      makeId: newId,
+      env: browserTextEnv(),
+    });
+    setShapeModal(null);
+    addAsNewSelection(objects);
   }
 
   function handleAddSimEmbed({ url, title }) {
@@ -3869,6 +3926,7 @@ export default function Whiteboard({ boardId, demo = false }) {
         hasReferenceDoc={!!referenceDoc}
         onReferenceToolClick={handleReferenceToolClick}
         onOpenSimModal={handleOpenSimModal}
+        onOpenShapeModal={handleOpenShapeModal}
         onCopyLink={handleCopyLink}
         onStartLiveClass={handleStartLiveClass}
         onEndSession={handleEndSession}
@@ -4203,6 +4261,16 @@ export default function Whiteboard({ boardId, demo = false }) {
           />
         ))}
         {simModalOpen && <SimEmbedModal onAdd={handleAddSimEmbed} onClose={handleCloseSimModal} />}
+        {shapeModal && (
+          <ShapeToolModal
+            zoomScale={shapeModal.zoom}
+            maxSize={shapeModal.maxSize}
+            penColor={color}
+            penWidth={strokeWidth}
+            onAdd={handleAddShape}
+            onClose={handleCloseShapeModal}
+          />
+        )}
         {isOwner && (
           <input
             ref={referenceFileInputRef}

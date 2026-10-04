@@ -20,6 +20,17 @@ export function selectionCount(sel) {
   return sel.strokes.length + sel.texts.length + sel.images.length;
 }
 
+// A stroke's dash pattern ([dash, gap] in board units) if it has a usable
+// one — shapes use it for hidden edges and construction lines. Anything
+// odd (it arrives from other people's boards too) is treated as solid.
+export function strokeDash(stroke) {
+  const d = stroke ? stroke.dash : null;
+  if (!Array.isArray(d) || d.length !== 2) return null;
+  const on = Number(d[0]), off = Number(d[1]);
+  if (!Number.isFinite(on) || !Number.isFinite(off) || on < 0 || off <= 0) return null;
+  return [on, off];
+}
+
 // ---------- bounds ----------
 
 export function strokeBounds(stroke) {

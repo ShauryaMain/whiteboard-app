@@ -5,7 +5,7 @@
 // `boards.thumbnail`.
 
 import { drawBackgroundPattern } from "./boardBackground";
-import { strokeBounds, imageBounds, textBounds, unionBounds } from "./boardObjects";
+import { strokeBounds, imageBounds, textBounds, unionBounds, strokeDash } from "./boardObjects";
 import { renderGrid } from "./gridRenderer";
 
 export const THUMB_W = 400;
@@ -69,7 +69,10 @@ function drawStroke(ctx, s) {
     ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
   }
   ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  const dash = strokeDash(s);
+  if (dash) ctx.setLineDash(dash);
   ctx.stroke();
+  if (dash) ctx.setLineDash([]);
   ctx.globalAlpha = 1;
 }
 
