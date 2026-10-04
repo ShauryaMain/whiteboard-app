@@ -3,6 +3,9 @@
 # Every claim here must match what the app really does. Things to remember:
 # no protractor, no sticky notes, no video or audio calls, no offline mode,
 # not open source, the Graph tool places axes but does not plot functions,
+# a shape from Insert > Shape becomes ordinary ink (it can't be re-opened
+# and edited as a shape), the "What's new" pop-up and walkthroughs are for
+# signed-in users on their boards page,
 # saving happens in the background after each stroke, and students' boards
 # in a live class are not kept afterwards.
 #
@@ -27,13 +30,21 @@ IMG = {
                   "Graph tool settings in Clean Slate: Cartesian or polar, cell size, value per cell, trig labels in pi, and a unit circle option"),
     "join": ("clean-slate-join-class-code", [560, 900], 900, 806,
              "Clean Slate join screen where a student types a six-character class code and their first name, with no account needed"),
+    "shapes": ("clean-slate-shapes-on-whiteboard", [900, 1600], 1600, 1000,
+               "Clean Slate whiteboard with a hexagon, a triangle, a parallelogram, a sector, a triangular prism, a cuboid, a cylinder and a cone, each with its angles and lengths labelled"),
+    "polygon": ("clean-slate-shape-tool-polygon", [700, 1200], 1200, 750,
+                "Shape tool in Clean Slate showing a regular hexagon with its 120 degree interior angle and 60 degree exterior angle, side length, perimeter and area"),
+    "solid": ("clean-slate-shape-tool-3d-solid", [700, 1200], 1200, 750,
+              "Shape tool in Clean Slate showing a triangular prism that can be turned, with dashed hidden edges, its volume and its surface area"),
+    "anglecheck": ("clean-slate-shape-tool-angle-check", [700, 1200], 1200, 750,
+                   "Shape tool in Clean Slate explaining that no regular polygon has a 100 degree interior angle and offering the regular pentagon instead"),
 }
 
 # slug -> short label (used in the nav, footer and related links)
 LABELS = {
     "online-whiteboard-for-teaching": ("Whiteboard for teaching", "A free online whiteboard built around how lessons actually run."),
     "online-whiteboard-for-tutoring": ("Whiteboard for tutoring", "One-to-one and small-group lessons, with the worksheet beside the board."),
-    "online-whiteboard-for-math": ("Whiteboard for math", "Ruler, compass, graph paper and a calculator with exact answers."),
+    "online-whiteboard-for-math": ("Whiteboard for math", "Exact shapes, ruler, compass, graph paper and a calculator with exact answers."),
     "online-whiteboard-for-classroom": ("Whiteboard for the classroom", "Every student gets their own board. Join with a code, no accounts."),
     "free-online-whiteboard-no-sign-up": ("Whiteboard with no sign-up", "Open a board and draw. No account, no login, no download."),
     "whiteboard-for-ipad": ("Whiteboard for iPad", "Made for Apple Pencil, with palm rejection, in Safari."),
@@ -55,7 +66,7 @@ PAGES = [
 <p>Most online whiteboards are designed for brainstorming at work: sticky notes, templates and voting. A lesson needs different things, and Clean Slate is built around them.</p>
 <ul class="ticks">
   <li><b>The worksheet beside the board.</b> Open a PDF or a photo in a side pane and teach from it, without switching windows.</li>
-  <li><b>Tools that say what they do.</b> Every button has a label and a one-line hint, so a new class can use it straight away.</li>
+  <li><b>Tools that say what they do.</b> Every button has a label and a one-line hint, so a new class can use it straight away. When a new tool arrives, a short walkthrough shows you how it works.</li>
   <li><b>A pen that keeps up.</b> Drawing happens on your device first and saving runs in the background, so writing never waits on your Wi-Fi.</li>
   <li><b>A board for every student.</b> Start a live class and each student gets their own board to work on.</li>
 </ul>"""),
@@ -69,7 +80,7 @@ PAGES = [
             ("One board for every subject", """
 <p>Pick the paper that suits the lesson: blank, lined, squared, dot grid or isometric.</p>
 <ul class="ticks">
-  <li><b>Maths:</b> a ruler, a compass, Cartesian and polar graph paper, and a scientific calculator with exact answers.</li>
+  <li><b>Maths:</b> exact shapes with the angles and lengths marked, a ruler, a compass, Cartesian and polar graph paper, and a scientific calculator with exact answers.</li>
   <li><b>Science:</b> label a diagram, or embed a PhET simulation next to your notes.</li>
   <li><b>English and humanities:</b> paste in a passage or a source, highlight it and annotate the margins.</li>
   <li><b>Languages:</b> lined paper for handwriting, and typed text boxes for vocabulary.</li>
@@ -107,6 +118,7 @@ PAGES = [
 <p>What you draw appears on your own device first, and saving happens quietly in the background. The pen doesn't wait for the internet, so writing feels the same at the end of a two-hour session as it did at the start.</p>"""),
             ("The tools a maths or science tutor reaches for", """
 <p>The Maths menu has a ruler, a compass, graph paper you can set up as Cartesian or polar axes, and a scientific calculator that gives exact answers such as ½ or 2√2. You can send a calculator answer straight to the board.</p>
+<p>Need a diagram for the question? Insert, then Shape draws a polygon, triangle, quadrilateral, circle or 3D solid to the sides and angles you type, with the measurements labelled.</p>
 {fig:calculator:The calculator gives exact answers and adds them to the board.}
 <p>For other subjects, switch the page to lined paper, paste in a text to annotate, or embed a PhET simulation.</p>"""),
             ("Use it alongside Zoom, Meet or Teams", """
@@ -115,7 +127,7 @@ PAGES = [
 <p>For a group, start a live class. Students join with a six-character code and no account. Each one gets their own board, and you can open any of them while they work and pin a comment where it matters.</p>"""),
         ],
         "faq": [
-            ("What is the best free online whiteboard for math tutoring?", "That depends on what you need. Clean Slate is free and has a ruler, a compass, Cartesian and polar graph paper, a scientific calculator with exact answers, and a pane for the worksheet beside the board. It has no built-in video call."),
+            ("What is the best free online whiteboard for math tutoring?", "That depends on what you need. Clean Slate is free and has exact labelled shapes, a ruler, a compass, Cartesian and polar graph paper, a scientific calculator with exact answers, and a pane for the worksheet beside the board. It has no built-in video call."),
             ("Does it work with Zoom?", "Yes. Run Clean Slate in your browser beside Zoom, Google Meet or Teams, and either share your screen or share the board with your student."),
             ("Does my student need an account?", "Not for a live class: they join with a code and their first name. To write on the same board as you, they sign in with a free Google account."),
             ("Can I keep a separate board for each student?", "Yes. Make as many boards as you like and name them. Each one saves automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it."),
@@ -126,12 +138,27 @@ PAGES = [
     {
         "slug": "online-whiteboard-for-math",
         "title": "Online Whiteboard for Math with Geometry Tools | Clean Slate",
-        "desc": "A free online whiteboard for math. Ruler, compass, Cartesian and polar graph paper, and a scientific calculator with exact answers. Try it with no sign-up.",
-        "kicker": "ruler · compass · graph paper · calculator",
+        "desc": "A free online whiteboard for math. Exact shapes with the angles marked, ruler, compass, graph paper and a scientific calculator. Try it with no sign-up.",
+        "kicker": "shapes · ruler · compass · graph paper · calculator",
         "h1": "A free online whiteboard for math",
-        "lede": "Clean Slate is an online whiteboard with real math tools built in: a ruler and compass, graph paper you can set up your way, and a scientific calculator that gives exact answers. It's free, and you can try it without signing up.",
-        "hero": "graph",
+        "lede": "Clean Slate is an online whiteboard with real math tools built in: exact shapes with the angles and lengths marked, a ruler and compass, graph paper you can set up your way, and a scientific calculator that gives exact answers. It's free, and you can try it without signing up.",
+        "hero": "shapes",
         "sections": [
+            ("Exact shapes: polygons, triangles, circles and 3D solids", """
+<p>Choose Insert, then Shape. Pick a family, type the numbers you want, and a live preview shows the shape before it goes on the board.</p>
+<ul class="ticks">
+  <li><b>Polygons</b> from 3 to 20 sides. The number of sides, the interior angle and the exterior angle are linked: change one and the others follow.</li>
+  <li><b>Triangles:</b> equilateral, isosceles, right-angled, or any triangle from three sides, two sides and the angle between them, or two angles and the side between them.</li>
+  <li><b>Quadrilaterals:</b> square, rectangle, parallelogram, rhombus, trapezium (trapezoid) and kite, with the equal-side marks and parallel arrows worked out for you.</li>
+  <li><b>Circles:</b> circle, semicircle, sector, segment, arc and ellipse.</li>
+  <li><b>3D solids:</b> cube, cuboid, prism, pyramid, cylinder, cone and sphere. Drag the solid to turn it, with the hidden edges dashed.</li>
+</ul>
+{fig:polygon:Type the sides or the angle, and the rest follows.}
+<p>You choose what gets labelled: angles, side lengths, corner letters and equal-side marks. Under the preview are the facts for that shape, such as perimeter, area and angle sum, or volume and surface area for a solid.</p>
+{fig:solid:Turn a solid round before you add it.}
+<p>Ask for something that can't exist, such as a regular polygon with a 100° interior angle or a triangle whose sides can't meet, and it tells you why.</p>
+{fig:anglecheck:Ask for an angle that can't exist and it explains why.}
+<p>The shape lands on the board as ordinary ink with text labels, so you can move it, copy it or rub parts out. To change its measurements afterwards, insert a new one.</p>"""),
             ("Geometry tools: ruler and compass", """
 <p>Open the Maths menu and pick Ruler or Compass. Both sit on the board like the real things.</p>
 <ul class="ticks">
@@ -159,6 +186,8 @@ PAGES = [
 <p>Maths is quicker to write than to type. Clean Slate is made for a stylus: the pen follows your hand, a scribble over a mistake rubs it out, and on an iPad your palm can rest on the screen. Typed text boxes are there when you want them.</p>"""),
         ],
         "faq": [
+            ("Can it draw accurate shapes?", "Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, and labels the measurements for you."),
+            ("Can I change a shape after adding it?", "It becomes ordinary ink, so you can move it, copy it and rub parts out. To change its measurements, insert a new shape."),
             ("Does it have a ruler and a compass?", "Yes. Both are in the Maths menu. The ruler draws straight lines and measures lengths, and the compass draws circles and arcs."),
             ("Does it have graph paper?", "Yes, in two ways. The Page menu sets the whole board to squared paper, and the Graph tool places Cartesian or polar axes with the scale you choose."),
             ("Can it plot a function for me?", "No. The Graph tool gives you labelled axes and you draw the curve yourself, as you would on paper."),
@@ -190,7 +219,7 @@ PAGES = [
 <p>A device with a browser. It can be an iPad, an Android tablet, a Chromebook or a laptop. They don't install anything, and they don't create an account or give an email address.</p>"""),
             ("What it's built for", """
 <p>Clean Slate's live class is built for a normal class of 20 to 30 students working at the same time. There is no charge and no session time limit.</p>
-<p>Your own board has the full set of tools: the worksheet pane, the ruler and compass, graph paper, the calculator and every paper style. Students' boards are kept simple: pen, eraser, colours, undo and clear.</p>"""),
+<p>Your own board has the full set of tools: the worksheet pane, exact shapes, the ruler and compass, graph paper, the calculator and every paper style. Students' boards are kept simple: pen, eraser, colours, undo and clear.</p>"""),
         ],
         "faq": [
             ("Do students need to sign in?", "No. They join with a six-character class code and their first name."),
@@ -205,7 +234,7 @@ PAGES = [
     {
         "slug": "free-online-whiteboard-no-sign-up",
         "title": "Free Online Whiteboard, No Sign-Up or Login | Clean Slate",
-        "desc": "A free online whiteboard with no sign-up, no login and no download. Open it and draw. Ruler, compass, graph paper, calculator and PDF pane included.",
+        "desc": "A free online whiteboard with no sign-up, no login and no download. Open it and draw. Shapes, ruler, compass, graph paper and calculator included.",
         "kicker": "no account · no login · no download",
         "h1": "A free online whiteboard with no sign-up",
         "lede": "Open the board and start drawing. There is no account to create, no login and nothing to download. Sign in only if you want to save your boards or teach a live class.",
@@ -217,7 +246,7 @@ PAGES = [
 <ul class="ticks">
   <li>Pen, highlighter, eraser, text boxes, and scribble to erase.</li>
   <li>Blank, lined, squared, dot grid and isometric paper.</li>
-  <li>A ruler, a compass, graph paper and a scientific calculator.</li>
+  <li>Exact shapes, a ruler, a compass, graph paper and a scientific calculator.</li>
   <li>Pictures you paste or drop in, and a PDF or image open beside the board.</li>
   <li>Select, move, copy, paste, undo and redo.</li>
 </ul>
@@ -307,7 +336,7 @@ PAGES = [
     <tr><th scope="row">Price</th><td>Free</td><td>Included with Microsoft 365 for work or school</td></tr>
   </tbody>
 </table>
-<p>Clean Slate also adds tools aimed at teaching: a compass, Cartesian and polar graph paper, a scientific calculator, and lined, squared, dot grid or isometric paper.</p>"""),
+<p>Clean Slate also adds tools aimed at teaching: shapes drawn to the angles and lengths you set, a compass, Cartesian and polar graph paper, a scientific calculator, and lined, squared, dot grid or isometric paper.</p>"""),
             ("Moving your boards across", """
 <ol class="steps-list">
   <li><b>Sign in to Clean Slate</b> with any Google account.</li>
@@ -349,7 +378,7 @@ PAGES = [
   <li>There are no separate frames. A board is one page that you pan and zoom.</li>
   <li>Students' own boards last for the live class and aren't saved afterwards. Your board is saved.</li>
 </ul>
-<p>What you gain is a set of teaching tools Jamboard didn't have: a ruler and compass, graph paper, a scientific calculator, five paper styles, and a pane for the worksheet beside the board.</p>
+<p>What you gain is a set of teaching tools Jamboard didn't have: shapes drawn to the angles and lengths you set, a ruler and compass, graph paper, a scientific calculator, five paper styles, and a pane for the worksheet beside the board.</p>
 {fig:paper:Blank, lined, squared, dot grid or isometric paper.}"""),
             ("Works on Chromebooks and tablets", """
 <p>Clean Slate runs in Chrome on Chromebooks, and in the browser on iPads, Android tablets, Windows and Mac. Nothing is installed.</p>"""),
@@ -372,6 +401,7 @@ HOME_FAQ = [
     ("Does it work on an iPad with Apple Pencil?", 'Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See <a href="[[url:whiteboard-for-ipad]]">the whiteboard for iPad</a>.'),
     ("Can I open a PDF on the whiteboard?", "Yes. Open a PDF of up to 30 pages, or an image, in a pane beside the board, and write on it."),
     ("Is it a replacement for Microsoft Whiteboard or Jamboard?", 'Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works with any Google account in any browser. See <a href="[[url:microsoft-whiteboard-alternative]]">the Microsoft Whiteboard alternative</a> and <a href="[[url:jamboard-alternative]]">the Jamboard alternative</a>.'),
+    ("Can it draw accurate shapes for maths?", 'Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, with the measurements labelled. See <a href="[[url:online-whiteboard-for-math]]">the whiteboard for math</a>.'),
     ("Does it have video or audio calls?", "No. Use it beside Zoom, Google Meet or Teams."),
     ("Are my boards saved?", "Yes. When you're signed in, boards save automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it."),
     ("Which devices and browsers does it work on?", "Chrome, Edge, Firefox and Safari, on iPads, Android tablets, Chromebooks, Windows, Mac and Linux. There is nothing to install."),

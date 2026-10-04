@@ -16,7 +16,7 @@ img{max-width:100%}
   --accent:#2451D6; --accent-ink:#1F46B8; --on-accent:#FFFFFF;
   --pen:#C2410C; --hand-blue:#2451D6; --hand-orange:#A35A00;
   --tape:rgba(255,229,138,.88); --tape-ink:#6B4E00; --hilite:rgba(255,229,138,.95);
-  --sticky-y:#FFF3B0; --sticky-b:#DDE7FF; --sticky-p:#FFE1D6; --sticky-ink:#1B1D24; --sticky-muted:#3A3B3F;
+  --sticky-y:#FFF3B0; --sticky-b:#DDE7FF; --sticky-p:#FFE1D6; --sticky-g:#DDF1DC; --sticky-ink:#1B1D24; --sticky-muted:#3A3B3F;
   --chalk:#1B1D24; --chalk-line:rgba(255,255,255,.05); --chalk-fg:#FFFFFF; --chalk-muted:#D2D1CC; --chalk-hi:#FFE58A; --chalk-panel:#2A2C33; --chalk-panel-line:#3A3D45;
   --soft-shadow:0 10px 24px rgba(27,29,36,.10);
   /* screenshot surfaces: the app is light, so these stay light in both themes */
@@ -35,7 +35,7 @@ img{max-width:100%}
   --accent:#7C9BFF; --accent-ink:#A9BCFF; --on-accent:#0E1014;
   --pen:#FF8A5C; --hand-blue:#9DB2FF; --hand-orange:#F0B060;
   --tape:rgba(255,229,138,.8); --hilite:rgba(255,214,90,.45);
-  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2;
+  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2; --sticky-g:#CBE3C9;
   --chalk:#0D0E11; --chalk-panel:#1E2026; --chalk-panel-line:#30333B;
   --soft-shadow:0 10px 24px rgba(0,0,0,.4);
   color-scheme:dark;
@@ -47,7 +47,7 @@ img{max-width:100%}
   --accent:#7C9BFF; --accent-ink:#A9BCFF; --on-accent:#0E1014;
   --pen:#FF8A5C; --hand-blue:#9DB2FF; --hand-orange:#F0B060;
   --tape:rgba(255,229,138,.8); --hilite:rgba(255,214,90,.45);
-  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2;
+  --sticky-y:#F1E3A0; --sticky-b:#CAD7F6; --sticky-p:#EFCFC2; --sticky-g:#CBE3C9;
   --chalk:#0D0E11; --chalk-panel:#1E2026; --chalk-panel-line:#30333B;
   --soft-shadow:0 10px 24px rgba(0,0,0,.4);
   color-scheme:dark;
@@ -253,7 +253,12 @@ section{padding-block:clamp(64px,9vw,120px)}
 .sticky.y{background:var(--sticky-y);transform:rotate(-2deg)}
 .sticky.b{background:var(--sticky-b);transform:rotate(1.5deg)}
 .sticky.p{background:var(--sticky-p);transform:rotate(-1deg)}
-@media (max-width:900px){.stickies{grid-template-columns:1fr;max-width:520px;margin-inline:auto}}
+.sticky.g{background:var(--sticky-g);transform:rotate(1.2deg)}
+.stickies{grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(24px,2.6vw,36px)}
+.stickies .sticky{padding:26px 24px 30px}
+.stickies .sticky h3{font-size:24px}
+@media (max-width:1180px){.stickies{grid-template-columns:repeat(2,minmax(0,1fr));max-width:820px;margin-inline:auto}}
+@media (max-width:640px){.stickies{grid-template-columns:1fr;max-width:520px}}
 
 /* homework CTA */
 .homework{max-width:860px;margin-inline:auto;background:var(--sticky-y);color:var(--sticky-ink);padding:clamp(32px,5vw,56px) clamp(22px,5vw,64px) clamp(36px,5vw,60px);box-shadow:0 18px 40px rgba(27,29,36,.16);transform:rotate(-1deg);display:flex;flex-direction:column;gap:24px}
@@ -342,6 +347,16 @@ footer a:hover{text-decoration:underline}
 .gallery .shot-frame,.fig .shot-frame{box-shadow:6px 6px 0 var(--ink);border-radius:14px}
 .gallery figcaption,.fig figcaption{margin-top:16px;font-family:var(--f-hand);font-size:25px;line-height:1.1;color:var(--hand-blue)}
 @media (max-width:760px){.gallery{grid-template-columns:1fr}}
+
+/* a single tool shown large, with a real screenshot */
+.feature{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:clamp(32px,5vw,72px);align-items:center}
+.feature-copy h3{font-weight:800;font-size:clamp(28px,3vw,38px);line-height:1.1}
+.feature-copy>p{margin-top:16px;font-size:18px;color:var(--ink-2)}
+.feature-copy ul.ticks li{font-size:17px;color:var(--ink-2)}
+.feature-shot{position:relative;margin:0}
+.feature-shot .shot-frame{box-shadow:8px 8px 0 var(--ink)}
+.feature-shot .tape{left:50%;top:-13px;margin-left:-48px;transform:rotate(-3deg)}
+@media (max-width:980px){.feature{grid-template-columns:1fr}.feature-shot .shot-frame{box-shadow:5px 5px 0 var(--ink)}}
 
 /* links inside headings and cards */
 .why h3 a,.subject h3 a{color:inherit;text-decoration:underline;text-decoration-color:var(--accent);text-decoration-thickness:2px;text-underline-offset:4px}

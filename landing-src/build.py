@@ -64,6 +64,7 @@ SIZES = {
     "heronarrow": "(min-width:640px) 560px, 92vw",
     "half": "(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw",
     "fig": "(min-width:900px) 820px, 92vw",
+    "feature": "(min-width:1360px) 660px, (min-width:981px) 50vw, 92vw",
     "fignarrow": "(min-width:640px) 520px, 92vw",
 }
 EAGER = {"home", "hero", "heronarrow"}
@@ -207,11 +208,12 @@ class Site:
             "isAccessibleForFree": True,
             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
             "image": SITE + "/" + OG_IMAGE,
-            "screenshot": [f"{SITE}/img/{IMG[k][0]}-{IMG[k][1][-1]}.webp" for k in ("worksheet", "calculator", "compass", "graph")],
+            "screenshot": [f"{SITE}/img/{IMG[k][0]}-{IMG[k][1][-1]}.webp" for k in ("worksheet", "shapes", "calculator", "compass", "graph")],
             "featureList": [
                 "Demo board with no sign-up",
                 "PDF or image worksheet beside the board",
                 "Live class: every student gets their own board and joins with a code",
+                "Exact shapes with angles and lengths labelled: polygons, triangles, quadrilaterals, circles and 3D solids",
                 "Ruler and compass",
                 "Cartesian and polar graph paper",
                 "Scientific calculator with exact answers",
