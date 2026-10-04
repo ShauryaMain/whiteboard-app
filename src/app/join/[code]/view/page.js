@@ -1,20 +1,26 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState, useSyncExternalStore } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { getOrCreateStudentId } from "@/lib/classroomCode";
 import ClassroomBoardViewer from "@/components/ClassroomBoardViewer";
-import StudentMiniBoard from "@/components/StudentMiniBoard";
+import Whiteboard from "@/components/Whiteboard";
+import { myClassBoard } from "@/lib/localBoard";
 import p from "@/components/Paper.module.css";
 
 // This route is where a student lands *after* the join handshake in
 // ../page.js resolves (it navigates here with ?board=<id>). It shows two
-// things at once, switchable by tab: the teacher's shared master board
-// (read-only, ClassroomBoardViewer) and this student's own mini-board
-// (StudentMiniBoard) where they draw and the teacher can leave comments.
-// Both stay mounted the whole time (just hidden via CSS) so switching
-// tabs never loses drawing state or re-triggers a reconnect.
+// things, switchable by tab: the teacher's shared board (read-only,
+// ClassroomBoardViewer) and this student's own board.
+//
+// The student's own board is the same board a teacher uses (Whiteboard),
+// in its "class board" mode: the full toolbar, minus pictures, simulations
+// and reference documents. Students never sign in, so it is kept in this
+// tab's memory rather than the database (src/lib/localBoard.js); the
+// teacher watches it over the live connection and pins comments on it.
+//
+// Both tabs stay mounted the whole time (the one not showing is only
+// hidden), so switching never loses any work or drops the connection.
 function JoinCodeViewInner() {
   const { code } = useParams();
   const router = useRouter();
@@ -22,10 +28,12 @@ function JoinCodeViewInner() {
   const boardId = searchParams.get("board");
   const [tab, setTab] = useState("master"); // master | mine
 
-  const studentIdRef = useRef(null);
-  if (studentIdRef.current === null && typeof window !== "undefined") {
-    studentIdRef.current = getOrCreateStudentId();
-  }
+  // Who this student is, and their own board for the lesson. It only
+  // exists in the browser (there is no student until the page is open), so
+  // the first, server-made version of the page goes without it.
+  const mine = useSyncExternalStore(neverChanges, () => myClassBoard(code), () => null);
+  const studentId = mine ? mine.student.studentId : null;
+  const studentName = mine ? mine.student.name : "Student";
 
   // Guards against someone landing on /view directly without a board
   // id (e.g. a bookmarked/typed URL) — bounce back to the join screen
@@ -39,29 +47,26 @@ function JoinCodeViewInner() {
   // Stay present on the classroom's roster channel for the whole time
   // this student is in class — the join handshake page only tracks
   // presence up until the moment it navigates here, but the teacher's
-  // in-class roster (for opening a student's mini-board) needs it kept
+  // in-class roster (for opening a student's board) needs it kept
   // alive for as long as the student is actually watching.
   useEffect(() => {
-    if (!code || !studentIdRef.current) return;
+    if (!code || !studentId) return;
     const normalizedCode = String(code).toUpperCase();
-    let name = "Student";
-    try {
-      name = sessionStorage.getItem("classroom_student_name") || "Student";
-    } catch (err) {}
+    const name = studentName;
 
     const channel = supabase.channel(`classroom-${normalizedCode}`, {
-      config: { presence: { key: studentIdRef.current } },
+      config: { presence: { key: studentId } },
     });
     channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
-        await channel.track({ studentId: studentIdRef.current, name, joinedAt: Date.now() });
+        await channel.track({ studentId, name, joinedAt: Date.now() });
       }
     });
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [code]);
+  }, [code, studentId, studentName]);
 
   if (!boardId) {
     return (
@@ -96,15 +101,36 @@ function JoinCodeViewInner() {
       </div>
 
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
-        <div style={{ position: "absolute", inset: 0, display: tab === "master" ? "block" : "none" }}>
+        <div style={paneStyle(tab === "master")} inert={tab !== "master"}>
           <ClassroomBoardViewer boardId={boardId} />
         </div>
-        <div style={{ position: "absolute", inset: 0, display: tab === "mine" ? "block" : "none" }}>
-          <StudentMiniBoard code={String(code).toUpperCase()} studentId={studentIdRef.current} />
+        <div style={paneStyle(tab === "mine")} inert={tab !== "mine"}>
+          {mine && (
+            <Whiteboard boardId={mine.boardId} student={mine.student} backend={mine.backend} active={tab === "mine"} />
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+// The student's board never changes once made, so there is nothing to
+// listen for.
+function neverChanges() {
+  return () => {};
+}
+
+// The tab that isn't showing is hidden rather than removed: it keeps its
+// size (so nothing has to be laid out again when it comes back) but can't
+// be seen, tapped or reached with the keyboard.
+function paneStyle(showing) {
+  return {
+    position: "absolute",
+    inset: 0,
+    visibility: showing ? "visible" : "hidden",
+    pointerEvents: showing ? "auto" : "none",
+    zIndex: showing ? 1 : 0,
+  };
 }
 
 export default function JoinCodeViewPage() {

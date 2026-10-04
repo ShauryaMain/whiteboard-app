@@ -1,20 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import ReferencePane from "./ReferencePane";
 import { renderGrid } from "@/lib/gridRenderer";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
-import { translateStroke, translateText, translateImage, strokeDash } from "@/lib/boardObjects";
+import {
+  translateStroke, translateText, translateImage, strokeDash,
+  strokeBounds, textBounds, imageBounds, unionBounds,
+} from "@/lib/boardObjects";
 import cls from "./Classroom.module.css";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
 const STATE_REQUEST_RETRY_MS = 3000;
+const TAP_SLOP_PX = 8; // a press that moves less than this is a tap, not a drag
+const FIT_MARGIN_PX = 36;
 
 function distance(p1, p2) {
   return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+// Adds (or replaces) things in a list, matched by id.
+function mergeById(prev, added) {
+  const ids = new Set(added.map((o) => o.id));
+  return [...prev.filter((o) => !ids.has(o.id)), ...added];
 }
 
 function smoothPath(ctx, pts, startIdx, endIdx) {
@@ -130,7 +141,49 @@ function drawGrid(ctx, grid, scale) {
   renderGrid(ctx, grid, { cellPx: size / cols, originXPx: x, originYPx: y, lineScale: 1 / scale });
 }
 
-export default function ClassroomBoardViewer({ boardId }) {
+// Numbered markers (the teacher's comments on a student's board). Drawn
+// the same size on screen whatever the zoom.
+function drawPins(ctx, pins, scale) {
+  pins.forEach((pin, index) => {
+    const r = 13 / scale;
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(pin.x, pin.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = pin.draft ? "#FFE082" : "#FFB300";
+    ctx.fill();
+    ctx.lineWidth = 2 / scale;
+    ctx.strokeStyle = "#1B1D24";
+    ctx.stroke();
+    ctx.fillStyle = "#1B1D24";
+    ctx.font = `bold ${12 / scale}px -apple-system, BlinkMacSystemFont, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(index + 1), pin.x, pin.y + 1 / scale);
+    ctx.restore();
+  });
+}
+
+// A read-only, live view of a board, for someone with no database access.
+//
+// Two uses:
+//   • a student watching the teacher's board (the default), and
+//   • the teacher looking at one student's board (TeacherStudentBoardView
+//     passes `embedded` and the extras below).
+//
+// Extras, all optional:
+//   embedded     sits inside another screen: fills its box, no Leave button
+//   waitingText  what the pill says while the board hasn't answered yet
+//   pins         [{ id, x, y, draft? }] numbered markers, in board coordinates
+//   onBoardTap   (boardPoint, screenPoint, paneSize) a tap that wasn't a drag
+//   onSnapshot   (payload) the board's answer to "what's on you?" arrived
+//   fitOnLoad    once loaded, zoom out if needed so nothing is off screen
+//   tour         a data-tour name for the board area (see src/lib/tours.js)
+//   ref          gets { send(event, payload), fitAll() }
+export default function ClassroomBoardViewer({
+  boardId, embedded = false, waitingText, pins, onBoardTap, onSnapshot, fitOnLoad = false, tour, ref, children,
+}) {
   const router = useRouter();
   const canvasRef = useRef(null);
   const boardPaneRef = useRef(null);
@@ -150,6 +203,16 @@ export default function ClassroomBoardViewer({ boardId }) {
   const panDragActive = useRef(false);
   const panDragStart = useRef(null);
   const hasReceivedSnapshot = useRef(false);
+  // While a big board is arriving in pieces: which snapshot, and what has
+  // come so far (see the snapshot handlers below).
+  const collectingRef = useRef(null);
+  const joinedOnceRef = useRef(false);
+  const pendingFitRef = useRef(false);
+  const tapRef = useRef(null);
+  const pinsRef = useRef(pins || []);
+  const onBoardTapRef = useRef(onBoardTap);
+  const onSnapshotRef = useRef(onSnapshot);
+  const fitOnLoadRef = useRef(fitOnLoad);
 
   const [strokes, setStrokes] = useState([]);
   const [texts, setTexts] = useState([]);
@@ -163,6 +226,11 @@ export default function ClassroomBoardViewer({ boardId }) {
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { textsRef.current = texts; }, [texts]);
   useEffect(() => { imagesRef.current = images; }, [images]);
+  useEffect(() => {
+    onBoardTapRef.current = onBoardTap;
+    onSnapshotRef.current = onSnapshot;
+    fitOnLoadRef.current = fitOnLoad;
+  });
 
   function getPaneSize() {
     const el = boardPaneRef.current;
@@ -207,9 +275,76 @@ export default function ClassroomBoardViewer({ boardId }) {
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
     drawTexts(ctx, textsRef.current);
     drawGrid(ctx, gridConfigRef.current, scale);
+    if (pinsRef.current.length) drawPins(ctx, pinsRef.current, scale);
     applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
     repositionImages();
   }
+
+  useEffect(() => {
+    pinsRef.current = pins || [];
+    fullRedraw();
+  }, [pins]);
+
+  // The box around everything on the board (null if it's empty).
+  function contentBounds() {
+    const boxes = [];
+    for (const stroke of strokesRef.current) {
+      if (stroke.tool !== "eraser") boxes.push(strokeBounds(stroke));
+    }
+    const ctx = ctxRef.current;
+    for (const t of textsRef.current) {
+      const lines = ctx ? wrapTextLines(ctx, t.text, t.fontSize, t.width || 240).length : 1;
+      boxes.push(textBounds(t, lines * t.fontSize * 1.3));
+    }
+    for (const img of imagesRef.current) boxes.push(imageBounds(img));
+    const grid = gridConfigRef.current;
+    if (grid && grid.size && grid.cols) {
+      const rows = grid.type === "polar" ? grid.cols : grid.rows || grid.cols;
+      boxes.push({ minX: grid.x, minY: grid.y, maxX: grid.x + grid.size, maxY: grid.y + (grid.size / grid.cols) * rows });
+    }
+    for (const pin of pinsRef.current) boxes.push({ minX: pin.x - 14, minY: pin.y - 14, maxX: pin.x + 14, maxY: pin.y + 14 });
+    return unionBounds(boxes);
+  }
+
+  // Brings the whole board into view: zooms out as far as needed (never in
+  // past 100%) and centres it. With onlyIfNeeded, leaves the view alone
+  // when everything can already be seen.
+  function fitAll({ onlyIfNeeded = false } = {}) {
+    const box = contentBounds();
+    const { width, height } = getPaneSize();
+    if (!box || width < 80 || height < 80) return;
+    if (onlyIfNeeded) {
+      const scale = scaleRef.current;
+      const pan = panRef.current;
+      const seen =
+        box.minX * scale + pan.x >= 0 && box.minY * scale + pan.y >= 0 &&
+        box.maxX * scale + pan.x <= width && box.maxY * scale + pan.y <= height;
+      if (seen) return;
+    }
+    const boxW = Math.max(1, box.maxX - box.minX);
+    const boxH = Math.max(1, box.maxY - box.minY);
+    const scale = Math.max(
+      MIN_SCALE,
+      Math.min(1, (width - FIT_MARGIN_PX * 2) / boxW, (height - FIT_MARGIN_PX * 2) / boxH)
+    );
+    scaleRef.current = scale;
+    panRef.current = {
+      x: (width - boxW * scale) / 2 - box.minX * scale,
+      y: (height - boxH * scale) / 2 - box.minY * scale,
+    };
+    fullRedraw();
+  }
+
+  useImperativeHandle(ref, () => ({
+    // Sends a message on this board's live channel (the teacher's comments
+    // on a student's board go this way).
+    send(event, payload) {
+      return channelRef.current?.send({ type: "broadcast", event, payload });
+    },
+    fitAll() {
+      fitAll();
+    },
+  }));
 
   // Realtime: connects to the board's own existing channel (the exact
   // same one the teacher's normal whiteboard already broadcasts on), and
@@ -226,18 +361,74 @@ export default function ClassroomBoardViewer({ boardId }) {
       channel.send({ type: "broadcast", event: "classroom-state-request", payload: {} });
     }
 
+    // The board's answer. A small board arrives whole, in this one message.
+    // A big one is too large for a single live message, so this message
+    // carries only the settings and says how many pieces of contents follow
+    // ("classroom-state-piece"), ending with "classroom-state-done".
+    //
+    // The board answers everyone at once whenever anybody asks, so a viewer
+    // that is already up to date ignores answers meant for someone else.
     channel.on("broadcast", { event: "classroom-state-snapshot" }, ({ payload }) => {
+      if (hasReceivedSnapshot.current) return;
       hasReceivedSnapshot.current = true;
-      setStrokes(payload.strokes || []);
-      setTexts(payload.texts || []);
       gridConfigRef.current = payload.grid || null;
       backgroundRef.current = normalizeBackground(payload.background);
-      setImages(payload.images || []);
       setReferenceDoc(payload.referenceDoc || null);
       setReferenceStrokes(payload.referenceStrokes || []);
+      if (payload.pieces) {
+        // Contents follow. What's on screen is left alone meanwhile, so
+        // re-joining after a dropped connection doesn't blank the board.
+        collectingRef.current = {
+          id: payload.snapshotId, expected: payload.pieces, received: 0,
+          strokes: new Set(), texts: new Set(), images: new Set(),
+        };
+      } else {
+        collectingRef.current = null;
+        setStrokes(payload.strokes || []);
+        setTexts(payload.texts || []);
+        setImages(payload.images || []);
+        if (fitOnLoadRef.current) pendingFitRef.current = true;
+      }
       setConnectionStatus("live");
+      onSnapshotRef.current?.(payload);
       fullRedraw();
     });
+
+    channel.on("broadcast", { event: "classroom-state-piece" }, ({ payload }) => {
+      const c = collectingRef.current;
+      if (!c || c.id !== payload.snapshotId) return;
+      c.received += 1;
+      const take = (kind, setList) => {
+        const list = payload[kind] || [];
+        if (!list.length) return;
+        list.forEach((o) => c[kind].add(o.id));
+        setList((prev) => mergeById(prev, list));
+      };
+      take("strokes", setStrokes);
+      take("texts", setTexts);
+      take("images", setImages);
+    });
+
+    channel.on("broadcast", { event: "classroom-state-done" }, ({ payload }) => {
+      const c = collectingRef.current;
+      if (!c || c.id !== payload.snapshotId) return;
+      collectingRef.current = null;
+      // After a re-join: anything still on screen that the board no longer
+      // has was rubbed out while we were away. (Only when every piece
+      // arrived, so a lost piece can never wipe things that do exist.)
+      if (c.received >= c.expected) {
+        setStrokes((prev) => prev.filter((o) => c.strokes.has(o.id)));
+        setTexts((prev) => prev.filter((o) => c.texts.has(o.id)));
+        setImages((prev) => prev.filter((o) => c.images.has(o.id)));
+      }
+      if (fitOnLoadRef.current) pendingFitRef.current = true;
+    });
+
+    // Things that arrive the ordinary way while a big board is still coming
+    // in pieces are newer than the pieces, so they are kept too.
+    const keep = (kind, id) => {
+      if (collectingRef.current) collectingRef.current[kind].add(id);
+    };
 
     channel.on("broadcast", { event: "stroke-start" }, ({ payload }) => {
       remoteStrokes.current[payload.strokeKey] = {
@@ -275,7 +466,12 @@ export default function ClassroomBoardViewer({ boardId }) {
       const s = remoteStrokes.current[payload.strokeKey];
       if (!s) return;
       delete remoteStrokes.current[payload.strokeKey];
-      if (s.points.length > 1) setStrokes((prev) => [...prev, s]);
+      if (s.points.length > 1) {
+        keep("strokes", s.id);
+        // never twice (a re-sent board can include a stroke that then also
+        // finishes "live")
+        setStrokes((prev) => (prev.some((x) => x.id === s.id) ? prev : [...prev, s]));
+      }
     });
 
     channel.on("broadcast", { event: "stroke-remove" }, ({ payload }) => {
@@ -283,10 +479,12 @@ export default function ClassroomBoardViewer({ boardId }) {
     });
 
     channel.on("broadcast", { event: "stroke-restore" }, ({ payload }) => {
-      setStrokes((prev) => [...prev, payload.stroke]);
+      keep("strokes", payload.stroke.id);
+      setStrokes((prev) => mergeById(prev, [payload.stroke]));
     });
 
     channel.on("broadcast", { event: "text-add" }, ({ payload }) => {
+      keep("texts", payload.text.id);
       setTexts((prev) => {
         const exists = prev.some((t) => t.id === payload.text.id);
         return exists ? prev.map((t) => (t.id === payload.text.id ? payload.text : t)) : [...prev, payload.text];
@@ -312,11 +510,10 @@ export default function ClassroomBoardViewer({ boardId }) {
     });
 
     // Selection / copy-paste / image events from the teacher's board.
-    const mergeById = (prev, added) => {
-      const ids = new Set(added.map((o) => o.id));
-      return [...prev.filter((o) => !ids.has(o.id)), ...added];
-    };
     channel.on("broadcast", { event: "objects-add" }, ({ payload }) => {
+      (payload.strokes || []).forEach((o) => keep("strokes", o.id));
+      (payload.texts || []).forEach((o) => keep("texts", o.id));
+      (payload.images || []).forEach((o) => keep("images", o.id));
       if (payload.strokes?.length) setStrokes((prev) => mergeById(prev, payload.strokes));
       if (payload.texts?.length) setTexts((prev) => mergeById(prev, payload.texts));
       if (payload.images?.length) setImages((prev) => mergeById(prev, payload.images));
@@ -368,7 +565,15 @@ export default function ClassroomBoardViewer({ boardId }) {
     });
 
     channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") requestSnapshot();
+      if (status !== "SUBSCRIBED") return;
+      // Back after a dropped connection (Wi-Fi blip, tablet asleep): things
+      // may have changed meanwhile, so ask for the board again.
+      if (joinedOnceRef.current) {
+        hasReceivedSnapshot.current = false;
+        remoteStrokes.current = {};
+      }
+      joinedOnceRef.current = true;
+      requestSnapshot();
     });
     channelRef.current = channel;
 
@@ -385,6 +590,10 @@ export default function ClassroomBoardViewer({ boardId }) {
     return () => {
       clearInterval(retryInterval);
       supabase.removeChannel(channel);
+      channelRef.current = null;
+      hasReceivedSnapshot.current = false;
+      joinedOnceRef.current = false;
+      collectingRef.current = null;
     };
   }, [boardId]);
 
@@ -477,10 +686,12 @@ export default function ClassroomBoardViewer({ boardId }) {
 
       if (touchPoints.current.size >= 2) {
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        tapRef.current = null; // two fingers: a pinch, never a tap
         beginPanZoom();
         return;
       }
 
+      tapRef.current = { pointerId: e.pointerId, pos };
       panDragActive.current = true;
       panDragStart.current = { pos, origPan: { ...panRef.current } };
       try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
@@ -498,6 +709,7 @@ export default function ClassroomBoardViewer({ boardId }) {
         const pos = getPos(e);
         const dx = pos.x - panDragStart.current.pos.x;
         const dy = pos.y - panDragStart.current.pos.y;
+        if (tapRef.current && Math.hypot(dx, dy) > TAP_SLOP_PX) tapRef.current = null;
         panRef.current = { x: panDragStart.current.origPan.x + dx, y: panDragStart.current.origPan.y + dy };
         fullRedraw();
       }
@@ -515,6 +727,13 @@ export default function ClassroomBoardViewer({ boardId }) {
       panDragActive.current = false;
       panDragStart.current = null;
       try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+      const tap = tapRef.current;
+      tapRef.current = null;
+      if (tap && tap.pointerId === e.pointerId && e.type === "pointerup" && onBoardTapRef.current) {
+        // The press never moved, so the view didn't either: put it back
+        // exactly (a pixel of drift would nudge the board on every tap).
+        onBoardTapRef.current(screenToWorld(tap.pos), tap.pos, getPaneSize());
+      }
     }
 
     canvas.addEventListener("pointerdown", handlePointerDown);
@@ -534,13 +753,17 @@ export default function ClassroomBoardViewer({ boardId }) {
   }, []);
 
   useEffect(() => {
+    if (pendingFitRef.current) {
+      pendingFitRef.current = false;
+      fitAll({ onlyIfNeeded: true });
+    }
     fullRedraw();
   }, [strokes, texts, images]);
 
   const showReferencePane = !!referenceDoc;
 
   return (
-    <div style={{ width: "100dvw", height: "100dvh", overflow: "hidden", display: "flex" }}>
+    <div style={{ width: "100%", height: "100%", overflow: "hidden", display: "flex" }}>
       {showReferencePane && (
         <div
           className={cls.refColumn}
@@ -554,7 +777,11 @@ export default function ClassroomBoardViewer({ boardId }) {
         </div>
       )}
 
-      <div ref={boardPaneRef} style={{ position: "relative", flex: 1, height: "100%", overflow: "hidden", isolation: "isolate" }}>
+      <div
+        ref={boardPaneRef}
+        data-tour={tour}
+        style={{ position: "relative", flex: 1, minWidth: 0, height: "100%", overflow: "hidden", isolation: "isolate" }}
+      >
         {/* Page pattern layer behind the transparent ink canvas. */}
         <div
           ref={pageBgRef}
@@ -576,18 +803,20 @@ export default function ClassroomBoardViewer({ boardId }) {
             style={{ position: "absolute", left: 0, top: 0, zIndex: -1, maxWidth: "none", pointerEvents: "none", userSelect: "none" }}
           />
         ))}
-        <button
-          onClick={() => router.push("/join")}
-          className={cls.floatBtn}
-        >
-          Leave
-        </button>
+        {!embedded && (
+          <button
+            onClick={() => router.push("/join")}
+            className={cls.floatBtn}
+          >
+            Leave
+          </button>
+        )}
 
         {connectionStatus !== "live" && (
           <div
             className={cls.statusPill}
           >
-            {connectionStatus === "connecting" ? "Connecting…" : "Waiting for your teacher's board…"}
+            {connectionStatus === "connecting" ? "Connecting…" : waitingText || "Waiting for your teacher's board…"}
           </div>
         )}
 
@@ -601,8 +830,10 @@ export default function ClassroomBoardViewer({ boardId }) {
             userSelect: "none",
             WebkitTouchCallout: "none",
             WebkitTapHighlightColor: "transparent",
+            cursor: onBoardTap ? "crosshair" : "default",
           }}
         />
+        {children}
       </div>
     </div>
   );

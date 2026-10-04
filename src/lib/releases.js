@@ -33,6 +33,44 @@
 
 export const RELEASES = [
   {
+    id: "2026-10-live-boards",
+    date: "2026-10-04",
+    title: "Live class boards",
+    headline: "Students get the full toolbar in a live class",
+    intro:
+      "Each student's own board in a live class now has the same tools as yours, not just a pen and an eraser. Open their board and you see everything they do, live.",
+    slides: [
+      {
+        src: "/whats-new/live-boards/student-board.png",
+        alt: "A student's own board in a live class, with the full toolbar across the top, handwritten working, a typed question and a labelled triangle.",
+        caption: "A student's own board now has the full toolbar",
+      },
+      {
+        src: "/whats-new/live-boards/teacher-view.png",
+        alt: "The teacher's view of that student's board, showing the same working, with a numbered comment pinned next to one line.",
+        caption: "Open any student's board and watch it live",
+      },
+      {
+        src: "/whats-new/live-boards/comment.png",
+        alt: "The student's board with a numbered pin on their working and the teacher's comment open beside it.",
+        caption: "Your comments are pinned to the exact spot",
+      },
+      {
+        src: "/whats-new/live-boards/maths-tools.png",
+        alt: "A student's board with a graph, a curve the student has drawn on it, and the calculator open beside it.",
+        caption: "Graph, calculator, ruler and compass for every student",
+      },
+    ],
+    points: [
+      "Students join with the class code, exactly as before.",
+      "Pictures, simulations and reference documents stay with you.",
+      "Drag to move around a student's board, pinch to zoom, or press Show all.",
+      "Students who join late now get your whole board, however full it is.",
+    ],
+    tour: "liveBoards",
+    tourBoardName: "Trying out a live class",
+  },
+  {
     id: "2026-10-shapes",
     date: "2026-10-04",
     title: "Shapes",

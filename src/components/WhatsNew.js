@@ -146,7 +146,7 @@ function WhatsNewModal({ releases, startId, startQuiet, busy, problem, onClose, 
             </div>
           )}
 
-          <Slides key={release.id} slides={release.slides || []} />
+          <Slides key={release.id} slides={release.slides || []} roomForChips={releases.length > 1} />
 
           <p className={s.intro}>{release.intro}</p>
           {release.points && release.points.length > 0 && (
@@ -189,7 +189,7 @@ function WhatsNewModal({ releases, startId, startQuiet, busy, problem, onClose, 
 }
 
 // The screenshots: swipe, use the arrows, or tap a dot.
-function Slides({ slides }) {
+function Slides({ slides, roomForChips }) {
   const trackRef = useRef(null);
   const [index, setIndex] = useState(0);
   if (slides.length === 0) return null;
@@ -221,7 +221,7 @@ function Slides({ slides }) {
   }
 
   return (
-    <div className={s.slides}>
+    <div className={`${s.slides} ${roomForChips ? s.slidesBelowChips : ""}`}>
       <div className={s.frame}>
         <div
           className={s.track}

@@ -52,7 +52,45 @@ const CLASS = {
   signIn: '[data-tour="demo-signin"]',
 };
 
+// The live class update: students get the full toolbar on their own board.
+// A real class needs students, so this one is read-and-press-Next: it
+// shows where a class starts, what students now have, and where to look.
+const LIVE = {
+  start: '[data-tour="start-live"]',
+  tools: '[data-tour="tool-row"]',
+};
+
 export const TOURS = {
+  liveBoards: {
+    id: "liveBoards",
+    name: "Live class boards",
+    steps: [
+      {
+        id: "start",
+        title: "A live class starts here",
+        body: "You get a class code. Students type it in on their own devices to join: no accounts, nothing to install.",
+        target: LIVE.start,
+        place: "below",
+        next: "tools",
+      },
+      {
+        id: "tools",
+        title: "Students now get this whole row",
+        body: "Each student has their own board, and it now has every tool you see here: highlighter, text, the Maths tools, shapes and page styles. Pictures, simulations and reference documents stay with you.",
+        target: LIVE.tools,
+        place: "below",
+        next: "watch",
+      },
+      {
+        id: "watch",
+        title: "Then look in on anyone",
+        body: "Once the class is running, a Students button appears up here. Tap it and pick a name to watch that student's board live. Tap their board to pin a comment right where they need it.",
+        target: LIVE.start,
+        place: "below",
+        last: true,
+      },
+    ],
+  },
   demoClass: {
     id: "demoClass",
     name: "A live class",

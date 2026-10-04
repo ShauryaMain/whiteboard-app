@@ -75,7 +75,7 @@ async function keepDemoAndSignIn(e) {
 
 export default function Toolbar(props) {
   const {
-    boardName, statusText, saveState = "idle", isOwner, demo,
+    boardName, statusText, saveState = "idle", isOwner, demo, student,
     tool, panToolActive, onSelectTool, onSelectMove,
     color, setColor, strokeWidth, setStrokeWidth,
     onUndo, onRedo, onClear, canUndo, canRedo,
@@ -182,7 +182,7 @@ export default function Toolbar(props) {
                     danger
                     icon={<Grid3x3 {...SMALL_ICON} />}
                     title="Remove graph"
-                    desc="Takes the graph off the board for everyone."
+                    desc={student ? "Takes the graph off your board." : "Takes the graph off the board for everyone."}
                     onPress={runAndClose(onRemoveGrid)}
                   />
                 )}
@@ -230,13 +230,15 @@ export default function Toolbar(props) {
                     onPress={runAndClose(onOpenShapeModal)}
                   />
                 )}
-                <MenuItem
-                  insert
-                  icon={<Atom {...SMALL_ICON} />}
-                  title="Simulation"
-                  desc="Embed an interactive PhET simulation students can use live."
-                  onPress={runAndClose(onOpenSimModal)}
-                />
+                {onOpenSimModal && (
+                  <MenuItem
+                    insert
+                    icon={<Atom {...SMALL_ICON} />}
+                    title="Simulation"
+                    desc="Embed an interactive PhET simulation students can use live."
+                    onPress={runAndClose(onOpenSimModal)}
+                  />
+                )}
               </>
             )}
             {menu.id === "page" && (
@@ -263,7 +265,11 @@ export default function Toolbar(props) {
                     );
                   })}
                 </div>
-                <div className={s.menuFootnote}>Changes the page for everyone on this board. Your drawings stay put.</div>
+                <div className={s.menuFootnote}>
+                  {student
+                    ? "Changes the page on your board. Your drawings stay put."
+                    : "Changes the page for everyone on this board. Your drawings stay put."}
+                </div>
               </>
             )}
             {menu.id === "roster" && (
@@ -295,7 +301,11 @@ export default function Toolbar(props) {
     <div className={s.chrome} onContextMenu={(e) => e.preventDefault()}>
       {menuPortal}
 
-      {/* ---------- App bar ---------- */}
+      {/* ---------- App bar ----------
+          Left out on a student's own board in a live class: the class page
+          has its own bar across the top (Teacher's board / My board), and
+          everything in this one is for the board's owner. */}
+      {!student && (
       <div className={`${s.appBar} ${demo ? s.appBarDemo : ""} ${demo && liveClassCode ? s.appBarDemoLive : ""}`}>
         {/* The demo board leaves with a full page load, so the real app
             starts on its real backend (see supabaseClient.js). */}
@@ -361,7 +371,7 @@ export default function Toolbar(props) {
               <span className={s.shortLabel}>Link</span>
             </PalmSafeButton>
             {!liveClassCode && (
-              <PalmSafeButton className={s.appBtn} onPress={onStartLiveClass}>
+              <PalmSafeButton className={s.appBtn} data-tour="start-live" onPress={onStartLiveClass}>
                 <Users size={16} strokeWidth={1.8} />
                 <span className={s.longLabel}>Start live class</span>
                 <span className={s.shortLabel}>Live</span>
@@ -395,9 +405,10 @@ export default function Toolbar(props) {
           </>
         )}
       </div>
+      )}
 
       {/* ---------- Tool row ---------- */}
-      <div className={s.toolRow} role="toolbar" aria-label="Board tools">
+      <div className={s.toolRow} role="toolbar" aria-label="Board tools" data-tour="tool-row">
         <ToolButton label="Select" active={activeTool === "select"} onPress={() => onSelectTool("select")}>
           <MousePointer2 {...ICON} />
         </ToolButton>

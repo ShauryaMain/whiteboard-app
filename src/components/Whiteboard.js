@@ -16,6 +16,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { getStoredClassCode, clearClassCode, generateClassCode } from "@/lib/classroomCode";
 import TeacherStudentBoardView from "./TeacherStudentBoardView";
+import StudentComments from "./StudentComments";
 import GridToolModal from "./GridToolModal";
 import SimEmbed from "./SimEmbed";
 import SimEmbedModal from "./SimEmbedModal";
@@ -57,6 +58,7 @@ import {
   CLIPBOARD_MARKER, prepareImageFile, makeInlineImage, imageFilesFrom, writeClipboardMarker, readSystemClipboard,
 } from "@/lib/boardObjects";
 import chrome from "./StudioChrome.module.css";
+import cls from "./Classroom.module.css";
 import {
   subscribeViewport, getViewportWidth, getServerViewportWidth,
   subscribeRefFraction, getRefFractionSide, getRefFractionStacked, getServerRefFraction,
@@ -69,6 +71,11 @@ import {
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
+// A live message can only be so big (Supabase drops anything over about
+// 256KB without saying so), so a board sent to someone joining a class
+// goes in pieces of at most this many characters.
+const SNAPSHOT_CHUNK_CHARS = 60000;
+const SNAPSHOT_STROKE_POINTS = 800;
 const ERASER_MAX_BOOST = 2;
 const ERASER_SENSITIVITY = 0.6;
 const ERASER_SMOOTHING = 0.25;
@@ -172,11 +179,25 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
   ctx.stroke();
 }
 
-export default function Whiteboard({ boardId, demo = false, onDemoClassStart, onDemoClassEnd }) {
+// `student`, `backend` and `active` are only passed for a student's own
+// board in a live class (see src/app/join/[code]/view/page.js):
+//   student  { code, studentId, name } — switches the board to "class board"
+//            mode: no app bar, no pictures / simulations / reference
+//            documents, and the teacher's comments are shown on it.
+//   backend  where the board is kept instead of the database (students
+//            never sign in; see src/lib/localBoard.js).
+//   active   false while the board is on a hidden tab, so its keyboard
+//            shortcuts and paste leave the visible tab alone.
+export default function Whiteboard({
+  boardId, demo = false, onDemoClassStart, onDemoClassEnd,
+  student = null, backend = null, active = true,
+}) {
   const { user } = useAuth();
+  // Loads and saves go here. Live messages always use the real connection.
+  const db = backend || supabase;
   // Only who's signed in matters here — not the session object, which is
   // replaced on every token refresh and whenever the tab regains focus.
-  const userId = user ? user.id : null;
+  const userId = student ? student.studentId : user ? user.id : null;
   const router = useRouter();
   const [isOwner, setIsOwner] = useState(false);
   const [liveClassCode, setLiveClassCode] = useState(null);
@@ -387,7 +408,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   const scratchTimerRef = useRef(null);
   // Saves in flight / waiting to retry, and what's arrived or left the
   // screen recently — used to merge server data without wiping new work.
-  const [sync] = useState(createSyncTracker);
+  const [sync] = useState(() => createSyncTracker(backend));
   const unsaved = useSyncExternalStore(
     (listener) => subscribeUnsaved(sync, listener),
     () => unsavedCount(sync),
@@ -395,7 +416,9 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   );
   const idlePaused = useSyncExternalStore(subscribeIdle, isIdlePaused, getServerIdlePaused);
   // Live classes never pause (the teacher's board is the class's hub).
-  const syncPaused = idlePaused && !liveClassCode;
+  // Neither does a student's board in a class: it has nothing to catch up
+  // from, and the teacher may open it at any moment.
+  const syncPaused = idlePaused && !liveClassCode && !student;
   const [catchingUp, setCatchingUp] = useState(false);
   const connectedOnceRef = useRef(false);
   const catchUpRunningRef = useRef(false);
@@ -408,6 +431,14 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   const [referenceDoc, setReferenceDoc] = useState(null);
   const [referenceUploadStatus, setReferenceUploadStatus] = useState("");
   const referenceFileInputRef = useRef(null);
+  // A student's board in a live class: notes the teacher has pinned on it.
+  // Each is { id, x, y, text, createdAt }, with x / y in board coordinates.
+  const [teacherComments, setTeacherComments] = useState([]);
+  const teacherCommentsRef = useRef([]);
+  const commentPinNodesRef = useRef({});
+  const [pulsingComment, setPulsingComment] = useState(null);
+  const pulseTimerRef = useRef(null);
+  const activeRef = useRef(active);
 
   useEffect(() => {
     strokesRef.current = strokes;
@@ -443,6 +474,8 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
   useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
   useEffect(() => { referenceStrokesRef.current = referenceStrokes; }, [referenceStrokes]);
+  useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { teacherCommentsRef.current = teacherComments; }, [teacherComments]);
 
   useEffect(() => {
     if (!boardId) return;
@@ -466,7 +499,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     // Live roster: students track their own presence on this same
     // channel for as long as they're on the join/view pages, so the
     // teacher can always see who's currently in class and open their
-    // mini-board — not just during the pre-Start waiting room.
+    // board — not just during the pre-Start waiting room.
     channel.on("presence", { event: "sync" }, () => {
       const state = channel.presenceState();
       const students = [];
@@ -581,6 +614,22 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       el.style.height = sim.height * scale + "px";
     }
   }
+
+  // The teacher's comment pins on a student's board stay the same size on
+  // screen and stick to the spot on the board they were pinned to.
+  function repositionCommentPins() {
+    for (const c of teacherCommentsRef.current) {
+      const el = commentPinNodesRef.current[c.id];
+      if (!el) continue;
+      const p = worldToScreen({ x: c.x, y: c.y });
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
+    }
+  }
+
+  useEffect(() => {
+    repositionCommentPins();
+  }, [teacherComments]);
 
   // The eraser punches transparent holes ("destination-out") instead of
   // painting white, so the page background (lined, dots…) shows through
@@ -915,6 +964,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     repositionSimEmbeds();
     repositionImages();
     repositionSelectionOverlay();
+    repositionCommentPins();
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
@@ -1022,6 +1072,24 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     setSelectionState(emptySelection());
   }
 
+  // Tapping a comment in the list brings its pin into view (the board may
+  // have been moved or zoomed since the teacher pinned it) and makes the
+  // pin pulse so it's easy to spot.
+  function handleShowComment(comment) {
+    const { width, height } = getPaneSize();
+    const at = worldToScreen({ x: comment.x, y: comment.y });
+    const margin = 48;
+    const inView = at.x >= margin && at.y >= margin && at.x <= width - margin && at.y <= height - margin;
+    if (!inView) {
+      const scale = scaleRef.current;
+      panRef.current = { x: width / 2 - comment.x * scale, y: height / 2 - comment.y * scale };
+      fullRedraw();
+    }
+    setPulsingComment(comment.id);
+    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+    pulseTimerRef.current = setTimeout(() => setPulsingComment(null), 1600);
+  }
+
   function handleResetView() {
     panRef.current = { x: 0, y: 0 };
     scaleRef.current = 1;
@@ -1061,7 +1129,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     catchUpRunningRef.current = true;
     setCatchingUp(true);
     const fetchStartedAt = Date.now();
-    const [contents, settings] = await Promise.all([fetchBoardContents(boardId), fetchBoardSettings(boardId)]);
+    const [contents, settings] = await Promise.all([fetchBoardContents(boardId, db), fetchBoardSettings(boardId, db)]);
     applyServerContents(contents, fetchStartedAt);
     if (settings) {
       if ("grid_config" in settings) gridConfigRef.current = settings.grid_config || null;
@@ -1085,7 +1153,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     if (!boardId || !userId) return;
     connectedOnceRef.current = false;
     async function loadBoard() {
-      const { error: joinError } = await supabase.rpc("join_board_via_link", { board_id: boardId });
+      const { error: joinError } = await db.rpc("join_board_via_link", { board_id: boardId });
       if (joinError) console.error("Error joining board:", joinError);
 
       // .maybeSingle() (not .single()) so an empty result comes back as
@@ -1095,7 +1163,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       // covers that without surfacing a scary error for what's usually
       // just a timing blip.
       async function fetchBoardRow() {
-        const { data, error } = await supabase
+        const { data, error } = await db
           .from("boards")
           .select("grid_config, owner_id, name")
           .eq("id", boardId)
@@ -1126,7 +1194,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       // These newer extras are each fetched on their own: one failing
       // (column/table not created yet) or being slow never holds up or
       // breaks the others, or the board itself.
-      supabase.from("boards").select("sim_embeds").eq("id", boardId).maybeSingle().then(({ data, error }) => {
+      db.from("boards").select("sim_embeds").eq("id", boardId).maybeSingle().then(({ data, error }) => {
         if (!error && data) {
           simsRef.current = data.sim_embeds || [];
           setSims(simsRef.current);
@@ -1136,12 +1204,12 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       });
 
       // The saved preview picture, so an unchanged board isn't re-saved.
-      supabase.from("boards").select("thumbnail").eq("id", boardId).maybeSingle().then(({ data, error }) => {
+      db.from("boards").select("thumbnail").eq("id", boardId).maybeSingle().then(({ data, error }) => {
         if (!error && data) lastThumbRef.current = data.thumbnail || null;
       });
 
       // Page background: `alter table boards add column background text;`
-      supabase.from("boards").select("background").eq("id", boardId).maybeSingle().then(({ data, error }) => {
+      db.from("boards").select("background").eq("id", boardId).maybeSingle().then(({ data, error }) => {
         if (!error && data) {
           backgroundRef.current = normalizeBackground(data.background);
           setBoardBackground(backgroundRef.current);
@@ -1157,12 +1225,12 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       const fetchStartedAt = Date.now();
       await Promise.all(
         ["strokes", "texts", "images"].map((kind) =>
-          fetchBoardPart(boardId, kind).then((list) => applyServerContents({ [kind]: list }, fetchStartedAt))
+          fetchBoardPart(boardId, kind, db).then((list) => applyServerContents({ [kind]: list }, fetchStartedAt))
         )
       );
       boardLoadedRef.current = true;
       fullRedraw();
-      touchBoard(boardId);
+      touchBoard(boardId, db);
     }
     loadBoard();
   }, [boardId, userId]);
@@ -1170,7 +1238,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
 
   async function saveGrid() {
     if (!boardId) return;
-    const { error } = await supabase
+    const { error } = await db
       .from("boards")
       .update({ grid_config: gridConfigRef.current })
       .eq("id", boardId);
@@ -1179,7 +1247,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
 
   async function saveSimEmbeds() {
     if (!boardId) return;
-    const { error } = await supabase
+    const { error } = await db
       .from("boards")
       .update({ sim_embeds: simsRef.current })
       .eq("id", boardId);
@@ -1195,7 +1263,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     fullRedraw();
     channelRef.current?.send({ type: "broadcast", event: "background-set", payload: { background: value } });
     if (!boardId) return;
-    const { error } = await supabase.from("boards").update({ background: value }).eq("id", boardId);
+    const { error } = await db.from("boards").update({ background: value }).eq("id", boardId);
     if (error) console.warn("Could not save the page background (has the background column been added yet?):", error);
   }
 
@@ -1250,7 +1318,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   function persistRemove(sel) {
     const run = (table, ids) => {
       if (!ids.length) return;
-      supabase.from(table).delete().in("id", ids).then(({ error }) => {
+      db.from(table).delete().in("id", ids).then(({ error }) => {
         if (error) {
           if (table === "images") warnImagesTable(error);
           else console.error(`Error deleting from ${table}:`, error);
@@ -1383,7 +1451,8 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   }
 
   function pasteInternal(clip) {
-    const data = { strokes: clip.strokes || [], texts: clip.texts || [], images: clip.images || [] };
+    // A student's class board takes no pictures (see `student` above).
+    const data = { strokes: clip.strokes || [], texts: clip.texts || [], images: student ? [] : clip.images || [] };
     const bounds = clip.bounds || boundsOfData(data);
     if (!bounds) return false;
     const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
@@ -1423,7 +1492,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     const path = `${boardId}/${id}.${ext}`;
     let failure = null;
     try {
-      const { error } = await supabase.storage
+      const { error } = await db.storage
         .from("board-images")
         .upload(path, prepared.blob, { contentType: prepared.type, upsert: true });
       failure = error;
@@ -1434,7 +1503,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       console.warn("Image upload failed (has the board-images bucket been created?):", failure);
       return null;
     }
-    const { data } = supabase.storage.from("board-images").getPublicUrl(path);
+    const { data } = db.storage.from("board-images").getPublicUrl(path);
     return data?.publicUrl || null;
   }
 
@@ -1479,7 +1548,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   // Decides what a paste means: our own copied selection, a picture, or
   // plain text (which becomes a text box).
   function pasteFromSources({ files = [], text = "" } = {}) {
-    if (files.length) {
+    if (files.length && !student) {
       insertImageFiles(files);
       return;
     }
@@ -1496,7 +1565,13 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       return;
     }
     if (clip && pasteInternal(clip)) return;
-    flashNotice("Nothing to paste yet — copy something on a board first, or use Insert ▸ Image.");
+    flashNotice(
+      student
+        ? files.length
+          ? "Pictures can't be added to your class board."
+          : "Nothing to paste yet — copy something on your board first."
+        : "Nothing to paste yet — copy something on a board first, or use Insert ▸ Image."
+    );
   }
 
   async function handlePasteButton() {
@@ -1529,6 +1604,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   }
 
   function handleBoardDragOver(e) {
+    if (student) return;
     if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
@@ -1536,6 +1612,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   }
 
   function handleBoardDrop(e) {
+    if (student) return;
     const files = imageFilesFrom(e.dataTransfer?.files);
     if (!files.length) return;
     e.preventDefault();
@@ -1550,7 +1627,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       clearTimeout(thumbTimerRef.current);
       thumbTimerRef.current = null;
     }
-    if (!boardId || !boardLoadedRef.current) return;
+    if (!boardId || student || !boardLoadedRef.current) return;
     const url = renderBoardThumbnail({
       strokes: strokesRef.current,
       texts: textsRef.current,
@@ -1560,7 +1637,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     });
     if (url === lastThumbRef.current) return;
     lastThumbRef.current = url;
-    supabase.from("boards").update({ thumbnail: url }).eq("id", boardId).then(({ error }) => {
+    db.from("boards").update({ thumbnail: url }).eq("id", boardId).then(({ error }) => {
       if (error && !thumbWarnedRef.current) {
         thumbWarnedRef.current = true;
         console.warn("Could not save the board preview (has the thumbnail column been added yet?):", error);
@@ -1569,7 +1646,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   }
 
   function scheduleThumbnail() {
-    if (!boardLoadedRef.current) return;
+    if (student || !boardLoadedRef.current) return;
     if (thumbTimerRef.current) clearTimeout(thumbTimerRef.current);
     thumbTimerRef.current = setTimeout(saveThumbnail, 5000);
   }
@@ -1954,7 +2031,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     setReferenceUploadStatus("Uploading…");
 
     const path = `${boardId}/${Date.now()}-${file.name}`;
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await db.storage
       .from("reference-docs")
       .upload(path, file, { contentType: file.type, upsert: false });
 
@@ -1965,7 +2042,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       return;
     }
 
-    const { data: urlData } = supabase.storage.from("reference-docs").getPublicUrl(path);
+    const { data: urlData } = db.storage.from("reference-docs").getPublicUrl(path);
 
     const doc = {
       url: urlData.publicUrl,
@@ -1991,7 +2068,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     myReferenceStrokeStack.current = [];
     setMyReferenceUndoAvailable(false);
     channelRef.current?.send({ type: "broadcast", event: "reference-remove", payload: {} });
-    const { error } = await supabase.storage.from("reference-docs").remove([path]);
+    const { error } = await db.storage.from("reference-docs").remove([path]);
     if (error) console.error("Error removing reference doc:", error);
   }
 
@@ -2044,7 +2121,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         setTexts((prev) => prev.filter((t) => t.id !== info.id));
         setSelection(emptySelection());
         channelRef.current?.send({ type: "broadcast", event: "text-remove", payload: { textId: info.id } });
-        supabase.from("texts").delete().eq("id", info.id).then(({ error }) => {
+        db.from("texts").delete().eq("id", info.id).then(({ error }) => {
           if (error) console.error("Error deleting text:", error);
         });
         return;
@@ -2124,6 +2201,52 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
   useEffect(() => {
     repositionSimEmbeds();
   }, [sims]);
+
+  // Classroom Mode: sends this board, as it is right now, to whoever just
+  // asked for it (a student opening the teacher's board, or the teacher
+  // opening a student's). They have no database to load it from, so the
+  // board answers from what it already has in memory.
+  //
+  // A small board goes as one message. A big one would be over the size a
+  // live message is allowed to be (and would silently never arrive, leaving
+  // the other side on a blank board), so it goes as: the settings, then the
+  // contents in pieces, then "that's everything".
+  function sendClassSnapshot() {
+    const channel = channelRef.current;
+    if (!channel) return;
+    const send = (event, payload) => channel.send({ type: "broadcast", event, payload });
+    const settings = {
+      grid: gridConfigRef.current,
+      background: backgroundRef.current,
+      referenceDoc: referenceDocRef.current,
+      referenceStrokes: referenceStrokesRef.current,
+    };
+    if (student) settings.comments = teacherCommentsRef.current;
+    const contents = { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current };
+    const pieces = chunkObjects(contents, SNAPSHOT_CHUNK_CHARS);
+    if (pieces.length <= 1) send("classroom-state-snapshot", { ...contents, ...settings });
+    else {
+      const snapshotId = newId();
+      send("classroom-state-snapshot", { strokes: [], texts: [], images: [], ...settings, pieces: pieces.length, snapshotId });
+      pieces.forEach((piece) => send("classroom-state-piece", { ...piece, snapshotId }));
+      send("classroom-state-done", { snapshotId });
+    }
+    // Someone who joins while the pen is down has missed the start of that
+    // line, and would never see it. So what there is of it so far is sent
+    // again, from the top, and it carries on live from there.
+    const drawing = isDrawing.current ? currentStroke.current : null;
+    if (drawing && drawing.points.length && currentStrokeId.current) {
+      const strokeKey = `${clientId.current}-${currentStrokeId.current}`;
+      pendingBroadcastPoints.current = [];
+      send("stroke-start", {
+        strokeKey, strokeId: drawing.id, tool: drawing.tool, color: drawing.color,
+        width: drawing.width, opacity: drawing.opacity, point: drawing.points[0],
+      });
+      for (let i = 1; i < drawing.points.length; i += SNAPSHOT_STROKE_POINTS) {
+        send("stroke-points", { strokeKey, points: drawing.points.slice(i, i + SNAPSHOT_STROKE_POINTS) });
+      }
+    }
+  }
 
   useEffect(() => {
     if (!boardId || syncPaused) return;
@@ -2291,25 +2414,24 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       setReferenceStrokes((prev) => prev.filter((s) => s.id !== payload.strokeId));
     });
 
-    // Classroom Mode: a read-only student viewer has no database access
-    // (they never logged in), so it asks over this same channel for the
-    // board's current state instead. This board just answers with
-    // whatever it already has in memory — no new state, no new tracking,
-    // reusing refs that are already kept current for other reasons.
+    // Classroom Mode: a read-only viewer has no database access (students
+    // never log in), so it asks over this same channel for the board's
+    // current state instead. See sendClassSnapshot above.
     channel.on("broadcast", { event: "classroom-state-request" }, () => {
-      channelRef.current?.send({
-        type: "broadcast",
-        event: "classroom-state-snapshot",
-        payload: {
-          strokes: strokesRef.current,
-          texts: textsRef.current,
-          grid: gridConfigRef.current,
-          background: backgroundRef.current,
-          images: imagesRef.current,
-          referenceDoc: referenceDocRef.current,
-          referenceStrokes: referenceStrokesRef.current,
-        },
-      });
+      sendClassSnapshot();
+    });
+
+    // A student's own board: the teacher pins notes on it from their view
+    // of it (TeacherStudentBoardView). The student's board keeps the list,
+    // so it is still there if the teacher closes that view and comes back.
+    channel.on("broadcast", { event: "teacher-comment-add" }, ({ payload }) => {
+      if (!student || !payload || !payload.id) return;
+      setTeacherComments((prev) => (prev.some((c) => c.id === payload.id) ? prev : [...prev, payload]));
+    });
+
+    channel.on("broadcast", { event: "teacher-comment-remove" }, ({ payload }) => {
+      if (!student || !payload) return;
+      setTeacherComments((prev) => prev.filter((c) => c.id !== payload.id));
     });
 
     let joined = false;
@@ -3446,7 +3568,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         const finalY = lastY ?? origY;
         movingTextRef.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        supabase.from("texts").update({ x: finalX, y: finalY }).eq("id", id).then(({ error }) => {
+        db.from("texts").update({ x: finalX, y: finalY }).eq("id", id).then(({ error }) => {
           if (error) console.error("Error saving text position:", error);
         });
         return;
@@ -3458,7 +3580,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         const finalFontSize = r.lastFontSize ?? r.origFontSize;
         resizingTextRef.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        supabase
+        db
           .from("texts")
           .update({ width: finalWidth, font_size: finalFontSize })
           .eq("id", r.id)
@@ -3473,7 +3595,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         const finalRotation = r.lastRotation ?? r.origRotation;
         rotatingTextRef.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        supabase.from("texts").update({ rotation: finalRotation }).eq("id", r.id).then(({ error }) => {
+        db.from("texts").update({ rotation: finalRotation }).eq("id", r.id).then(({ error }) => {
           if (error) console.error("Error saving text rotation:", error);
         });
         return;
@@ -3590,7 +3712,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         event: "stroke-remove",
         payload: { strokeId: last.id },
       });
-      supabase.from("strokes").delete().eq("id", last.id).then(({ error }) => {
+      db.from("strokes").delete().eq("id", last.id).then(({ error }) => {
         if (error) console.error("Error deleting stroke:", error);
       });
     } else {
@@ -3604,7 +3726,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         event: "text-remove",
         payload: { textId: last.id },
       });
-      supabase.from("texts").delete().eq("id", last.id).then(({ error }) => {
+      db.from("texts").delete().eq("id", last.id).then(({ error }) => {
         if (error) console.error("Error deleting text:", error);
       });
     }
@@ -3669,20 +3791,20 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
 
   function handleClear() {
     if (strokes.length === 0 && texts.length === 0 && images.length === 0) return;
-    if (window.confirm("Clear the whole board for everyone? This can't be undone.")) {
+    if (window.confirm(student ? "Clear your whole board? This can't be undone." : "Clear the whole board for everyone? This can't be undone.")) {
       performClear();
       myStrokeStack.current = [];
       myRedoStack.current = [];
       setMyUndoAvailable(false);
       setMyRedoAvailable(false);
       channelRef.current?.send({ type: "broadcast", event: "clear", payload: {} });
-      supabase.from("strokes").delete().eq("board_id", boardId).then(({ error }) => {
+      db.from("strokes").delete().eq("board_id", boardId).then(({ error }) => {
         if (error) console.error("Error clearing strokes:", error);
       });
-      supabase.from("texts").delete().eq("board_id", boardId).then(({ error }) => {
+      db.from("texts").delete().eq("board_id", boardId).then(({ error }) => {
         if (error) console.error("Error clearing texts:", error);
       });
-      supabase.from("images").delete().eq("board_id", boardId).then(({ error }) => {
+      db.from("images").delete().eq("board_id", boardId).then(({ error }) => {
         if (error) console.warn("Error clearing images:", error);
       });
     }
@@ -3690,7 +3812,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
 
   // ---------- idle pause + unsaved work ----------
 
-  useEffect(() => startIdleWatch(), []);
+  useEffect(() => (student ? undefined : startIdleWatch()), []);
 
   useEffect(() => {
     if (idlePaused && liveClassCode) resumeFromIdle();
@@ -3785,6 +3907,14 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       if (!h) return;
       const mod = e.metaKey || e.ctrlKey;
       const key = (e.key || "").toLowerCase();
+      if (!activeRef.current) {
+        // On a hidden tab the shortcuts do nothing. "Select all" is still
+        // stopped from reaching the browser, though: left alone it selects
+        // every label on the page, and the next drag on the board would
+        // then drag that selection about instead of drawing.
+        if (mod && key === "a") e.preventDefault();
+        return;
+      }
       if (mod && key === "z") {
         e.preventDefault();
         if (e.shiftKey) h.handleRedo();
@@ -3817,7 +3947,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
     // Marks the system clipboard synchronously during a real copy / cut, so
     // a later paste knows our selection is the newest thing copied.
     function onCopyOrCut(e) {
-      if (isTypingTarget(e.target) || editingTextRef.current || !hasSelection()) return;
+      if (!activeRef.current || isTypingTarget(e.target) || editingTextRef.current || !hasSelection()) return;
       if (e.clipboardData) {
         e.clipboardData.setData("text/plain", CLIPBOARD_MARKER);
         e.preventDefault();
@@ -3825,7 +3955,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
       }
     }
     function onPaste(e) {
-      if (isTypingTarget(e.target) || editingTextRef.current) return;
+      if (!activeRef.current || isTypingTarget(e.target) || editingTextRef.current) return;
       const h = shortcutHandlersRef.current;
       const cd = e.clipboardData;
       if (!h || !cd) return;
@@ -3895,8 +4025,9 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         : "Saves automatically");
 
   return (
-    <div className="wb-root">
+    <div className={student ? "wb-root wb-root-embedded" : "wb-root"}>
       <Toolbar
+        student={!!student}
         boardName={boardName}
         statusText={statusText}
         saveState={saveState}
@@ -3922,7 +4053,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         getHasGrid={getHasGrid}
         background={boardBackground}
         onSetBackground={handleSetBackground}
-        onInsertImage={handleInsertImageClick}
+        onInsertImage={student ? undefined : handleInsertImageClick}
         eraserMode={eraserMode}
         onSetEraserMode={setEraserMode}
         scribbleErase={scribbleErase}
@@ -3939,7 +4070,7 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         canInsertReference={isOwner && canUseReferencePane}
         hasReferenceDoc={!!referenceDoc}
         onReferenceToolClick={handleReferenceToolClick}
-        onOpenSimModal={handleOpenSimModal}
+        onOpenSimModal={student ? undefined : handleOpenSimModal}
         onOpenShapeModal={handleOpenShapeModal}
         onCopyLink={handleCopyLink}
         onStartLiveClass={handleStartLiveClass}
@@ -4147,6 +4278,8 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
         ))}
         {viewingStudent && liveClassCode && (
           <TeacherStudentBoardView
+            // a fresh view for each student, so nothing carries over
+            key={viewingStudent.studentId}
             code={liveClassCode}
             student={viewingStudent}
             onBack={() => setViewingStudent(null)}
@@ -4165,6 +4298,25 @@ export default function Whiteboard({ boardId, demo = false, onDemoClassStart, on
             cursor: panToolActive ? "grab" : "default",
           }}
         />
+        {/* A student's board: the teacher's pinned comments. The numbered
+            pins sit on the board (moved by repositionCommentPins as it pans
+            and zooms); the words are in the list, opened from the button. */}
+        {student &&
+          teacherComments.map((c, i) => (
+            <span
+              key={c.id}
+              ref={(el) => {
+                if (el) commentPinNodesRef.current[c.id] = el;
+                else delete commentPinNodesRef.current[c.id];
+              }}
+              aria-hidden="true"
+              data-comment-pin={i + 1}
+              className={`${cls.pin} ${pulsingComment === c.id ? cls.pinPulse : ""}`}
+            >
+              {i + 1}
+            </span>
+          ))}
+        {student && <StudentComments comments={teacherComments} onShow={handleShowComment} />}
         <div ref={marqueeElRef} aria-hidden="true" className={chrome.marquee} />
         <div ref={selectionBoxElRef} aria-hidden="true" className={chrome.selectionBox}>
           <span className={chrome.selectionHandle} />

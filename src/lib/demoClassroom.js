@@ -12,11 +12,13 @@
 // How it fits together: demoBackend.js hands the two kinds of live-class
 // channel to createDemoClassroom():
 //   classroom-<code>                  who is in the class (the roster)
-//   student-board-<code>-<studentId>  one student's board
-// and this file answers on them the way real students would.
+//   board-student-<code>-<studentId>  one student's own board
+// and this file answers on them the way real students' boards would (a
+// student's board is an ordinary board, so these are the ordinary board
+// messages: see the board channel in Whiteboard.js).
 
 const TICK_MS = 70; // how often the pretend students "move their pens"
-const CHUNK = 150; // points per message, the same as a real student's board
+const CHUNK = 150; // points per message
 
 // ---------- the class ----------
 
@@ -89,21 +91,32 @@ function resample(points, step) {
   return out;
 }
 
-const round = (n) => Math.round(n * 10000) / 10000;
+const round = (n) => Math.round(n * 100) / 100;
 
 // The size of the board the teacher will be looking at, so the writing
-// comes out a sensible size and the right shape on a phone, a tablet or a
-// desktop. (Student boards are stored as fractions of the board's width
-// and height, like real ones.)
+// comes out a sensible size and all of it is in view on a phone, a tablet
+// or a desktop. (A student's board is measured in the same units as any
+// other board: one unit is one pixel at 100% zoom.)
 function boardShape() {
   const vw = typeof window === "undefined" ? 1280 : window.innerWidth || 1280;
   const vh = typeof window === "undefined" ? 800 : window.innerHeight || 800;
-  // Matches the layout in TeacherStudentBoardView: a bar across the top,
-  // and the comments list beside the board (underneath it on a phone).
+  // The teacher's board area, where a student's board is shown…
+  let areaW = vw;
+  let areaH = vh - 170;
+  const pane = typeof document === "undefined" ? null : document.querySelector('[data-board-pane="true"]');
+  if (pane) {
+    const rect = pane.getBoundingClientRect();
+    if (rect.width > 100 && rect.height > 100) {
+      areaW = rect.width;
+      areaH = rect.height;
+    }
+  }
+  // …less what TeacherStudentBoardView puts around it: a bar across the
+  // top, and the comments list beside the board (underneath it on a phone).
   const narrow = vw <= 640;
-  const paneW = Math.max(240, narrow ? vw : vw - 290);
-  const paneH = Math.max(240, narrow ? (vh - 62) * 0.78 : vh - 62);
-  const glyphW = Math.max(15, Math.min(30, paneW / 24, paneH / 15));
+  const paneW = Math.max(240, narrow ? areaW : areaW - 290);
+  const paneH = Math.max(220, narrow ? (areaH - 62) * 0.7 : areaH - 62);
+  const glyphW = Math.max(13, Math.min(30, paneW / 24, paneH / 16));
   return { paneW, paneH, glyphW, glyphH: glyphW * 1.5 };
 }
 
@@ -136,7 +149,7 @@ function writeLines(student, lines, shape, startAt, firstLine, idPrefix) {
             const px = penX + (gx + jx + (1 - gy) * student.slant) * gw;
             const py = baseY + lift + (gy + jy) * gh;
             t += pointGap;
-            return { x: round(px / shape.paneW), y: round(py / shape.paneH), t: Math.round(t) };
+            return { x: round(px), y: round(py), t: Math.round(t) };
           });
           strokes.push({ id: `${idPrefix}-${row}-${strokes.length}-${k}`, color: student.color, points: pts });
           t += 90 / student.speed; // lifting the pen between strokes
@@ -160,7 +173,7 @@ function strikeThrough(student, box, shape, startAt, id) {
     const x = box.x0 - shape.glyphW * 0.2 + ((box.x1 - box.x0 + shape.glyphW * 0.2) * i) / steps;
     const y = box.y + Math.sin(i * 1.3) * shape.glyphH * 0.05;
     t += 16;
-    pts.push({ x: round(x / shape.paneW), y: round(y / shape.paneH), t: Math.round(t) });
+    pts.push({ x: round(x), y: round(y), t: Math.round(t) });
   }
   return { stroke: { id, color: student.color, points: pts }, endsAt: t };
 }
@@ -170,7 +183,7 @@ function strikeThrough(student, box, shape, startAt, id) {
 function makeClass(code) {
   const shape = boardShape();
   const startedAt = Date.now();
-  const width = round(3 / shape.paneW); // a 3px pen, as on a real student board
+  const width = 3; // a fine pen
   const students = DEMO_STUDENTS.map((s) => {
     const written = writeLines(s, s.lines, shape, s.joinAt + 1400, 0, "w");
     return { ...s, strokes: written.strokes, lineBoxes: written.lineBoxes, comments: [], reacted: false, joinedAt: startedAt + s.joinAt };
@@ -209,9 +222,18 @@ export function createDemoClassroom() {
     return state;
   }
 
+  // A finished line, as a board keeps it.
+  function asInk(cls, stroke) {
+    return {
+      id: stroke.id, tool: "pen", color: stroke.color, width: cls.width, opacity: 1,
+      points: stroke.points.map((p) => ({ x: p.x, y: p.y })),
+    };
+  }
+
   // Sends whatever a student has drawn up to `now` that this board channel
-  // hasn't been sent yet, with the same messages a real student's board
-  // uses (stroke-start, then points in chunks, then stroke-end).
+  // hasn't been sent yet, with the same messages a real board sends while
+  // someone is drawing (stroke-start, then points in chunks, then
+  // stroke-end).
   function catchUp(cls, channel, now) {
     const view = channel.__view;
     if (!view || !view.watching) return;
@@ -221,9 +243,10 @@ export function createDemoClassroom() {
       if (pts[0].t > elapsed) continue;
       let sent = view.sent.get(stroke.id) || 0;
       if (sent === -1) continue; // finished and already ended
+      const strokeKey = `${view.student.studentId}-${stroke.id}`;
       if (sent === 0) {
         channel.__emit("broadcast", "stroke-start", {
-          strokeId: stroke.id, tool: "pen", color: stroke.color, width: cls.width, opacity: 1,
+          strokeKey, strokeId: stroke.id, tool: "pen", color: stroke.color, width: cls.width, opacity: 1,
           point: { x: pts[0].x, y: pts[0].y },
         });
         sent = 1;
@@ -232,12 +255,12 @@ export function createDemoClassroom() {
       while (ready < pts.length && pts[ready].t <= elapsed) ready++;
       for (let i = sent; i < ready; i += CHUNK) {
         channel.__emit("broadcast", "stroke-points", {
-          strokeId: stroke.id,
+          strokeKey,
           points: pts.slice(i, Math.min(ready, i + CHUNK)).map((p) => ({ x: p.x, y: p.y })),
         });
       }
       if (ready >= pts.length) {
-        channel.__emit("broadcast", "stroke-end", { strokeId: stroke.id });
+        channel.__emit("broadcast", "stroke-end", { strokeKey });
         view.sent.set(stroke.id, -1);
       } else {
         view.sent.set(stroke.id, ready);
@@ -270,7 +293,7 @@ export function createDemoClassroom() {
   return {
     // Is this one of the live-class channels?
     handles(topic) {
-      return /^classroom-/.test(topic) || /^student-board-/.test(topic);
+      return /^classroom-/.test(topic) || /^board-student-/.test(topic);
     },
 
     // The channel has connected.
@@ -285,7 +308,7 @@ export function createDemoClassroom() {
         wake();
         return;
       }
-      const board = /^student-board-([^-]+)-(.+)$/.exec(channel.topic);
+      const board = /^board-student-([^-]+)-(.+)$/.exec(channel.topic);
       if (board) {
         const cls = classes.get(board[1]);
         const student = cls && cls.students.find((s) => s.studentId === board[2]);
@@ -316,14 +339,27 @@ export function createDemoClassroom() {
       const view = channel.__view;
       if (!cls || !view || !message) return;
       const now = Date.now();
-      if (message.event === "state-request") {
+      if (message.event === "classroom-state-request") {
         // "What's on your board so far?" Answer as a real board does: the
-        // comments first, then every stroke drawn up to now.
+        // lines already finished and the teacher's comments in one message,
+        // then the line being written right now, live.
         view.watching = true;
         view.sent = new Map();
         setTimeout(() => {
           if (channel.closed) return;
-          channel.__emit("broadcast", "state-snapshot", { comments: view.student.comments.slice() });
+          const elapsed = Date.now() - cls.startedAt;
+          const finished = view.student.strokes.filter((st) => st.points[st.points.length - 1].t <= elapsed);
+          finished.forEach((st) => view.sent.set(st.id, -1));
+          channel.__emit("broadcast", "classroom-state-snapshot", {
+            strokes: finished.map((st) => asInk(cls, st)),
+            texts: [],
+            images: [],
+            grid: null,
+            background: "blank",
+            referenceDoc: null,
+            referenceStrokes: [],
+            comments: view.student.comments.slice(),
+          });
           catchUp(cls, channel, Date.now());
         }, 120);
       } else if (message.event === "teacher-comment-add" && message.payload) {

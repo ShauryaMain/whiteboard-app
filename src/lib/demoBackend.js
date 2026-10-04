@@ -158,7 +158,9 @@ function compare(a, b) {
 
 // One query, built up the way the Supabase client builds them
 // (from(...).select(...).eq(...)...), and run when it is awaited.
-class DemoQuery {
+// Also used by src/lib/localBoard.js, for a student's own board in a live
+// class (which lives in the student's tab, not the database).
+export class DemoQuery {
   constructor(tables, table) {
     this.tables = tables;
     this.table = table;

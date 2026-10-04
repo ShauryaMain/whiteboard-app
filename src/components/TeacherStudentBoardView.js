@@ -1,252 +1,54 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import { ArrowLeft } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowLeft, Maximize } from "lucide-react";
+import ClassroomBoardViewer from "./ClassroomBoardViewer";
+import { newId } from "@/lib/boardObjects";
+import { studentBoardId } from "@/lib/localBoard";
 import cls from "./Classroom.module.css";
 
-// The teacher's read-only window into one student's mini-board
-// (StudentMiniBoard.js), opened by clicking a name in the live roster.
-// The teacher never draws ink here — only the student writes strokes to
-// this channel — the teacher's only write is a lightweight text comment,
-// so the two never contend over the same kind of content. See
-// StudentMiniBoard.js for the fuller rationale and the channel contract.
+// The teacher's window into one student's own board, opened by tapping a
+// name in the live class's Students list.
+//
+// A student's board is a full board now (pen, highlighter, text, shapes,
+// ruler, graph, page styles…), so this shows it with the same live viewer
+// students use to watch the teacher's board: everything the student does
+// appears as they do it, and the teacher can drag to move around it and
+// pinch (or scroll) to zoom.
+//
+// The teacher never draws here. Their one way of writing on it is a
+// comment: tap the board, type a note, and it is pinned to that spot on
+// the student's board. The student's board keeps the list of comments (so
+// they are still there after closing this view and coming back) and sends
+// it with everything else when this view opens.
 
-const STATE_REQUEST_RETRY_MS = 3000;
-
-function smoothPath(ctx, pts, startIdx, endIdx) {
-  if (endIdx - startIdx < 1) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[startIdx].x, pts[startIdx].y);
-  if (endIdx - startIdx === 1) {
-    ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
-  } else {
-    for (let i = startIdx + 1; i < endIdx; i++) {
-      const xc = (pts[i].x + pts[i + 1].x) / 2;
-      const yc = (pts[i].y + pts[i + 1].y) / 2;
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-    }
-    ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
-  }
-  ctx.stroke();
-}
-
-function strokeSegment(ctx, p0, p1, width) {
-  ctx.lineWidth = width;
-  ctx.beginPath();
-  ctx.moveTo(p0.x, p0.y);
-  ctx.lineTo(p1.x, p1.y);
-  ctx.stroke();
-}
-
-function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
-  for (let i = startIdx; i < endIdx; i++) {
-    const w0 = pts[i].w ?? fallbackWidth;
-    const w1 = pts[i + 1].w ?? fallbackWidth;
-    strokeSegment(ctx, pts[i], pts[i + 1], (w0 + w1) / 2);
-  }
-}
-
-function drawStroke(ctx, stroke) {
-  if (!stroke || !stroke.points || stroke.points.length < 2) return;
-  ctx.globalAlpha = stroke.opacity ?? 1;
-  ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
-  if (stroke.tool === "eraser") {
-    drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
-  } else {
-    ctx.lineWidth = stroke.width;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
-  }
-  ctx.globalAlpha = 1;
-}
-
-function drawCommentPins(ctx, pins) {
-  pins.forEach(({ x, y, index }) => {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(x, y, 13, 0, Math.PI * 2);
-    ctx.fillStyle = "#FFB300";
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "#fff";
-    ctx.stroke();
-    ctx.fillStyle = "#1a1a1a";
-    ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(String(index + 1), x, y + 1);
-    ctx.restore();
-  });
-}
-
-function toPixelStroke(stroke, size) {
-  return {
-    ...stroke,
-    width: stroke.width * size.width,
-    points: stroke.points.map((p) => ({ x: p.x * size.width, y: p.y * size.height, w: p.w != null ? p.w * size.width : undefined })),
-  };
-}
+const COMPOSER_WIDTH = 270;
+const COMPOSER_HEIGHT = 150;
 
 export default function TeacherStudentBoardView({ code, student, onBack }) {
-  const canvasRef = useRef(null);
-  const paneRef = useRef(null);
-  const ctxRef = useRef(null);
-  const channelRef = useRef(null);
-  const remoteStrokes = useRef({});
-  const strokesRef = useRef([]);
-  const commentsRef = useRef([]);
-  const hasReceivedSnapshot = useRef(false);
-
-  const [strokes, setStrokes] = useState([]);
+  const viewerRef = useRef(null);
   const [comments, setComments] = useState([]);
-  const [connectionStatus, setConnectionStatus] = useState("connecting"); // connecting | live
+  const [connected, setConnected] = useState(false);
   const [showComments, setShowComments] = useState(true);
-  const [composer, setComposer] = useState(null); // { x, y, text } in fractional coords
+  // The note being typed: where it will be pinned (board coordinates) and
+  // where its box sits on screen.
+  const [composer, setComposer] = useState(null);
 
-  useEffect(() => { strokesRef.current = strokes; }, [strokes]);
-  useEffect(() => { commentsRef.current = comments; }, [comments]);
+  const boardId = student?.studentId ? studentBoardId(code, student.studentId) : null;
+  const name = student?.name || "Student";
 
-  function getPaneSize() {
-    const el = paneRef.current;
-    if (!el) return { width: window.innerWidth, height: window.innerHeight };
-    const rect = el.getBoundingClientRect();
-    return { width: rect.width || 1, height: rect.height || 1 };
+  function handleSnapshot(payload) {
+    setConnected(true);
+    setComments(Array.isArray(payload.comments) ? payload.comments : []);
   }
 
-  function fullRedraw() {
-    const canvas = canvasRef.current;
-    const ctx = ctxRef.current;
-    if (!canvas || !ctx) return;
-    const ratio = window.devicePixelRatio || 1;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    const size = getPaneSize();
-    ctx.clearRect(0, 0, size.width, size.height);
-    for (const stroke of strokesRef.current) drawStroke(ctx, toPixelStroke(stroke, size));
-    for (const key in remoteStrokes.current) drawStroke(ctx, toPixelStroke(remoteStrokes.current[key], size));
-    drawCommentPins(
-      ctx,
-      commentsRef.current.map((c, i) => ({ x: c.x * size.width, y: c.y * size.height, index: i }))
-    );
-  }
-
-  useEffect(() => {
-    if (!code || !student?.studentId) return;
-    hasReceivedSnapshot.current = false;
-    remoteStrokes.current = {};
-
-    const channel = supabase.channel(`student-board-${code}-${student.studentId}`, {
-      config: { broadcast: { self: false } },
-    });
-
-    function requestSnapshot() {
-      if (hasReceivedSnapshot.current) return;
-      channel.send({ type: "broadcast", event: "state-request", payload: {} });
-    }
-
-    // Small ack from the student, always tiny (just comments) — the
-    // student's actual stroke history now arrives separately as a
-    // chunked replay over stroke-start/stroke-points/stroke-end (the
-    // same events used for live drawing), so this handler no longer
-    // touches `strokes` at all. See StudentMiniBoard.js's state-request
-    // handler for why: a single big snapshot message could exceed
-    // Supabase Realtime's broadcast payload cap and get silently
-    // dropped, which is why the teacher used to see a blank board.
-    channel.on("broadcast", { event: "state-snapshot" }, ({ payload }) => {
-      hasReceivedSnapshot.current = true;
-      setComments(payload.comments || []);
-      setConnectionStatus("live");
-      fullRedraw();
-    });
-
-    channel.on("broadcast", { event: "stroke-start" }, ({ payload }) => {
-      remoteStrokes.current[payload.strokeId] = {
-        id: payload.strokeId,
-        tool: payload.tool,
-        color: payload.color,
-        width: payload.width,
-        opacity: payload.opacity,
-        points: [payload.point],
-      };
-    });
-
-    channel.on("broadcast", { event: "stroke-points" }, ({ payload }) => {
-      const s = remoteStrokes.current[payload.strokeId];
-      if (!s) return;
-      s.points.push(...payload.points);
-      fullRedraw();
-    });
-
-    channel.on("broadcast", { event: "stroke-end" }, ({ payload }) => {
-      const s = remoteStrokes.current[payload.strokeId];
-      if (!s) return;
-      delete remoteStrokes.current[payload.strokeId];
-      // Guard against a stroke being appended twice — e.g. the retry
-      // timer re-requesting a replay that had actually already landed —
-      // since the same strokeId could otherwise show up in `strokes`
-      // more than once.
-      if (s.points.length > 1) {
-        setStrokes((prev) => (prev.some((existing) => existing.id === s.id) ? prev : [...prev, s]));
-      }
-    });
-
-    channel.on("broadcast", { event: "stroke-remove" }, ({ payload }) => {
-      setStrokes((prev) => prev.filter((s) => s.id !== payload.strokeId));
-    });
-
-    channel.on("broadcast", { event: "clear" }, () => {
-      setStrokes([]);
-    });
-
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") requestSnapshot();
-    });
-    channelRef.current = channel;
-
-    const retryInterval = setInterval(() => {
-      if (!hasReceivedSnapshot.current) requestSnapshot();
-    }, STATE_REQUEST_RETRY_MS);
-
-    return () => {
-      clearInterval(retryInterval);
-      supabase.removeChannel(channel);
-      channelRef.current = null;
-    };
-  }, [code, student?.studentId]);
-
-  useEffect(() => {
-    fullRedraw();
-  }, [strokes, comments]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    ctxRef.current = ctx;
-
-    function resizeCanvas() {
-      const ratio = window.devicePixelRatio || 1;
-      const size = getPaneSize();
-      canvas.width = size.width * ratio;
-      canvas.height = size.height * ratio;
-      canvas.style.width = size.width + "px";
-      canvas.style.height = size.height + "px";
-      fullRedraw();
-    }
-    resizeCanvas();
-    const resizeObserver = new ResizeObserver(() => resizeCanvas());
-    if (paneRef.current) resizeObserver.observe(paneRef.current);
-    return () => resizeObserver.disconnect();
-  }, []);
-
-  function handleCanvasClick(e) {
-    const rect = canvasRef.current.getBoundingClientRect();
-    const w = rect.width || 1;
-    const h = rect.height || 1;
-    const x = (e.clientX - rect.left) / w;
-    const y = (e.clientY - rect.top) / h;
-    setComposer({ x, y, text: "" });
+  function handleBoardTap(at, screen, pane) {
+    // Keep the box on the board: beside the tap, flipped above it near the
+    // bottom edge.
+    const left = Math.max(8, Math.min(screen.x - COMPOSER_WIDTH / 2, pane.width - COMPOSER_WIDTH - 8));
+    const below = screen.y + 18;
+    const top = below + COMPOSER_HEIGHT > pane.height ? Math.max(8, screen.y - COMPOSER_HEIGHT - 18) : below;
+    setComposer({ x: at.x, y: at.y, left, top, text: "" });
   }
 
   function submitComment() {
@@ -254,126 +56,113 @@ export default function TeacherStudentBoardView({ code, student, onBack }) {
       setComposer(null);
       return;
     }
-    const comment = {
-      id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
-      x: composer.x,
-      y: composer.y,
-      text: composer.text.trim(),
-      createdAt: Date.now(),
-    };
+    const comment = { id: newId(), x: composer.x, y: composer.y, text: composer.text.trim(), createdAt: Date.now() };
     setComments((prev) => [...prev, comment]);
-    channelRef.current?.send({ type: "broadcast", event: "teacher-comment-add", payload: comment });
+    viewerRef.current?.send("teacher-comment-add", comment);
     setComposer(null);
   }
 
   function removeComment(id) {
     setComments((prev) => prev.filter((c) => c.id !== id));
-    channelRef.current?.send({ type: "broadcast", event: "teacher-comment-remove", payload: { id } });
+    viewerRef.current?.send("teacher-comment-remove", { id });
   }
+
+  // The numbered pins: every comment, plus the one being typed.
+  const pins = composer ? [...comments, { id: "draft", x: composer.x, y: composer.y, draft: true }] : comments;
 
   return (
     <div className={cls.studentView}>
-      <div
-        className={cls.studentBar}
-      >
+      <div className={cls.studentBar}>
         <button
           onClick={onBack}
-          className={cls.smallBtn} style={{ height: 40, display: "inline-flex", alignItems: "center", gap: 6 }}
+          aria-label="Back to the roster"
+          className={`${cls.smallBtn} ${cls.barBtn}`}
         >
-          <ArrowLeft size={15} /> Roster
+          <ArrowLeft size={15} /> <span className={cls.barLabel}>Roster</span>
         </button>
-        <div className={cls.studentName}>{`${student?.name || "Student"}'s board`}</div>
-        {connectionStatus !== "live" && (
-          <span className={cls.connecting}>connecting…</span>
-        )}
+        <div className={cls.studentName}>{`${name}'s board`}</div>
+        {!connected && <span className={cls.connecting}>connecting…</span>}
         <div className={cls.grow} />
         <button
+          onClick={() => viewerRef.current?.fitAll()}
+          className={`${cls.smallBtn} ${cls.barBtn}`}
+          aria-label="Show all"
+          title="Zoom out so everything on this board is in view"
+        >
+          <Maximize size={14} /> <span className={cls.barLabel}>Show all</span>
+        </button>
+        <button
           onClick={() => setShowComments((v) => !v)}
-          className={`${cls.smallBtn} ${showComments ? cls.smallBtnOn : ""}`} style={{ height: 40 }}
+          className={`${cls.smallBtn} ${cls.barBtn} ${showComments ? cls.smallBtnOn : ""}`}
         >
           Comments{comments.length > 0 ? ` (${comments.length})` : ""}
         </button>
       </div>
 
       <div className={cls.studentBody}>
-        <div ref={paneRef} data-tour="student-board" style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden", background: "#fff" }}>
-          <canvas
-            ref={canvasRef}
-            onClick={handleCanvasClick}
-            style={{ display: "block", cursor: "crosshair" }}
-          />
-
-          <div
-            className={`${cls.statusPill} ${cls.statusPillBottom}`}
-          >
-            Tap anywhere on the board to leave a comment
-          </div>
-
-          {composer && (
-            <div
-              className={cls.composer} style={{
-                // Centred under the tap, but kept inside the board near its edges.
-                left: `clamp(8px, calc(${composer.x * 100}% - 135px), max(8px, calc(100% - 278px)))`,
-                top: `calc(${composer.y * 100}% + 16px)`,
-              }}
+        <div className={cls.studentBoard}>
+          {boardId && (
+            <ClassroomBoardViewer
+              ref={viewerRef}
+              boardId={boardId}
+              embedded
+              fitOnLoad
+              tour="student-board"
+              waitingText={`Waiting for ${name}'s board…`}
+              pins={pins}
+              onBoardTap={handleBoardTap}
+              onSnapshot={handleSnapshot}
             >
-              <textarea
-                autoFocus
-                value={composer.text}
-                onChange={(e) => setComposer({ ...composer, text: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    submitComment();
-                  } else if (e.key === "Escape") {
-                    setComposer(null);
-                  }
-                }}
-                placeholder="What should they change?"
-                rows={2}
-                className={cls.composerInput}
-              />
-              <div className={cls.composerActions}>
-                <button
-                  onClick={() => setComposer(null)}
-                  className={cls.smallBtn}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitComment}
-                  className={`${cls.smallBtn} ${cls.smallBtnPrimary}`}
-                >
-                  Send
-                </button>
-              </div>
-            </div>
+              {!composer && (
+                // a hint only: taps on it go through to the board underneath
+                <div className={`${cls.statusPill} ${cls.statusPillBottom}`} style={{ pointerEvents: "none" }}>
+                  Tap the board to leave a comment · drag to move around
+                </div>
+              )}
+
+              {composer && (
+                <div className={cls.composer} style={{ left: composer.left, top: composer.top, width: COMPOSER_WIDTH }}>
+                  <textarea
+                    autoFocus
+                    value={composer.text}
+                    onChange={(e) => setComposer({ ...composer, text: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        submitComment();
+                      } else if (e.key === "Escape") {
+                        setComposer(null);
+                      }
+                    }}
+                    placeholder="What should they change?"
+                    rows={2}
+                    className={cls.composerInput}
+                  />
+                  <div className={cls.composerActions}>
+                    <button onClick={() => setComposer(null)} className={cls.smallBtn}>
+                      Cancel
+                    </button>
+                    <button onClick={submitComment} className={`${cls.smallBtn} ${cls.smallBtnPrimary}`}>
+                      Send
+                    </button>
+                  </div>
+                </div>
+              )}
+            </ClassroomBoardViewer>
           )}
         </div>
 
         {showComments && (
-          <div
-            className={cls.sidePanel}
-          >
-            <div className={cls.sideTitle}>
-              Comments for {student?.name || "this student"}
-            </div>
+          <div className={cls.sidePanel}>
+            <div className={cls.sideTitle}>Comments for {student?.name || "this student"}</div>
             {comments.length === 0 && (
               <div className={cls.sideEmpty}>No comments yet — tap the board to add one.</div>
             )}
             {comments.map((c, i) => (
               <div key={c.id} className={cls.commentRow} data-tour="student-comment">
-                <span
-                  className={cls.commentNum}
-                >
-                  {i + 1}
-                </span>
+                <span className={cls.commentNum}>{i + 1}</span>
                 <span className={cls.commentText}>{c.text}</span>
-                <button
-                  onClick={() => removeComment(c.id)}
-                  className={cls.commentDelete}
-                  title="Delete comment"
-                >
+                <button onClick={() => removeComment(c.id)} className={cls.commentDelete} title="Delete comment">
                   ×
                 </button>
               </div>

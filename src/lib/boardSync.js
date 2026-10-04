@@ -72,10 +72,14 @@ const PARTS = {
 
 // One kind of board content (all of it). null when it couldn't be loaded,
 // so the caller leaves that part of the screen alone.
-export async function fetchBoardPart(boardId, kind) {
+//
+// `client` is where the board is kept. It is the real database unless the
+// board says otherwise: a student's own board in a live class is kept in
+// the student's tab instead (see src/lib/localBoard.js).
+export async function fetchBoardPart(boardId, kind, client = supabase) {
   const part = PARTS[kind];
   const { rows, error } = await fetchAllRows((withCount) =>
-    ordered(supabase.from(kind).select(part.columns, withCount ? { count: "exact" } : undefined).eq("board_id", boardId))
+    ordered(client.from(kind).select(part.columns, withCount ? { count: "exact" } : undefined).eq("board_id", boardId))
   );
   if (error) {
     if (kind === "images") console.warn("Could not load images (has the images table been created yet?):", error);
@@ -85,19 +89,19 @@ export async function fetchBoardPart(boardId, kind) {
   return rows.map(part.map);
 }
 
-export async function fetchBoardContents(boardId) {
+export async function fetchBoardContents(boardId, client = supabase) {
   const [strokes, texts, images] = await Promise.all([
-    fetchBoardPart(boardId, "strokes"),
-    fetchBoardPart(boardId, "texts"),
-    fetchBoardPart(boardId, "images"),
+    fetchBoardPart(boardId, "strokes", client),
+    fetchBoardPart(boardId, "texts", client),
+    fetchBoardPart(boardId, "images", client),
   ]);
   return { strokes, texts, images };
 }
 
 // The board's own settings, for catching up after time away.
-export async function fetchBoardSettings(boardId) {
+export async function fetchBoardSettings(boardId, client = supabase) {
   try {
-    const { data, error } = await supabase.from("boards").select("*").eq("id", boardId).maybeSingle();
+    const { data, error } = await client.from("boards").select("*").eq("id", boardId).maybeSingle();
     if (error || !data) return null;
     return data;
   } catch (err) {
@@ -107,9 +111,9 @@ export async function fetchBoardSettings(boardId) {
 
 // Marks a board as in use, so the inactive-board clean-up leaves it alone.
 // Quietly does nothing until the clean-up SQL has been run.
-export async function touchBoard(boardId) {
+export async function touchBoard(boardId, client = supabase) {
   try {
-    await supabase.rpc("touch_board", { p_board_id: String(boardId) });
+    await client.rpc("touch_board", { p_board_id: String(boardId) });
   } catch (err) {
     // optional feature — never block the board over it
   }
@@ -117,8 +121,9 @@ export async function touchBoard(boardId) {
 
 // ---------- tracking what's on screen ----------
 
-export function createSyncTracker() {
+export function createSyncTracker(client) {
   return {
+    client: client || supabase, // where this board's saves go
     pending: new Map(), // id -> number of saves in flight
     failed: new Map(), // id -> { table, row, attempts }
     seenAt: new Map(), // id -> when it first appeared on this screen
@@ -207,7 +212,7 @@ export async function saveRow(tracker, table, row) {
   tracker.pending.set(id, (tracker.pending.get(id) || 0) + 1);
   let error = null;
   try {
-    const result = await supabase.from(table).upsert(row);
+    const result = await tracker.client.from(table).upsert(row);
     error = result.error;
   } catch (err) {
     error = err || new Error("save failed");
@@ -237,7 +242,7 @@ export async function saveRows(tracker, table, rows) {
   for (const row of rows) tracker.pending.set(row.id, (tracker.pending.get(row.id) || 0) + 1);
   let error = null;
   try {
-    const result = await supabase.from(table).upsert(rows);
+    const result = await tracker.client.from(table).upsert(rows);
     error = result.error;
   } catch (err) {
     error = err || new Error("save failed");

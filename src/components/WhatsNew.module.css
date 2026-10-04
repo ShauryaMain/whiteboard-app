@@ -167,6 +167,12 @@
   gap: 10px;
 }
 
+/* With more than one update there is a row of buttons above the picture
+   (one per update), so the picture gives up that much more height. */
+.slidesBelowChips {
+  width: min(100%, max(300px, calc((100dvh - 520px) * 1.6)));
+}
+
 .frame {
   position: relative;
   /* room for the hard shadow */
