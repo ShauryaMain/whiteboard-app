@@ -4,12 +4,12 @@ import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import ReferencePane from "./ReferencePane";
-import { renderGrid } from "@/lib/gridRenderer";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
+import { translateStroke, translateText, translateImage, unionBounds, newId } from "@/lib/boardObjects";
 import {
-  translateStroke, translateText, translateImage, strokeDash,
-  strokeBounds, textBounds, imageBounds, unionBounds,
-} from "@/lib/boardObjects";
+  drawInkStroke as drawStroke, drawTextBoxes as drawTexts, drawGraph, drawTeacherLayer, hasTeacherLayer, contentBoxes,
+} from "@/lib/boardRender";
+import { getPencilOnly } from "@/lib/pencilPrefs";
 import cls from "./Classroom.module.css";
 
 const MIN_SCALE = 0.1;
@@ -17,6 +17,18 @@ const MAX_SCALE = 8;
 const STATE_REQUEST_RETRY_MS = 3000;
 const TAP_SLOP_PX = 8; // a press that moves less than this is a tap, not a drag
 const FIT_MARGIN_PX = 36;
+// A line the teacher writes on a student's board is sent whole when it is
+// finished (as well as live, as it is drawn). So that it always fits in one
+// live message, a very long line is quietly carried on as a new one.
+const INK_MAX_POINTS = 1500;
+// A line that was being written but never finished (its last message was
+// lost) is dropped after this long without news.
+const LIVE_INK_EXPIRES_MS = 20000;
+
+// Positions to a hundredth of a board unit: plenty, and half the size to send.
+function trim(value) {
+  return Math.round(value * 100) / 100;
+}
 
 function distance(p1, p2) {
   return Math.hypot(p1.x - p2.x, p1.y - p2.y);
@@ -26,119 +38,6 @@ function distance(p1, p2) {
 function mergeById(prev, added) {
   const ids = new Set(added.map((o) => o.id));
   return [...prev.filter((o) => !ids.has(o.id)), ...added];
-}
-
-function smoothPath(ctx, pts, startIdx, endIdx) {
-  if (endIdx - startIdx < 1) return;
-  ctx.beginPath();
-  ctx.moveTo(pts[startIdx].x, pts[startIdx].y);
-  if (endIdx - startIdx === 1) {
-    ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
-  } else {
-    for (let i = startIdx + 1; i < endIdx; i++) {
-      const xc = (pts[i].x + pts[i + 1].x) / 2;
-      const yc = (pts[i].y + pts[i + 1].y) / 2;
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-    }
-    ctx.lineTo(pts[endIdx].x, pts[endIdx].y);
-  }
-  ctx.stroke();
-}
-
-function strokeSegment(ctx, p0, p1, width) {
-  ctx.lineWidth = width;
-  ctx.beginPath();
-  ctx.moveTo(p0.x, p0.y);
-  ctx.lineTo(p1.x, p1.y);
-  ctx.stroke();
-}
-
-function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
-  for (let i = startIdx; i < endIdx; i++) {
-    const w0 = pts[i].w ?? fallbackWidth;
-    const w1 = pts[i + 1].w ?? fallbackWidth;
-    strokeSegment(ctx, pts[i], pts[i + 1], (w0 + w1) / 2);
-  }
-}
-
-function drawStroke(ctx, stroke) {
-  if (!stroke || !stroke.points || stroke.points.length < 2) return;
-  if (stroke.tool === "eraser") {
-    // Punch a transparent hole (like the teacher's board) so the page
-    // background shows through instead of a white smear.
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.strokeStyle = "#000000";
-    drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
-    ctx.globalCompositeOperation = "source-over";
-  } else {
-    ctx.globalAlpha = stroke.opacity ?? 1;
-    ctx.strokeStyle = stroke.color;
-    ctx.lineWidth = stroke.width;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    const dash = strokeDash(stroke);
-    if (dash) ctx.setLineDash(dash);
-    smoothPath(ctx, stroke.points, 0, stroke.points.length - 1);
-    if (dash) ctx.setLineDash([]);
-  }
-  ctx.globalAlpha = 1;
-}
-
-function wrapTextLines(ctx, textContent, fontSize, maxWidth) {
-  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-  const paragraphs = String(textContent).split("\n");
-  const lines = [];
-  for (const para of paragraphs) {
-    if (para === "") {
-      lines.push("");
-      continue;
-    }
-    const words = para.split(" ");
-    let currentLine = "";
-    for (const word of words) {
-      const testLine = currentLine ? currentLine + " " + word : word;
-      const testWidth = ctx.measureText(testLine).width;
-      if (testWidth > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    lines.push(currentLine);
-  }
-  return lines;
-}
-
-function drawTexts(ctx, textsArr) {
-  for (const t of textsArr) {
-    const lines = wrapTextLines(ctx, t.text, t.fontSize, t.width || 240);
-    const lineHeight = t.fontSize * 1.3;
-    const boxHeight = lines.length * lineHeight;
-    const center = { x: t.x + (t.width || 240) / 2, y: t.y + boxHeight / 2 };
-    const rotation = t.rotation || 0;
-
-    ctx.save();
-    if (rotation) {
-      ctx.translate(center.x, center.y);
-      ctx.rotate(rotation);
-      ctx.translate(-center.x, -center.y);
-    }
-    ctx.fillStyle = t.color;
-    ctx.font = `${t.fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-    ctx.textBaseline = "top";
-    lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + i * lineHeight));
-    ctx.restore();
-  }
-}
-
-// Same graph renderer as the teacher's board (and the graph dialog's
-// preview), so students see exactly the graph the teacher placed.
-function drawGrid(ctx, grid, scale) {
-  if (!grid) return;
-  const { x, y, size, cols } = grid;
-  renderGrid(ctx, grid, { cellPx: size / cols, originXPx: x, originYPx: y, lineScale: 1 / scale });
 }
 
 // Numbered markers (the teacher's comments on a student's board). Drawn
@@ -165,12 +64,15 @@ function drawPins(ctx, pins, scale) {
   });
 }
 
-// A read-only, live view of a board, for someone with no database access.
+// A live view of a board, for someone with no database access.
 //
-// Two uses:
-//   • a student watching the teacher's board (the default), and
+// Its uses:
+//   • a student watching the teacher's board (the default),
 //   • the teacher looking at one student's board (TeacherStudentBoardView
-//     passes `embedded` and the extras below).
+//     passes `embedded` and the extras below),
+//   • the small previews in the teacher's class overview (ClassOverview),
+//   • a student watching a classmate's board the teacher is showing to
+//     everyone.
 //
 // Extras, all optional:
 //   embedded     sits inside another screen: fills its box, no Leave button
@@ -180,9 +82,25 @@ function drawPins(ctx, pins, scale) {
 //   onSnapshot   (payload) the board's answer to "what's on you?" arrived
 //   fitOnLoad    once loaded, zoom out if needed so nothing is off screen
 //   tour         a data-tour name for the board area (see src/lib/tours.js)
-//   ref          gets { send(event, payload), fitAll() }
+//   question     what the teacher sent to every student's board ({ strokes,
+//                texts, images, grid }): drawn here as well when this is a
+//                view of a student's board (everyone in the class has their
+//                own copy of it, so it isn't sent again with each board)
+//   drawTool     { color, width }: dragging on the board writes on it, as
+//                the teacher (the student sees it, and can't rub it out).
+//                Two fingers still move and zoom.
+//   onInkChange  ({ total, mine }) how much teacher's writing is on the
+//                board, and how much of it was written in this view
+//   interactive  false for a picture that can't be moved or tapped
+//   autoFit      keep everything in view as the board changes (previews)
+//   fitMargin    px kept clear around the work when fitting
+//   withComments ask the board for the teacher's comments on it as well
+//                (only the teacher's own view of a student's board does)
+//   ref          gets { send(event, payload), fitAll(), undoInk(), clearInk() }
 export default function ClassroomBoardViewer({
-  boardId, embedded = false, waitingText, pins, onBoardTap, onSnapshot, fitOnLoad = false, tour, ref, children,
+  boardId, embedded = false, waitingText, pins, onBoardTap, onSnapshot, onLeave, fitOnLoad = false, tour, ref, children,
+  question = null, drawTool = null, onInkChange, interactive = true, autoFit = false, fitMargin = FIT_MARGIN_PX,
+  withComments = false,
 }) {
   const router = useRouter();
   const canvasRef = useRef(null);
@@ -213,8 +131,30 @@ export default function ClassroomBoardViewer({
   const onBoardTapRef = useRef(onBoardTap);
   const onSnapshotRef = useRef(onSnapshot);
   const fitOnLoadRef = useRef(fitOnLoad);
+  // The teacher's layer (see drawTeacherLayer): it has a canvas of its own,
+  // on top of the board's ink.
+  const teacherCanvasRef = useRef(null);
+  const teacherCtxRef = useRef(null);
+  const teacherInkRef = useRef([]);
+  const teacherLiveRef = useRef({}); // lines someone else is writing right now, by key
+  const questionRef = useRef(question);
+  const questionImageNodesRef = useRef({});
+  const drawToolRef = useRef(drawTool);
+  const onInkChangeRef = useRef(onInkChange);
+  const interactiveRef = useRef(interactive);
+  const autoFitRef = useRef(autoFit);
+  const fitMarginRef = useRef(fitMargin);
+  // Writing in this view: the line being drawn, the ids of the lines drawn
+  // here (newest last, for Undo), and points waiting to be sent.
+  const myStrokeRef = useRef(null);
+  const myInkStackRef = useRef([]);
+  const pendingInkRef = useRef([]);
+  const inkFrameRef = useRef(null);
+  const liveExpiryRef = useRef(null);
+  const withCommentsRef = useRef(withComments);
 
   const [strokes, setStrokes] = useState([]);
+  const [teacherInk, setTeacherInk] = useState([]);
   const [texts, setTexts] = useState([]);
   const [images, setImages] = useState([]);
   const imagesRef = useRef([]);
@@ -230,6 +170,12 @@ export default function ClassroomBoardViewer({
     onBoardTapRef.current = onBoardTap;
     onSnapshotRef.current = onSnapshot;
     fitOnLoadRef.current = fitOnLoad;
+    drawToolRef.current = drawTool;
+    onInkChangeRef.current = onInkChange;
+    interactiveRef.current = interactive;
+    autoFitRef.current = autoFit;
+    fitMarginRef.current = fitMargin;
+    withCommentsRef.current = withComments;
   });
 
   function getPaneSize() {
@@ -249,14 +195,33 @@ export default function ClassroomBoardViewer({
   function repositionImages() {
     const scale = scaleRef.current;
     const pan = panRef.current;
-    for (const img of imagesRef.current) {
-      const el = imageNodesRef.current[img.id];
-      if (!el) continue;
+    const place = (img, el) => {
+      if (!el) return;
       el.style.left = img.x * scale + pan.x + "px";
       el.style.top = img.y * scale + pan.y + "px";
       el.style.width = img.width * scale + "px";
       el.style.height = img.height * scale + "px";
-    }
+    };
+    for (const img of imagesRef.current) place(img, imageNodesRef.current[img.id]);
+    const q = questionRef.current;
+    for (const img of (q && q.images) || []) place(img, questionImageNodesRef.current[img.id]);
+  }
+
+  // The teacher's layer and the comment pins, on their own canvas.
+  function drawTeacherOverlay() {
+    const canvas = teacherCanvasRef.current;
+    const tctx = teacherCtxRef.current;
+    if (!canvas || !tctx) return;
+    const ratio = window.devicePixelRatio || 1;
+    const scale = scaleRef.current;
+    const pan = panRef.current;
+    tctx.setTransform(1, 0, 0, 1, 0, 0);
+    tctx.clearRect(0, 0, canvas.width, canvas.height);
+    tctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
+    const layer = { question: questionRef.current, ink: teacherInkRef.current, live: teacherLiveRef.current };
+    if (hasTeacherLayer(layer)) drawTeacherLayer(tctx, layer, scale);
+    if (myStrokeRef.current) drawStroke(tctx, myStrokeRef.current.stroke);
+    if (pinsRef.current.length) drawPins(tctx, pinsRef.current, scale);
   }
 
   function fullRedraw() {
@@ -274,8 +239,8 @@ export default function ClassroomBoardViewer({
     for (const stroke of strokesRef.current) drawStroke(ctx, stroke);
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
     drawTexts(ctx, textsRef.current);
-    drawGrid(ctx, gridConfigRef.current, scale);
-    if (pinsRef.current.length) drawPins(ctx, pinsRef.current, scale);
+    drawGraph(ctx, gridConfigRef.current, scale);
+    drawTeacherOverlay();
     applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
     repositionImages();
   }
@@ -287,21 +252,12 @@ export default function ClassroomBoardViewer({
 
   // The box around everything on the board (null if it's empty).
   function contentBounds() {
-    const boxes = [];
-    for (const stroke of strokesRef.current) {
-      if (stroke.tool !== "eraser") boxes.push(strokeBounds(stroke));
-    }
     const ctx = ctxRef.current;
-    for (const t of textsRef.current) {
-      const lines = ctx ? wrapTextLines(ctx, t.text, t.fontSize, t.width || 240).length : 1;
-      boxes.push(textBounds(t, lines * t.fontSize * 1.3));
-    }
-    for (const img of imagesRef.current) boxes.push(imageBounds(img));
-    const grid = gridConfigRef.current;
-    if (grid && grid.size && grid.cols) {
-      const rows = grid.type === "polar" ? grid.cols : grid.rows || grid.cols;
-      boxes.push({ minX: grid.x, minY: grid.y, maxX: grid.x + grid.size, maxY: grid.y + (grid.size / grid.cols) * rows });
-    }
+    const boxes = contentBoxes(ctx, {
+      strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, grid: gridConfigRef.current,
+    });
+    if (questionRef.current) boxes.push(...contentBoxes(ctx, questionRef.current));
+    boxes.push(...contentBoxes(ctx, { strokes: teacherInkRef.current }));
     for (const pin of pinsRef.current) boxes.push({ minX: pin.x - 14, minY: pin.y - 14, maxX: pin.x + 14, maxY: pin.y + 14 });
     return unionBounds(boxes);
   }
@@ -323,9 +279,10 @@ export default function ClassroomBoardViewer({
     }
     const boxW = Math.max(1, box.maxX - box.minX);
     const boxH = Math.max(1, box.maxY - box.minY);
+    const margin = fitMarginRef.current;
     const scale = Math.max(
       MIN_SCALE,
-      Math.min(1, (width - FIT_MARGIN_PX * 2) / boxW, (height - FIT_MARGIN_PX * 2) / boxH)
+      Math.min(1, (width - margin * 2) / boxW, (height - margin * 2) / boxH)
     );
     scaleRef.current = scale;
     panRef.current = {
@@ -344,7 +301,139 @@ export default function ClassroomBoardViewer({
     fitAll() {
       fitAll();
     },
+    // Takes back the last line written in this view. False if there is none.
+    undoInk() {
+      const stack = myInkStackRef.current;
+      let id = null;
+      while (stack.length && id === null) {
+        const top = stack.pop();
+        if (teacherInkRef.current.some((s) => s.id === top)) id = top;
+      }
+      if (id === null) return false;
+      setTeacherInk((prev) => prev.filter((s) => s.id !== id));
+      channelRef.current?.send({ type: "broadcast", event: "teacher-ink-remove", payload: { ids: [id] } });
+      return true;
+    },
+    // Takes all of the teacher's writing off this board.
+    clearInk() {
+      myInkStackRef.current = [];
+      teacherLiveRef.current = {};
+      setTeacherInk([]);
+      channelRef.current?.send({ type: "broadcast", event: "teacher-ink-clear", payload: {} });
+    },
   }));
+
+  // ---------- writing on the board, as the teacher ----------
+
+  function flushInk() {
+    inkFrameRef.current = null;
+    const mine = myStrokeRef.current;
+    const points = pendingInkRef.current;
+    pendingInkRef.current = [];
+    if (!mine || !points.length) return;
+    channelRef.current?.send({ type: "broadcast", event: "teacher-ink-points", payload: { strokeKey: mine.key, points } });
+  }
+
+  // at: where, in board coordinates
+  function startInk(pointerId, at, pointerType) {
+    const pen = drawToolRef.current || { color: "#E53935", width: 4 };
+    const id = newId();
+    const stroke = { id, tool: "pen", color: pen.color, width: pen.width, opacity: 1, points: [at] };
+    myStrokeRef.current = { pointerId, pointerType, key: `teacher-${id}`, stroke };
+    pendingInkRef.current = [];
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "teacher-ink-start",
+      payload: { strokeKey: `teacher-${id}`, strokeId: id, color: pen.color, width: pen.width, point: at },
+    });
+  }
+
+  // keep: false when the line turned out to be the start of a pinch
+  function endInk(keep) {
+    const mine = myStrokeRef.current;
+    if (!mine) return;
+    if (inkFrameRef.current !== null) cancelAnimationFrame(inkFrameRef.current);
+    flushInk();
+    myStrokeRef.current = null;
+    const send = (event, payload) => channelRef.current?.send({ type: "broadcast", event, payload });
+    if (!keep) {
+      send("teacher-ink-cancel", { strokeKey: mine.key });
+      drawTeacherOverlay();
+      return;
+    }
+    const stroke = mine.stroke;
+    // a tap leaves a dot
+    if (stroke.points.length === 1) stroke.points.push({ x: stroke.points[0].x + 0.01, y: stroke.points[0].y + 0.01 });
+    myInkStackRef.current.push(stroke.id);
+    // (written while a re-sent board was still arriving in pieces: it is
+    // newer than the pieces, so it isn't pruned when they finish)
+    if (collectingRef.current) collectingRef.current.teacherInk.add(stroke.id);
+    // (the ref too, so the line doesn't blink out before the next render)
+    teacherInkRef.current = [...teacherInkRef.current, stroke];
+    setTeacherInk((prev) => (prev.some((x) => x.id === stroke.id) ? prev : [...prev, stroke]));
+    send("teacher-ink-end", { strokeKey: mine.key, stroke });
+    drawTeacherOverlay();
+  }
+
+  function moveInk(pos) {
+    const mine = myStrokeRef.current;
+    if (!mine) return;
+    const world = screenToWorld(pos);
+    const at = { x: trim(world.x), y: trim(world.y) };
+    const pts = mine.stroke.points;
+    const last = pts[pts.length - 1];
+    if (Math.hypot(at.x - last.x, at.y - last.y) * scaleRef.current < 0.7) return;
+    pts.push(at);
+    pendingInkRef.current.push(at);
+    if (inkFrameRef.current === null) inkFrameRef.current = requestAnimationFrame(flushInk);
+    // Just the new bit: redrawing the whole layer for every movement of the
+    // pen would be slow on a board with a lot on it.
+    const tctx = teacherCtxRef.current;
+    if (tctx) {
+      tctx.globalAlpha = 1;
+      tctx.globalCompositeOperation = "source-over";
+      tctx.strokeStyle = mine.stroke.color;
+      tctx.lineWidth = mine.stroke.width;
+      tctx.lineCap = "round";
+      tctx.lineJoin = "round";
+      tctx.beginPath();
+      tctx.moveTo(last.x, last.y);
+      tctx.lineTo(at.x, at.y);
+      tctx.stroke();
+    }
+    // A very long line is finished here and carried straight on as a new
+    // one, so each is small enough to send whole.
+    if (pts.length >= INK_MAX_POINTS) {
+      const { pointerId, pointerType } = mine;
+      endInk(true);
+      startInk(pointerId, at, pointerType);
+    }
+  }
+
+  // Lines being written by the teacher elsewhere that have gone quiet (the
+  // message saying they were finished never arrived) are dropped.
+  function watchLiveInk() {
+    if (liveExpiryRef.current) return;
+    liveExpiryRef.current = setInterval(() => {
+      const live = teacherLiveRef.current;
+      const now = Date.now();
+      let left = false;
+      let dropped = false;
+      for (const key in live) {
+        if (now - (live[key].at || 0) >= LIVE_INK_EXPIRES_MS) {
+          delete live[key];
+          dropped = true;
+        } else {
+          left = true;
+        }
+      }
+      if (dropped) drawTeacherOverlay();
+      if (!left) {
+        clearInterval(liveExpiryRef.current);
+        liveExpiryRef.current = null;
+      }
+    }, 5000);
+  }
 
   // Realtime: connects to the board's own existing channel (the exact
   // same one the teacher's normal whiteboard already broadcasts on), and
@@ -358,7 +447,11 @@ export default function ClassroomBoardViewer({
 
     function requestSnapshot() {
       if (hasReceivedSnapshot.current) return;
-      channel.send({ type: "broadcast", event: "classroom-state-request", payload: {} });
+      channel.send({
+        type: "broadcast",
+        event: "classroom-state-request",
+        payload: withCommentsRef.current ? { comments: true } : {},
+      });
     }
 
     // The board's answer. A small board arrives whole, in this one message.
@@ -370,6 +463,9 @@ export default function ClassroomBoardViewer({
     // that is already up to date ignores answers meant for someone else.
     channel.on("broadcast", { event: "classroom-state-snapshot" }, ({ payload }) => {
       if (hasReceivedSnapshot.current) return;
+      // The teacher's view of a student's board waits for an answer that
+      // has the comments in it (one sent for somebody else may not).
+      if (withCommentsRef.current && !Array.isArray(payload.comments)) return;
       hasReceivedSnapshot.current = true;
       gridConfigRef.current = payload.grid || null;
       backgroundRef.current = normalizeBackground(payload.background);
@@ -380,13 +476,14 @@ export default function ClassroomBoardViewer({
         // re-joining after a dropped connection doesn't blank the board.
         collectingRef.current = {
           id: payload.snapshotId, expected: payload.pieces, received: 0,
-          strokes: new Set(), texts: new Set(), images: new Set(),
+          strokes: new Set(), texts: new Set(), images: new Set(), teacherInk: new Set(),
         };
       } else {
         collectingRef.current = null;
         setStrokes(payload.strokes || []);
         setTexts(payload.texts || []);
         setImages(payload.images || []);
+        setTeacherInk(payload.teacherInk || []);
         if (fitOnLoadRef.current) pendingFitRef.current = true;
       }
       setConnectionStatus("live");
@@ -407,6 +504,7 @@ export default function ClassroomBoardViewer({
       take("strokes", setStrokes);
       take("texts", setTexts);
       take("images", setImages);
+      take("teacherInk", setTeacherInk);
     });
 
     channel.on("broadcast", { event: "classroom-state-done" }, ({ payload }) => {
@@ -420,8 +518,50 @@ export default function ClassroomBoardViewer({
         setStrokes((prev) => prev.filter((o) => c.strokes.has(o.id)));
         setTexts((prev) => prev.filter((o) => c.texts.has(o.id)));
         setImages((prev) => prev.filter((o) => c.images.has(o.id)));
+        setTeacherInk((prev) => prev.filter((o) => c.teacherInk.has(o.id)));
       }
       if (fitOnLoadRef.current) pendingFitRef.current = true;
+    });
+
+    // The teacher writing on this board (it is a student's): seen here when
+    // this is a classmate's view of it, or the teacher's own class overview.
+    // The teacher's own view of the board draws its lines itself (see
+    // startInk) and never hears them back.
+    channel.on("broadcast", { event: "teacher-ink-start" }, ({ payload }) => {
+      if (!payload || !payload.strokeKey) return;
+      teacherLiveRef.current[payload.strokeKey] = {
+        id: payload.strokeId, tool: "pen", color: payload.color, width: payload.width, opacity: 1, points: [payload.point],
+        at: Date.now(),
+      };
+      watchLiveInk();
+    });
+    channel.on("broadcast", { event: "teacher-ink-points" }, ({ payload }) => {
+      const s = payload && teacherLiveRef.current[payload.strokeKey];
+      if (!s) return;
+      s.points.push(...(payload.points || []));
+      s.at = Date.now();
+      drawTeacherOverlay();
+    });
+    channel.on("broadcast", { event: "teacher-ink-cancel" }, ({ payload }) => {
+      if (!payload) return;
+      delete teacherLiveRef.current[payload.strokeKey];
+      drawTeacherOverlay();
+    });
+    channel.on("broadcast", { event: "teacher-ink-end" }, ({ payload }) => {
+      if (!payload) return;
+      const s = payload.stroke || teacherLiveRef.current[payload.strokeKey];
+      delete teacherLiveRef.current[payload.strokeKey];
+      if (!s || !s.id || !s.points || s.points.length < 2) return;
+      keep("teacherInk", s.id);
+      setTeacherInk((prev) => (prev.some((x) => x.id === s.id) ? prev : [...prev, s]));
+    });
+    channel.on("broadcast", { event: "teacher-ink-remove" }, ({ payload }) => {
+      const gone = new Set((payload && payload.ids) || []);
+      if (gone.size) setTeacherInk((prev) => prev.filter((x) => !gone.has(x.id)));
+    });
+    channel.on("broadcast", { event: "teacher-ink-clear" }, () => {
+      teacherLiveRef.current = {};
+      setTeacherInk([]);
     });
 
     // Things that arrive the ordinary way while a big board is still coming
@@ -571,6 +711,7 @@ export default function ClassroomBoardViewer({
       if (joinedOnceRef.current) {
         hasReceivedSnapshot.current = false;
         remoteStrokes.current = {};
+        teacherLiveRef.current = {};
       }
       joinedOnceRef.current = true;
       requestSnapshot();
@@ -594,6 +735,9 @@ export default function ClassroomBoardViewer({
       hasReceivedSnapshot.current = false;
       joinedOnceRef.current = false;
       collectingRef.current = null;
+      if (liveExpiryRef.current) clearInterval(liveExpiryRef.current);
+      liveExpiryRef.current = null;
+      teacherLiveRef.current = {};
     };
   }, [boardId]);
 
@@ -606,13 +750,21 @@ export default function ClassroomBoardViewer({
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
+    const overlay = teacherCanvasRef.current;
+    teacherCtxRef.current = overlay ? overlay.getContext("2d") : null;
+
     function resizeCanvas() {
       const ratio = window.devicePixelRatio || 1;
       const { width, height } = getPaneSize();
-      canvas.width = width * ratio;
-      canvas.height = height * ratio;
-      canvas.style.width = width + "px";
-      canvas.style.height = height + "px";
+      for (const c of [canvas, overlay]) {
+        if (!c) continue;
+        c.width = width * ratio;
+        c.height = height * ratio;
+        c.style.width = width + "px";
+        c.style.height = height + "px";
+      }
+      // A preview keeps the whole board in view whatever size it is given.
+      if (autoFitRef.current) fitAll();
       fullRedraw();
     }
     resizeCanvas();
@@ -687,7 +839,33 @@ export default function ClassroomBoardViewer({
       if (touchPoints.current.size >= 2) {
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         tapRef.current = null; // two fingers: a pinch, never a tap
+        endInk(false); // …and never the start of a line
+        panDragActive.current = false;
         beginPanZoom();
+        return;
+      }
+
+      // Writing on the board as the teacher: one finger, the pen or the
+      // mouse draws (two fingers still move and zoom). With "Pencil only"
+      // switched on (see pencilPrefs.js) a finger moves the board instead,
+      // as it does on the teacher's own board, so a resting hand can't
+      // leave marks on a student's work.
+      const mayDraw =
+        drawToolRef.current &&
+        (e.pointerType !== "mouse" || e.button === 0) &&
+        !(e.pointerType === "touch" && getPencilOnly());
+      if (mayDraw) {
+        if (myStrokeRef.current) {
+          // The pen takes over from a finger (or the side of a hand) that
+          // touched down first; otherwise it is one line at a time.
+          if (e.pointerType === "pen" && myStrokeRef.current.pointerType === "touch") endInk(false);
+          else return;
+        }
+        tapRef.current = null;
+        panDragActive.current = false;
+        const world = screenToWorld(pos);
+        startInk(e.pointerId, { x: trim(world.x), y: trim(world.y) }, e.pointerType);
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         return;
       }
 
@@ -703,6 +881,14 @@ export default function ClassroomBoardViewer({
       }
       if (panZoomState.current && touchPoints.current.size >= 2) {
         updatePanZoom();
+        return;
+      }
+      if (myStrokeRef.current) {
+        if (myStrokeRef.current.pointerId !== e.pointerId) return;
+        // every position the pen passed through, not just one per frame
+        const steps = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
+        if (steps.length > 1) steps.forEach((step) => moveInk(getPos(step)));
+        else moveInk(getPos(e));
         return;
       }
       if (panDragActive.current) {
@@ -724,6 +910,12 @@ export default function ClassroomBoardViewer({
         if (touchPoints.current.size < 2) panZoomState.current = null;
         return;
       }
+      if (myStrokeRef.current) {
+        if (myStrokeRef.current.pointerId !== e.pointerId) return;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        endInk(true);
+        return;
+      }
       panDragActive.current = false;
       panDragStart.current = null;
       try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
@@ -736,6 +928,9 @@ export default function ClassroomBoardViewer({
       }
     }
 
+    // A preview (interactive = false) is only looked at.
+    if (!interactiveRef.current) return () => resizeObserver.disconnect();
+
     canvas.addEventListener("pointerdown", handlePointerDown);
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", handlePointerUp);
@@ -744,6 +939,7 @@ export default function ClassroomBoardViewer({
 
     return () => {
       resizeObserver.disconnect();
+      if (inkFrameRef.current !== null) cancelAnimationFrame(inkFrameRef.current);
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
@@ -753,12 +949,24 @@ export default function ClassroomBoardViewer({
   }, []);
 
   useEffect(() => {
-    if (pendingFitRef.current) {
+    teacherInkRef.current = teacherInk;
+    questionRef.current = question;
+    if (autoFit) {
+      pendingFitRef.current = false;
+      fitAll();
+    } else if (pendingFitRef.current) {
       pendingFitRef.current = false;
       fitAll({ onlyIfNeeded: true });
     }
     fullRedraw();
-  }, [strokes, texts, images]);
+  }, [strokes, texts, images, teacherInk, question, autoFit]);
+
+  // How much teacher's writing is on the board (for the Undo / Remove
+  // buttons in the teacher's view).
+  useEffect(() => {
+    const mine = myInkStackRef.current.filter((id) => teacherInk.some((s) => s.id === id)).length;
+    onInkChangeRef.current?.({ total: teacherInk.length, mine });
+  }, [teacherInk]);
 
   const showReferencePane = !!referenceDoc;
 
@@ -803,10 +1011,26 @@ export default function ClassroomBoardViewer({
             style={{ position: "absolute", left: 0, top: 0, zIndex: -1, maxWidth: "none", pointerEvents: "none", userSelect: "none" }}
           />
         ))}
+        {/* Pictures in the teacher's question, shown the same way. */}
+        {((question && question.images) || []).map((img) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={`q-${img.id}`}
+            ref={(el) => {
+              if (el) questionImageNodesRef.current[img.id] = el;
+              else delete questionImageNodesRef.current[img.id];
+            }}
+            src={img.src}
+            alt=""
+            draggable={false}
+            onLoad={repositionImages}
+            style={{ position: "absolute", left: 0, top: 0, zIndex: -1, maxWidth: "none", pointerEvents: "none", userSelect: "none" }}
+          />
+        ))}
         {!embedded && (
           <button
-            onClick={() => router.push("/join")}
-            className={cls.floatBtn}
+            onClick={() => (onLeave ? onLeave() : router.push("/join"))}
+            className={`${cls.floatBtn} ${cls.floatBtnLow}`}
           >
             Leave
           </button>
@@ -830,8 +1054,17 @@ export default function ClassroomBoardViewer({
             userSelect: "none",
             WebkitTouchCallout: "none",
             WebkitTapHighlightColor: "transparent",
-            cursor: onBoardTap ? "crosshair" : "default",
+            cursor: onBoardTap || drawTool ? "crosshair" : "default",
+            pointerEvents: interactive ? "auto" : "none",
           }}
+        />
+        {/* The teacher's layer (the class question, the teacher's writing)
+            and the comment pins: on top of the ink, never in the way of it. */}
+        <canvas
+          ref={teacherCanvasRef}
+          aria-hidden="true"
+          data-teacher-layer="true"
+          style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
         />
         {children}
       </div>

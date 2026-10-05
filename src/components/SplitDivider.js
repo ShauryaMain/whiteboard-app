@@ -12,7 +12,10 @@ import { useRef } from "react";
 // onDrag / onDragEnd receive the pointer's position as a fraction (0–1)
 // along the container, plus the container's size in px so the caller can
 // clamp. onDragEnd is where the final size should be saved.
-export default function SplitDivider({ orientation, containerRef, valueNow, onDrag, onDragEnd, onReset }) {
+export default function SplitDivider({
+  orientation, containerRef, valueNow, onDrag, onDragEnd, onReset,
+  label = "Resize the reference document — drag, or double-tap to reset",
+}) {
   const dragRef = useRef(null);
   const lastTapRef = useRef(0);
   const vertical = orientation === "vertical";
@@ -91,7 +94,7 @@ export default function SplitDivider({ orientation, containerRef, valueNow, onDr
       role="separator"
       tabIndex={0}
       aria-orientation={vertical ? "vertical" : "horizontal"}
-      aria-label="Resize the reference document — drag, or double-tap to reset"
+      aria-label={label}
       aria-valuenow={Math.round(valueNow * 100)}
       aria-valuemin={0}
       aria-valuemax={100}

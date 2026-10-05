@@ -15,7 +15,20 @@ import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { getStoredClassCode, clearClassCode, generateClassCode } from "@/lib/classroomCode";
+import {
+  rosterFromPresence, newHandsNotice, readStatus,
+  createAttendance, attendanceJoin, attendanceLeave, attendanceSync, attendanceState,
+} from "@/lib/classRoster";
 import TeacherStudentBoardView from "./TeacherStudentBoardView";
+import ClassOverview from "./ClassOverview";
+import { SendBoardDialog, SaveBoardsDialog } from "./ClassDialogs";
+import {
+  subscribeClassControl, getClassControl, getServerClassControl, setClassControl,
+  getSentQuestion, getServerSentQuestion, setSentQuestion, forgetClass,
+  classStateMessage, questionFromBoard, createQuestionSender,
+} from "@/lib/classControl";
+import { NO_COMMENTS, noComments, NO_SAVE_PROBLEM, noSaveProblem, NO_TEACHER_LAYER, noTeacherLayer } from "@/lib/localBoard";
+import { drawTeacherLayer, hasTeacherLayer } from "@/lib/boardRender";
 import StudentComments from "./StudentComments";
 import GridToolModal from "./GridToolModal";
 import SimEmbed from "./SimEmbed";
@@ -179,8 +192,8 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
   ctx.stroke();
 }
 
-// `student`, `backend` and `active` are only passed for a student's own
-// board in a live class (see src/app/join/[code]/view/page.js):
+// `student`, `backend`, `active` and `compact` are only passed for a
+// student's own board in a live class (see src/app/join/[code]/view/page.js):
 //   student  { code, studentId, name } — switches the board to "class board"
 //            mode: no app bar, no pictures / simulations / reference
 //            documents, and the teacher's comments are shown on it.
@@ -188,9 +201,11 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
 //            never sign in; see src/lib/localBoard.js).
 //   active   false while the board is on a hidden tab, so its keyboard
 //            shortcuts and paste leave the visible tab alone.
+//   compact  true when the board only has part of the screen (shown beside
+//            the teacher's board), so the toolbar packs itself tighter.
 export default function Whiteboard({
   boardId, demo = false, onDemoClassStart, onDemoClassEnd,
-  student = null, backend = null, active = true,
+  student = null, backend = null, active = true, compact = false,
 }) {
   const { user } = useAuth();
   // Loads and saves go here. Live messages always use the real connection.
@@ -202,9 +217,25 @@ export default function Whiteboard({
   const [isOwner, setIsOwner] = useState(false);
   const [liveClassCode, setLiveClassCode] = useState(null);
   const liveClassChannelRef = useRef(null);
-  const [classRoster, setClassRoster] = useState([]); // [{studentId, name, joinedAt}]
+  const [classRoster, setClassRoster] = useState([]); // [{studentId, name, joinedAt, hand, handAt, done}]
+  // What students have signalled (studentId -> { hand, handAt, done }), who
+  // is here, and whose hands were already up (see src/lib/classRoster.js).
+  const classStatusRef = useRef(new Map());
+  const classPresenceRef = useRef(null);
+  const handsUpRef = useRef(new Map());
   const [viewingStudent, setViewingStudent] = useState(null); // {studentId, name} | null
   const [showRoster, setShowRoster] = useState(false);
+  // What the teacher has switched on for the whole class (see
+  // src/lib/classControl.js): whose board is being shown to everyone,
+  // whether pens are down, and the question that is on every student's board.
+  const classControl = useSyncExternalStore(subscribeClassControl, () => getClassControl(liveClassCode), getServerClassControl);
+  const sentQuestion = useSyncExternalStore(subscribeClassControl, () => getSentQuestion(liveClassCode), getServerSentQuestion);
+  const [classOverview, setClassOverview] = useState(false); // the grid of every student's board
+  const [classDialog, setClassDialog] = useState(null); // null | "send" | "save"
+  const [sendingQuestion, setSendingQuestion] = useState(false);
+  const [questionSender] = useState(createQuestionSender);
+  const classStateTimerRef = useRef(null);
+  const rosterIdsRef = useRef(new Set());
 
   const canvasRef = useRef(null);
   const boardPaneRef = useRef(null);
@@ -399,6 +430,17 @@ export default function Whiteboard({
   const imagesTableWarnedRef = useRef(false);
   const [boardNotice, setBoardNotice] = useState("");
   const noticeTimerRef = useRef(null);
+  const restoredNoticeShownRef = useRef(false);
+  // "Your work from earlier is back", on a student's board. It waits until
+  // the board is actually on screen (after a refresh the class page opens
+  // on the teacher's board) and then shows for a few seconds.
+  const [restoredNotice, setRestoredNotice] = useState(false);
+  // True when the student's device can't keep a copy of the board (its
+  // storage is full or switched off). They are told once, for a few
+  // seconds, rather than having a note sit on their work all lesson.
+  const saveProblemStore = backend && backend.saveProblem ? backend.saveProblem : NO_SAVE_PROBLEM;
+  const saveProblem = useSyncExternalStore(saveProblemStore.subscribe, saveProblemStore.get, noSaveProblem);
+  const [saveProblemTold, setSaveProblemTold] = useState(false);
   const rlsNoticeShownRef = useRef(false);
   // Whole-stroke eraser drag in progress: { pointerId, last, removed[] }
   const strokeEraseRef = useRef(null);
@@ -433,8 +475,25 @@ export default function Whiteboard({
   const referenceFileInputRef = useRef(null);
   // A student's board in a live class: notes the teacher has pinned on it.
   // Each is { id, x, y, text, createdAt }, with x / y in board coordinates.
-  const [teacherComments, setTeacherComments] = useState([]);
+  // They are kept with the board itself (see src/lib/localBoard.js), so the
+  // class page can show a "new comment" badge and a refresh keeps them.
+  const commentStore = backend && backend.comments ? backend.comments : NO_COMMENTS;
+  const teacherComments = useSyncExternalStore(commentStore.subscribe, commentStore.get, noComments);
   const teacherCommentsRef = useRef([]);
+  // …and what the teacher has put on it: the question sent to the whole
+  // class, and anything written on this board in particular. The student
+  // sees it and can write over it, but can't rub it out, so it is drawn on
+  // a canvas of its own on top of theirs (see drawTeacherLayer).
+  const teacherStore = backend && backend.teacher ? backend.teacher : NO_TEACHER_LAYER;
+  const teacherLayer = useSyncExternalStore(teacherStore.subscribe, teacherStore.get, noTeacherLayer);
+  const teacherLayerRef = useRef(teacherLayer);
+  const teacherLiveRef = useRef({}); // lines the teacher is writing right now, by key
+  const teacherLiveTimerRef = useRef(null);
+  // "What's on your board?" requests waiting for their (shared) answer.
+  const snapshotTimerRef = useRef(null);
+  const snapshotCommentsRef = useRef(false);
+  const teacherCanvasRef = useRef(null);
+  const questionImageNodesRef = useRef({});
   const commentPinNodesRef = useRef({});
   const [pulsingComment, setPulsingComment] = useState(null);
   const pulseTimerRef = useRef(null);
@@ -474,13 +533,79 @@ export default function Whiteboard({
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
   useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
   useEffect(() => { referenceStrokesRef.current = referenceStrokes; }, [referenceStrokes]);
-  useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => {
+    activeRef.current = active;
+    // The board has just been taken off screen (the student switched tab,
+    // or the teacher called "pens down") with the pen still on it: the line
+    // being drawn is finished off where it is, as if the pen had lifted.
+    if (active) return;
+    const canvas = canvasRef.current;
+    const pointerId = strokeEraseRef.current ? strokeEraseRef.current.pointerId : isDrawing.current ? activePointerId.current : null;
+    if (canvas && pointerId !== null && typeof PointerEvent === "function") {
+      canvas.dispatchEvent(new PointerEvent("pointercancel", { pointerId, pointerType: activePointerType.current || "mouse" }));
+    }
+  }, [active]);
+  useEffect(() => {
+    if (!restoredNotice || !active) return undefined;
+    const timer = setTimeout(() => setRestoredNotice(false), 4500);
+    return () => clearTimeout(timer);
+  }, [restoredNotice, active]);
+  useEffect(() => {
+    if (!saveProblem || saveProblemTold || !active) return undefined;
+    const timer = setTimeout(() => setSaveProblemTold(true), 8000);
+    return () => clearTimeout(timer);
+  }, [saveProblem, saveProblemTold, active]);
   useEffect(() => { teacherCommentsRef.current = teacherComments; }, [teacherComments]);
 
   useEffect(() => {
     if (!boardId) return;
     setLiveClassCode(getStoredClassCode(boardId));
   }, [boardId]);
+
+  // Tells every student's page what is switched on for the class right now.
+  function broadcastClassState() {
+    const channel = liveClassChannelRef.current;
+    if (!channel || !liveClassCode) return;
+    channel.send({
+      type: "broadcast",
+      event: "class-state",
+      payload: classStateMessage(getClassControl(liveClassCode), getSentQuestion(liveClassCode)),
+    });
+  }
+
+  // Puts the class question on the live connection (again, when a student
+  // who joined late asks for it).
+  function broadcastQuestion() {
+    const channel = liveClassChannelRef.current;
+    if (!channel || !liveClassCode) return Promise.resolve(false);
+    return questionSender.run(
+      (event, payload) => channel.send({ type: "broadcast", event, payload }),
+      () => getSentQuestion(liveClassCode)
+    );
+  }
+
+  // The class list, from who is here and what they've signalled.
+  function refreshClassRoster() {
+    if (!classPresenceRef.current) return;
+    const students = rosterFromPresence(attendanceState(classPresenceRef.current), classStatusRef.current);
+    setClassRoster(students);
+    // The student whose board was being shown to the class has left: there
+    // is nothing to show any more.
+    const spot = getClassControl(liveClassCode).spotlight;
+    if (spot && rosterIdsRef.current.has(spot.studentId) && !students.some((st) => st.studentId === spot.studentId)) {
+      setClassControl(liveClassCode, { spotlight: null });
+      broadcastClassState();
+    }
+    rosterIdsRef.current = new Set(students.map((st) => st.studentId));
+    // A hand going up is worth a nudge: the teacher is usually looking at
+    // their own board, not at the Students list.
+    const notice = newHandsNotice(students, handsUpRef.current, classStatusRef.current);
+    if (notice) {
+      setBoardNotice(notice);
+      if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = setTimeout(() => setBoardNotice(""), 4500);
+    }
+  }
 
   // Kept open for the whole time a class is live, rather than opened
   // fresh for each individual action — this is what lets a rejoining
@@ -500,21 +625,55 @@ export default function Whiteboard({
     // channel for as long as they're on the join/view pages, so the
     // teacher can always see who's currently in class and open their
     // board — not just during the pre-Start waiting room.
+    // Who is here: kept from the "joined" / "left" events themselves (see
+    // src/lib/classRoster.js for why not simply presenceState()).
+    const attendance = createAttendance();
+    classPresenceRef.current = attendance;
+    channel.on("presence", { event: "join" }, ({ key, newPresences, currentPresences }) => {
+      attendanceJoin(attendance, key, newPresences, currentPresences);
+    });
+    channel.on("presence", { event: "leave" }, ({ key, leftPresences, currentPresences }) => {
+      attendanceLeave(attendance, key, leftPresences, currentPresences);
+    });
     channel.on("presence", { event: "sync" }, () => {
-      const state = channel.presenceState();
-      const students = [];
-      for (const key in state) {
-        if (key === "teacher") continue;
-        const presence = state[key]?.[0];
-        if (presence) students.push(presence);
-      }
-      students.sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
-      setClassRoster(students);
+      attendanceSync(attendance, channel.presenceState());
+      refreshClassRoster();
+    });
+
+    // A student's hand going up or down, or "I'm done".
+    channel.on("broadcast", { event: "student-status" }, ({ payload }) => {
+      if (!payload || !payload.studentId) return;
+      classStatusRef.current.set(payload.studentId, readStatus(payload));
+      refreshClassRoster();
+    });
+
+    // A student's page has just joined (or come back) and wants to know
+    // what is switched on. Several usually ask at once, so they get one
+    // answer between them.
+    channel.on("broadcast", { event: "class-state-request" }, () => {
+      if (classStateTimerRef.current) return;
+      classStateTimerRef.current = setTimeout(() => {
+        classStateTimerRef.current = null;
+        broadcastClassState();
+      }, 150);
+    });
+
+    // …or has seen there is a question it doesn't have (it joined after the
+    // question was sent, or missed part of it): send it again, unless it
+    // has only just gone out.
+    channel.on("broadcast", { event: "class-question-request" }, () => {
+      if (questionSender.isBusy() || Date.now() - questionSender.lastSentAt() < 2500) return;
+      broadcastQuestion();
     });
 
     channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
         await channel.track({ role: "teacher" });
+        // Hands may already be up (this board was reloaded mid-class):
+        // ask every student's page to say where it stands.
+        channel.send({ type: "broadcast", event: "status-request", payload: {} });
+        // …and say where the class stands (pens down, the question).
+        broadcastClassState();
       }
     });
     liveClassChannelRef.current = channel;
@@ -522,6 +681,17 @@ export default function Whiteboard({
     return () => {
       supabase.removeChannel(channel);
       liveClassChannelRef.current = null;
+      if (classStateTimerRef.current) clearTimeout(classStateTimerRef.current);
+      classStateTimerRef.current = null;
+      // Leaving the board (to the boards list, say) closes whichever
+      // student's board was open, so nothing is being shown to the class
+      // any more. Without this, coming back would put everyone on that
+      // board again with nobody able to stop it.
+      setClassControl(liveClassCode, { spotlight: null });
+      classStatusRef.current = new Map();
+      classPresenceRef.current = null;
+      handsUpRef.current = new Map();
+      rosterIdsRef.current = new Set();
       setClassRoster([]);
     };
   }, [liveClassCode, boardId]);
@@ -614,6 +784,46 @@ export default function Whiteboard({
       el.style.height = sim.height * scale + "px";
     }
   }
+
+  // A student's board: the teacher's layer, on its own canvas over the ink.
+  function drawTeacherOverlay() {
+    const overlay = teacherCanvasRef.current;
+    const main = canvasRef.current;
+    if (!overlay || !main) return;
+    // It is always exactly the size of the board's own canvas.
+    if (overlay.width !== main.width || overlay.height !== main.height) {
+      overlay.width = main.width;
+      overlay.height = main.height;
+      overlay.style.width = main.style.width;
+      overlay.style.height = main.style.height;
+    }
+    const tctx = overlay.getContext("2d");
+    const ratio = window.devicePixelRatio || 1;
+    const scale = scaleRef.current;
+    const pan = panRef.current;
+    tctx.setTransform(1, 0, 0, 1, 0, 0);
+    tctx.clearRect(0, 0, overlay.width, overlay.height);
+    const layer = { ...teacherLayerRef.current, live: teacherLiveRef.current };
+    if (hasTeacherLayer(layer)) {
+      tctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
+      drawTeacherLayer(tctx, layer, scale);
+    }
+    // Pictures in the teacher's question sit under the ink, like any picture.
+    const question = teacherLayerRef.current.question;
+    for (const img of (question && question.images) || []) {
+      const el = questionImageNodesRef.current[img.id];
+      if (!el) continue;
+      el.style.left = img.x * scale + pan.x + "px";
+      el.style.top = img.y * scale + pan.y + "px";
+      el.style.width = img.width * scale + "px";
+      el.style.height = img.height * scale + "px";
+    }
+  }
+
+  useEffect(() => {
+    teacherLayerRef.current = teacherLayer;
+    drawTeacherOverlay();
+  }, [teacherLayer]);
 
   // The teacher's comment pins on a student's board stay the same size on
   // screen and stick to the spot on the board they were pinned to.
@@ -965,6 +1175,7 @@ export default function Whiteboard({
     repositionImages();
     repositionSelectionOverlay();
     repositionCommentPins();
+    if (student) drawTeacherOverlay();
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
@@ -1231,6 +1442,12 @@ export default function Whiteboard({
       boardLoadedRef.current = true;
       fullRedraw();
       touchBoard(boardId, db);
+      // A student's class board that came back from an earlier visit (a
+      // refresh, or joining again after closing the tab): say so, once.
+      if (student && backend && backend.__restored > 0 && !restoredNoticeShownRef.current) {
+        restoredNoticeShownRef.current = true;
+        setRestoredNotice(true);
+      }
     }
     loadBoard();
   }, [boardId, userId]);
@@ -1689,17 +1906,120 @@ export default function Whiteboard({
 
   async function handleEndLiveClass() {
     if (!liveClassCode) return;
-    if (!demo && !window.confirm("End the live class? Students currently watching will be disconnected.")) return;
+    if (!demo && !window.confirm("End the live class? Students currently watching will be disconnected.\n\nTheir boards can't be saved afterwards: use Save boards (in the Students list) first if you want to keep them.")) return;
 
     if (liveClassChannelRef.current) {
       await liveClassChannelRef.current.send({ type: "broadcast", event: "class-ended", payload: {} });
     }
 
+    forgetClass(liveClassCode);
     clearClassCode(boardId);
     setLiveClassCode(null);
     setShowRoster(false);
     setViewingStudent(null);
+    setClassOverview(false);
+    setClassDialog(null);
     if (demo) onDemoClassEnd?.();
+  }
+
+  // A short note at the top of the board about something the teacher did
+  // for the whole class.
+  function classNote(text) {
+    setBoardNotice(text);
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setBoardNotice(""), 4500);
+  }
+
+  // ---------- showing one student's board to everyone ----------
+
+  function handleStopSpotlight() {
+    if (!getClassControl(liveClassCode).spotlight) return;
+    setClassControl(liveClassCode, { spotlight: null });
+    broadcastClassState();
+  }
+
+  function handleSpotlight(who, showName) {
+    setClassControl(liveClassCode, { spotlight: { studentId: who.studentId, name: who.name, showName: !!showName } });
+    broadcastClassState();
+  }
+
+  // Opening one student's board. (A board being shown to the class is the
+  // one the teacher is looking at, so looking elsewhere stops the showing.)
+  function handleViewStudent(who) {
+    const spot = getClassControl(liveClassCode).spotlight;
+    if (spot && (!who || spot.studentId !== who.studentId)) handleStopSpotlight();
+    setViewingStudent(who);
+  }
+
+  function handleOpenOverview() {
+    handleViewStudent(null);
+    setClassOverview(true);
+  }
+
+  // ---------- pens down ----------
+
+  function handleTogglePensDown() {
+    const down = !getClassControl(liveClassCode).pensDown;
+    setClassControl(liveClassCode, { pensDown: down });
+    broadcastClassState();
+    classNote(down ? "Pens down: students' boards are paused and they're looking at yours." : "Pens up: students can write again.");
+  }
+
+  // ---------- sending the teacher's board to every student ----------
+
+  function handleSendQuestion() {
+    const question = questionFromBoard({
+      strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, grid: gridConfigRef.current,
+    });
+    if (!question) {
+      setClassDialog(null);
+      classNote("There's nothing on your board to send yet.");
+      return;
+    }
+    setSentQuestion(liveClassCode, question);
+    setSendingQuestion(true);
+    broadcastQuestion().then((ok) => {
+      setSendingQuestion(false);
+      setClassDialog(null);
+      // The state names the question, so a page that missed a piece asks again.
+      broadcastClassState();
+      classNote(ok ? "Your board is on every student's board." : "That didn't send. Check your connection and try again.");
+    });
+  }
+
+  function handleTakeBackQuestion() {
+    setSentQuestion(liveClassCode, null);
+    broadcastClassState();
+    setClassDialog(null);
+    classNote("Taken off students' boards. Their own work is untouched.");
+  }
+
+  // ---------- saving students' boards ----------
+
+  // The boards are fetched over the same live connection the teacher's
+  // views of them use, one connection per board: so those views are closed
+  // first (see collectBoard in src/lib/boardExport.js).
+  function handleOpenSaveBoards() {
+    handleViewStudent(null);
+    setClassOverview(false);
+    setClassDialog("save");
+  }
+
+  // The teacher has dealt with a raised hand: tells that student's page to
+  // put it down.
+  function handleLowerHand(studentId) {
+    const was = classStatusRef.current.get(studentId) || {};
+    classStatusRef.current.set(studentId, { ...was, hand: false, handAt: 0 });
+    refreshClassRoster();
+    liveClassChannelRef.current?.send({ type: "broadcast", event: "hand-lower", payload: { studentId } });
+  }
+
+  // Ready for the next question: every hand goes down and every "done"
+  // tick is cleared, on every student's page.
+  function handleResetClassStatus() {
+    classStatusRef.current = new Map();
+    refreshClassRoster();
+    liveClassChannelRef.current?.send({ type: "broadcast", event: "status-reset", payload: {} });
   }
 
   function handleToggleRuler() {
@@ -2211,7 +2531,7 @@ export default function Whiteboard({
   // live message is allowed to be (and would silently never arrive, leaving
   // the other side on a blank board), so it goes as: the settings, then the
   // contents in pieces, then "that's everything".
-  function sendClassSnapshot() {
+  function sendClassSnapshot(withComments) {
     const channel = channelRef.current;
     if (!channel) return;
     const send = (event, payload) => channel.send({ type: "broadcast", event, payload });
@@ -2221,14 +2541,24 @@ export default function Whiteboard({
       referenceDoc: referenceDocRef.current,
       referenceStrokes: referenceStrokesRef.current,
     };
-    if (student) settings.comments = teacherCommentsRef.current;
+    // The teacher's comments on a student's board go only when it is the
+    // teacher's own view of it that asked (a classmate being shown this
+    // board has no business with them).
+    if (student && withComments) settings.comments = commentStore.get();
     const contents = { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current };
     const pieces = chunkObjects(contents, SNAPSHOT_CHUNK_CHARS);
-    if (pieces.length <= 1) send("classroom-state-snapshot", { ...contents, ...settings });
-    else {
+    // A student's board: what the teacher has written on it goes too. (The
+    // class question doesn't: everyone already has their own copy of it.)
+    const inkPieces = student ? chunkObjects({ strokes: teacherStore.get().ink }, SNAPSHOT_CHUNK_CHARS) : [];
+    if (pieces.length <= 1 && inkPieces.length <= 1) {
+      send("classroom-state-snapshot", { ...contents, ...settings, teacherInk: inkPieces.length ? inkPieces[0].strokes : [] });
+    } else {
       const snapshotId = newId();
-      send("classroom-state-snapshot", { strokes: [], texts: [], images: [], ...settings, pieces: pieces.length, snapshotId });
+      send("classroom-state-snapshot", {
+        strokes: [], texts: [], images: [], teacherInk: [], ...settings, pieces: pieces.length + inkPieces.length, snapshotId,
+      });
       pieces.forEach((piece) => send("classroom-state-piece", { ...piece, snapshotId }));
+      inkPieces.forEach((piece) => send("classroom-state-piece", { teacherInk: piece.strokes, snapshotId }));
       send("classroom-state-done", { snapshotId });
     }
     // Someone who joins while the pen is down has missed the start of that
@@ -2417,8 +2747,19 @@ export default function Whiteboard({
     // Classroom Mode: a read-only viewer has no database access (students
     // never log in), so it asks over this same channel for the board's
     // current state instead. See sendClassSnapshot above.
-    channel.on("broadcast", { event: "classroom-state-request" }, () => {
-      sendClassSnapshot();
+    //
+    // Several viewers often ask within a moment of each other (a class
+    // joining, or a whole class being shown one student's board), and the
+    // answer goes to everyone on the connection anyway: so they share one.
+    channel.on("broadcast", { event: "classroom-state-request" }, ({ payload }) => {
+      if (payload && payload.comments) snapshotCommentsRef.current = true;
+      if (snapshotTimerRef.current) return;
+      snapshotTimerRef.current = setTimeout(() => {
+        snapshotTimerRef.current = null;
+        const withComments = snapshotCommentsRef.current;
+        snapshotCommentsRef.current = false;
+        sendClassSnapshot(withComments);
+      }, 150);
     });
 
     // A student's own board: the teacher pins notes on it from their view
@@ -2426,12 +2767,77 @@ export default function Whiteboard({
     // so it is still there if the teacher closes that view and comes back.
     channel.on("broadcast", { event: "teacher-comment-add" }, ({ payload }) => {
       if (!student || !payload || !payload.id) return;
-      setTeacherComments((prev) => (prev.some((c) => c.id === payload.id) ? prev : [...prev, payload]));
+      commentStore.add(payload);
     });
 
     channel.on("broadcast", { event: "teacher-comment-remove" }, ({ payload }) => {
       if (!student || !payload) return;
-      setTeacherComments((prev) => prev.filter((c) => c.id !== payload.id));
+      commentStore.remove(payload.id);
+    });
+
+    // …and can write on it. Their lines arrive live, like anyone's ink, but
+    // go into the teacher's layer rather than among the student's own work
+    // (see TeacherStudentBoardView and src/lib/localBoard.js).
+    channel.on("broadcast", { event: "teacher-ink-start" }, ({ payload }) => {
+      if (!student || !payload || !payload.strokeKey) return;
+      teacherLiveRef.current[payload.strokeKey] = {
+        id: payload.strokeId, tool: "pen", color: payload.color, width: payload.width, opacity: 1, points: [payload.point],
+        at: Date.now(),
+      };
+      // A line whose "finished" message never arrives (the teacher's
+      // connection dropped mid-line) isn't left hanging on the board: lines
+      // that have had no news for 20 seconds are dropped.
+      if (teacherLiveTimerRef.current) return;
+      teacherLiveTimerRef.current = setInterval(() => {
+        const live = teacherLiveRef.current;
+        const now = Date.now();
+        let left = false;
+        let dropped = false;
+        for (const key in live) {
+          if (now - (live[key].at || 0) >= 20000) {
+            delete live[key];
+            dropped = true;
+          } else {
+            left = true;
+          }
+        }
+        if (dropped) drawTeacherOverlay();
+        if (!left) {
+          clearInterval(teacherLiveTimerRef.current);
+          teacherLiveTimerRef.current = null;
+        }
+      }, 5000);
+    });
+    channel.on("broadcast", { event: "teacher-ink-points" }, ({ payload }) => {
+      const s = student && payload ? teacherLiveRef.current[payload.strokeKey] : null;
+      if (!s) return;
+      s.points.push(...(payload.points || []));
+      s.at = Date.now();
+      drawTeacherOverlay();
+    });
+    channel.on("broadcast", { event: "teacher-ink-cancel" }, ({ payload }) => {
+      if (!student || !payload) return;
+      delete teacherLiveRef.current[payload.strokeKey];
+      drawTeacherOverlay();
+    });
+    channel.on("broadcast", { event: "teacher-ink-end" }, ({ payload }) => {
+      if (!student || !payload) return;
+      // The finished line comes whole with this message (unless it is
+      // enormous), so it is kept even if some of the live messages were lost.
+      const s = payload.stroke || teacherLiveRef.current[payload.strokeKey];
+      delete teacherLiveRef.current[payload.strokeKey];
+      if (s && s.id && s.points && s.points.length > 1) teacherStore.addInk({ ...s, tool: "pen" });
+      drawTeacherOverlay();
+    });
+    channel.on("broadcast", { event: "teacher-ink-remove" }, ({ payload }) => {
+      if (!student || !payload) return;
+      teacherStore.removeInk(payload.ids);
+    });
+    channel.on("broadcast", { event: "teacher-ink-clear" }, () => {
+      if (!student) return;
+      teacherLiveRef.current = {};
+      teacherStore.clearInk();
+      drawTeacherOverlay();
     });
 
     let joined = false;
@@ -2457,6 +2863,10 @@ export default function Whiteboard({
 
     return () => {
       clearInterval(joinWatchdog);
+      if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
+      snapshotTimerRef.current = null;
+      if (teacherLiveTimerRef.current) clearInterval(teacherLiveTimerRef.current);
+      teacherLiveTimerRef.current = null;
       supabase.removeChannel(channel);
       channelRef.current = null;
       // Half-drawn strokes from others would otherwise stay stuck on screen.
@@ -4077,8 +4487,22 @@ export default function Whiteboard({
         onEndSession={handleEndSession}
         liveClassCode={liveClassCode}
         classRoster={classRoster}
-        onViewStudent={(student) => setViewingStudent(student)}
+        onResetClassStatus={handleResetClassStatus}
+        compact={compact}
+        onViewStudent={handleViewStudent}
         onEndLiveClass={handleEndLiveClass}
+        classTools={
+          liveClassCode && isOwner
+            ? {
+                pensDown: classControl.pensDown,
+                questionSent: !!sentQuestion,
+                onOverview: handleOpenOverview,
+                onTogglePensDown: handleTogglePensDown,
+                onSendBoard: () => setClassDialog("send"),
+                onSaveBoards: handleOpenSaveBoards,
+              }
+            : null
+        }
         penSeen={penSeen}
         pencilOnly={pencilOnly}
         onSetPencilOnly={setPencilOnly}
@@ -4276,13 +4700,48 @@ export default function Whiteboard({
             className={chrome.boardImage}
           />
         ))}
+        {/* A student's board: pictures in the question the teacher sent. */}
+        {student &&
+          ((teacherLayer.question && teacherLayer.question.images) || []).map((img) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={`q-${img.id}`}
+              ref={(el) => {
+                if (el) questionImageNodesRef.current[img.id] = el;
+                else delete questionImageNodesRef.current[img.id];
+              }}
+              src={img.src}
+              alt=""
+              draggable={false}
+              onLoad={drawTeacherOverlay}
+              className={chrome.boardImage}
+            />
+          ))}
+        {/* Every student's board at once. Put away while one board is
+            open (each board has a single live connection: see ClassOverview). */}
+        {classOverview && liveClassCode && !viewingStudent && (
+          <ClassOverview
+            code={liveClassCode}
+            students={classRoster}
+            question={sentQuestion}
+            pensDown={classControl.pensDown}
+            onOpen={handleViewStudent}
+            onBack={() => setClassOverview(false)}
+          />
+        )}
         {viewingStudent && liveClassCode && (
           <TeacherStudentBoardView
             // a fresh view for each student, so nothing carries over
             key={viewingStudent.studentId}
             code={liveClassCode}
-            student={viewingStudent}
-            onBack={() => setViewingStudent(null)}
+            // as they are right now (hand up or down), if they're still here
+            student={classRoster.find((st) => st.studentId === viewingStudent.studentId) || { ...viewingStudent, hand: false, left: true }}
+            question={sentQuestion}
+            spotlight={classControl.spotlight && classControl.spotlight.studentId === viewingStudent.studentId ? classControl.spotlight : null}
+            onSpotlight={isOwner ? (showName) => handleSpotlight(viewingStudent, showName) : undefined}
+            onStopSpotlight={handleStopSpotlight}
+            onLowerHand={handleLowerHand}
+            onBack={() => handleViewStudent(null)}
           />
         )}
         <canvas
@@ -4298,6 +4757,17 @@ export default function Whiteboard({
             cursor: panToolActive ? "grab" : "default",
           }}
         />
+        {/* A student's board: what the teacher has put on it (the class
+            question, their own writing). Above the student's ink, so the
+            student's eraser can't touch it; it never takes a tap. */}
+        {student && (
+          <canvas
+            ref={teacherCanvasRef}
+            aria-hidden="true"
+            data-teacher-layer="true"
+            style={{ position: "absolute", left: 0, top: 0, pointerEvents: "none" }}
+          />
+        )}
         {/* A student's board: the teacher's pinned comments. The numbered
             pins sit on the board (moved by repositionCommentPins as it pans
             and zooms); the words are in the list, opened from the button. */}
@@ -4427,6 +4897,25 @@ export default function Whiteboard({
           />
         ))}
         {simModalOpen && <SimEmbedModal onAdd={handleAddSimEmbed} onClose={handleCloseSimModal} />}
+        {classDialog === "send" && liveClassCode && (
+          <SendBoardDialog
+            studentCount={classRoster.length}
+            sent={sentQuestion}
+            sending={sendingQuestion}
+            onSend={handleSendQuestion}
+            onTakeBack={handleTakeBackQuestion}
+            onClose={() => setClassDialog(null)}
+          />
+        )}
+        {classDialog === "save" && liveClassCode && (
+          <SaveBoardsDialog
+            code={liveClassCode}
+            students={classRoster}
+            question={sentQuestion}
+            boardName={boardName}
+            onClose={() => setClassDialog(null)}
+          />
+        )}
         {shapeModal && (
           <ShapeToolModal
             zoomScale={shapeModal.zoom}
@@ -4474,14 +4963,16 @@ export default function Whiteboard({
           </div>,
             document.body
           )}
-        {(showPencilOnlyNotice || showPencilTip || boardNotice || scratchNotice || catchingUp || unsaved > 0) && (
+        {(showPencilOnlyNotice || showPencilTip || boardNotice || scratchNotice || catchingUp || unsaved > 0 || restoredNotice || (saveProblem && !saveProblemTold)) && (
           <div
             style={{
               position: "fixed",
               top: 12,
               left: "50%",
               transform: "translateX(-50%)",
-              zIndex: 30,
+              // above a student's board when the teacher has one open, so
+              // "… has a hand up" is seen there too
+              zIndex: 55,
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
@@ -4503,6 +4994,17 @@ export default function Whiteboard({
             {boardNotice && (
               <div role="status" className={chrome.boardNotice}>
                 {boardNotice}
+              </div>
+            )}
+            {restoredNotice && (
+              <div role="status" className={chrome.boardNotice}>
+                Your work from earlier is back.
+              </div>
+            )}
+            {saveProblem && !saveProblemTold && (
+              <div role="status" className={`${chrome.boardNotice} ${chrome.syncNotice}`}>
+                <span className={`${chrome.syncDot} ${chrome.syncDotWarn}`} aria-hidden="true" />
+                This device can&apos;t keep a copy of your board. A refresh could lose your work.
               </div>
             )}
             {scratchNotice && (

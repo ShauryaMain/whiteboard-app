@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import d from "./Dialog.module.css";
 import p from "./Paper.module.css";
 import { generateClassCode, getStoredClassCode, storeClassCode } from "@/lib/classroomCode";
+import { createAttendance, attendanceJoin, attendanceLeave, attendanceSync, attendanceState, rosterFromPresence } from "@/lib/classRoster";
 
 // Phase 1: just the lobby — generate a code, show who's joined via
 // Presence. Phase 2 will replace the "waiting" panel below with the
@@ -27,16 +28,18 @@ export default function LiveClassTeacherView({ boardId }) {
       config: { presence: { key: "teacher" } },
     });
 
+    // Who has joined: kept from the "joined" / "left" events themselves
+    // (see src/lib/classRoster.js for why not simply presenceState()).
+    const attendance = createAttendance();
+    channel.on("presence", { event: "join" }, ({ key, newPresences, currentPresences }) => {
+      attendanceJoin(attendance, key, newPresences, currentPresences);
+    });
+    channel.on("presence", { event: "leave" }, ({ key, leftPresences, currentPresences }) => {
+      attendanceLeave(attendance, key, leftPresences, currentPresences);
+    });
     channel.on("presence", { event: "sync" }, () => {
-      const state = channel.presenceState();
-      const students = [];
-      for (const key in state) {
-        if (key === "teacher") continue;
-        const presence = state[key]?.[0];
-        if (presence) students.push(presence);
-      }
-      students.sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
-      setRoster(students);
+      attendanceSync(attendance, channel.presenceState());
+      setRoster(rosterFromPresence(attendanceState(attendance), null));
     });
 
     channel.subscribe(async (status) => {

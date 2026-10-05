@@ -33,6 +33,78 @@
 
 export const RELEASES = [
   {
+    id: "2026-10-class-tools",
+    date: "2026-10-05",
+    title: "Class tools",
+    headline: "See, steer and save the whole class",
+    intro:
+      "In a live class, the Students list now starts with four tools: Class overview, Pens down, Send my board and Save boards.",
+    slides: [
+      {
+        src: "/whats-new/class-tools/overview.png",
+        alt: "The class overview: five small live pictures of students' boards side by side, each with the student's name under it. Dara's is ringed and flagged Hand up; Aisha's and Maya's are flagged Done.",
+        caption: "Class overview: every student's board at once, live",
+      },
+      {
+        src: "/whats-new/class-tools/write.png",
+        alt: "The teacher's view of Ben's board. The teacher has ringed a wrong answer in red and written the correct working beside it. A strip along the bottom has Comment and Write buttons, three pen colours, Undo and Remove my writing.",
+        caption: "Open a board and choose Write to mark their work",
+      },
+      {
+        src: "/whats-new/class-tools/show.png",
+        alt: "A student's screen showing a classmate's board, with a bar across the top that reads: Your teacher is showing Ben's board to the class.",
+        caption: "Show to class puts one board on every screen",
+      },
+      {
+        src: "/whats-new/class-tools/pens-down.png",
+        alt: "The teacher's board with the Students list open. Its four class tools are at the top, with Pens up highlighted, and the LIVE bar shows Pens down.",
+        caption: "Pens down pauses their boards and brings them to yours",
+      },
+    ],
+    points: [
+      "Send my board puts your question on every student's board.",
+      "Only you can rub out what you write or send. Their own work is never touched.",
+      "Show a board with the student's name, or without it.",
+      "Save boards makes a PDF, or a zip of pictures, before you end the class.",
+    ],
+  },
+  {
+    id: "2026-10-live-hands",
+    date: "2026-10-05",
+    title: "Hands up",
+    headline: "Hands up: students can ask for help",
+    intro:
+      "Students in a live class can now raise a hand, or tell you they're done. You see it next to their name in the Students list.",
+    slides: [
+      {
+        src: "/whats-new/live-hands/hands.png",
+        alt: "The Students list in a live class. Dara and Ben are at the top, each flagged Hand up. Aisha and Maya are flagged Done. The foot of the list reads 2 hands up, 2 of 5 done, beside a Clear all button.",
+        caption: "Hands that are up go to the top of your Students list",
+      },
+      {
+        src: "/whats-new/live-hands/lower-hand.png",
+        alt: "The teacher's view of Dara's board, with a Lower hand button beside her name and a comment pinned on her working.",
+        caption: "Help them, then press Lower hand",
+      },
+      {
+        src: "/whats-new/live-hands/side-by-side.png",
+        alt: "A student's screen with the teacher's board on the left and the student's own board, with its toolbar, on the right.",
+        caption: "Students can put your board next to their own",
+      },
+      {
+        src: "/whats-new/live-hands/class-ended.png",
+        alt: "A note on a student's screen saying This class has ended, with one button to look at their board and one to leave.",
+        caption: "When you press End, students are told",
+      },
+    ],
+    points: [
+      "Clear all, at the foot of the list, resets everyone for the next question.",
+      "A student's work now comes back if they refresh or join again.",
+      "A badge on My board tells them when you've pinned a comment.",
+      "They can see your board and their own side by side (not on phones).",
+    ],
+  },
+  {
     id: "2026-10-live-boards",
     date: "2026-10-04",
     title: "Live class boards",

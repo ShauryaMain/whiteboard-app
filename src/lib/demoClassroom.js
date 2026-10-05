@@ -39,6 +39,13 @@ const BEN_STRUCK_LINES = [1, 2];
 const BEN_FIX_LINES = ["2x=8", "x=4 v"];
 const REACT_AFTER_MS = 2600;
 
+// What the pretend students signal to the teacher, the way real ones can
+// from their own page: Dara gets stuck and puts a hand up, and each of the
+// others marks themselves done a moment after their last line.
+const HAND_ID = "demo-dara";
+const HAND_AFTER_MS = 6500; // after she joins
+const DONE_AFTER_MS = 1200; // after a student's last stroke
+
 // ---------- handwriting ----------
 
 // Each character as one or more pen strokes, in a box 1 wide and 1 tall
@@ -186,9 +193,9 @@ function makeClass(code) {
   const width = 3; // a fine pen
   const students = DEMO_STUDENTS.map((s) => {
     const written = writeLines(s, s.lines, shape, s.joinAt + 1400, 0, "w");
-    return { ...s, strokes: written.strokes, lineBoxes: written.lineBoxes, comments: [], reacted: false, joinedAt: startedAt + s.joinAt };
+    return { ...s, strokes: written.strokes, lineBoxes: written.lineBoxes, comments: [], teacherInk: [], reacted: false, joinedAt: startedAt + s.joinAt };
   });
-  return { code, shape, startedAt, width, students, rosterChannels: new Set(), boardChannels: new Set(), joinedCount: 0 };
+  return { code, shape, startedAt, width, students, rosterChannels: new Set(), boardChannels: new Set(), resetAt: 0, pensDown: false, lastTickAt: 0 };
 }
 
 function reactToComment(cls, student, now) {
@@ -214,12 +221,58 @@ export function createDemoClassroom() {
   const classes = new Map(); // class code -> running class
   let timer = null;
 
+  // Is this student's hand up / have they said they're done, right now?
+  function signals(cls, s, now) {
+    const elapsed = now - cls.startedAt;
+    const handAt = s.joinedAt + HAND_AFTER_MS;
+    const hand = s.studentId === HAND_ID && !s.handLowered && now >= handAt;
+    const lastPoint = s.strokes.reduce((m, st) => Math.max(m, st.points[st.points.length - 1].t), 0);
+    const finishedAt = cls.startedAt + lastPoint + DONE_AFTER_MS;
+    const done = s.studentId !== HAND_ID && elapsed >= lastPoint + DONE_AFTER_MS && finishedAt >= (cls.resetAt || 0);
+    return { hand, handAt: hand ? handAt : 0, done };
+  }
+
+  // A student's "I'm here" announcement, as the live connection reports it.
+  function announcement(s) {
+    return { presence_ref: `demo-${s.studentId}`, studentId: s.studentId, name: s.name, joinedAt: s.joinedAt };
+  }
+
   function presenceOf(cls, now) {
     const state = {};
     for (const s of cls.students) {
-      if (now - cls.startedAt >= s.joinAt) state[s.studentId] = [{ studentId: s.studentId, name: s.name, joinedAt: s.joinedAt }];
+      if (now - cls.startedAt >= s.joinAt) state[s.studentId] = [announcement(s)];
     }
     return state;
+  }
+
+  // Tells one class channel about every student who has joined that it
+  // hasn't heard about yet: a "joined" event each, then "the list has
+  // changed", the same as the real connection does.
+  function tellJoins(cls, channel, now) {
+    if (!channel.__told) channel.__told = new Set();
+    let any = false;
+    for (const s of cls.students) {
+      if (now - cls.startedAt < s.joinAt || channel.__told.has(s.studentId)) continue;
+      channel.__told.add(s.studentId);
+      channel.__emit("presence", "join", { key: s.studentId, currentPresences: [], newPresences: [announcement(s)] });
+      any = true;
+    }
+    if (any) channel.__emit("presence", "sync", null);
+  }
+
+  // Tells the teacher's side about any hand or "done" tick that has
+  // changed, with the same message a real student's page sends. With
+  // `everyone`, says where every student stands (the teacher's side asks
+  // for that when it opens).
+  function tellSignals(cls, now, everyone) {
+    for (const s of cls.students) {
+      if (now - cls.startedAt < s.joinAt) continue;
+      const sig = signals(cls, s, now);
+      const key = `${sig.hand ? 1 : 0}${sig.done ? 1 : 0}`;
+      if (!everyone && key === (s.toldSignals || "00")) continue;
+      s.toldSignals = key;
+      cls.rosterChannels.forEach((ch) => ch.__emit("broadcast", "student-status", { studentId: s.studentId, ...sig }));
+    }
   }
 
   // A finished line, as a board keeps it.
@@ -273,11 +326,12 @@ export function createDemoClassroom() {
     let busy = false;
     classes.forEach((cls) => {
       if (cls.rosterChannels.size || cls.boardChannels.size) busy = true;
-      const joined = cls.students.filter((s) => now - cls.startedAt >= s.joinAt).length;
-      if (joined !== cls.joinedCount) {
-        cls.joinedCount = joined;
-        cls.rosterChannels.forEach((ch) => ch.__emit("presence", "sync", null));
-      }
+      // "Pens down": time stands still for the pretend students, so they
+      // stop where they are and carry on from there when the teacher lets go.
+      if (cls.pensDown && cls.lastTickAt) cls.startedAt += now - cls.lastTickAt;
+      cls.lastTickAt = now;
+      cls.rosterChannels.forEach((ch) => tellJoins(cls, ch, now));
+      tellSignals(cls, now, false);
       cls.boardChannels.forEach((ch) => catchUp(cls, ch, now));
     });
     if (!busy && timer) {
@@ -305,6 +359,9 @@ export function createDemoClassroom() {
         const cls = classes.get(code);
         cls.rosterChannels.add(channel);
         channel.__class = cls;
+        channel.__told = new Set();
+        // Whoever is already in the class, straight away.
+        tellJoins(cls, channel, Date.now());
         wake();
         return;
       }
@@ -337,8 +394,25 @@ export function createDemoClassroom() {
     receive(channel, message) {
       const cls = channel.__class;
       const view = channel.__view;
-      if (!cls || !view || !message) return;
+      if (!cls || !message) return;
       const now = Date.now();
+      if (!view) {
+        // To the whole class: "where does everyone stand?", "put that hand
+        // down" and "clear everyone's hands and ticks". Changes are told on
+        // the next tick.
+        if (message.event === "status-request") {
+          tellSignals(cls, now, true);
+        } else if (message.event === "hand-lower" && message.payload) {
+          const who = cls.students.find((s) => s.studentId === message.payload.studentId);
+          if (who) who.handLowered = true;
+        } else if (message.event === "status-reset") {
+          cls.resetAt = now;
+          cls.students.forEach((s) => { s.handLowered = true; });
+        } else if (message.event === "class-state" && message.payload) {
+          cls.pensDown = !!message.payload.pensDown;
+        }
+        return;
+      }
       if (message.event === "classroom-state-request") {
         // "What's on your board so far?" Answer as a real board does: the
         // lines already finished and the teacher's comments in one message,
@@ -359,6 +433,7 @@ export function createDemoClassroom() {
             referenceDoc: null,
             referenceStrokes: [],
             comments: view.student.comments.slice(),
+            teacherInk: view.student.teacherInk.slice(),
           });
           catchUp(cls, channel, Date.now());
         }, 120);
@@ -367,6 +442,16 @@ export function createDemoClassroom() {
         reactToComment(cls, view.student, now - cls.startedAt);
       } else if (message.event === "teacher-comment-remove" && message.payload) {
         view.student.comments = view.student.comments.filter((c) => c.id !== message.payload.id);
+      } else if (message.event === "teacher-ink-end" && message.payload && message.payload.stroke) {
+        // What the teacher writes on a pretend student's board is kept with
+        // it, as a real student's board keeps it.
+        const stroke = message.payload.stroke;
+        if (!view.student.teacherInk.some((st) => st.id === stroke.id)) view.student.teacherInk.push(stroke);
+      } else if (message.event === "teacher-ink-remove" && message.payload) {
+        const gone = new Set(message.payload.ids || []);
+        view.student.teacherInk = view.student.teacherInk.filter((st) => !gone.has(st.id));
+      } else if (message.event === "teacher-ink-clear") {
+        view.student.teacherInk = [];
       }
     },
   };

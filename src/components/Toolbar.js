@@ -7,6 +7,7 @@ import {
   MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
   Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
   Check, ChevronDown, Maximize, RotateCw, NotebookText, ImagePlus, ClipboardPaste, BoxSelect, Shapes,
+  LayoutGrid, Pause, Play, Send, Download,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
@@ -87,7 +88,7 @@ export default function Toolbar(props) {
     calculatorActive, onToggleCalculator,
     canInsertReference, hasReferenceDoc, onReferenceToolClick, onOpenSimModal, onOpenShapeModal,
     onCopyLink, onStartLiveClass, onEndSession,
-    liveClassCode, classRoster, onViewStudent, onEndLiveClass,
+    liveClassCode, classRoster, onViewStudent, onEndLiveClass, onResetClassStatus, classTools, compact,
     penSeen, pencilOnly, onSetPencilOnly,
     zoomPercent, onResetView,
   } = props;
@@ -131,6 +132,10 @@ export default function Toolbar(props) {
     };
   }
 
+  // Live class: how many students have a hand up / have said they're done.
+  const classHands = (classRoster || []).filter((st) => st.hand).length;
+  const classDone = (classRoster || []).filter((st) => st.done).length;
+
   const activeTool = panToolActive ? "move" : tool;
   const isInk = activeTool === "pen" || activeTool === "highlighter";
 
@@ -148,7 +153,12 @@ export default function Toolbar(props) {
           <div
             ref={menuRef}
             className={s.menu}
-            style={{ left: menu.left, top: menu.top, width: menu.id === "roster" ? 280 : 320 }}
+            style={
+              menu.id === "roster"
+                ? // a big class is a long list: it scrolls rather than running off the screen
+                  { left: menu.left, top: menu.top, width: 300, maxHeight: `calc(100dvh - ${Math.round(menu.top) + 12}px)`, overflowY: "auto" }
+                : { left: menu.left, top: menu.top, width: 320 }
+            }
             role="menu"
           >
             {menu.id === "maths" && (
@@ -274,21 +284,95 @@ export default function Toolbar(props) {
             )}
             {menu.id === "roster" && (
               <>
+                {/* What the teacher can do with the whole class at once. */}
+                {classTools && (
+                  <div className={s.classTools} role="group" aria-label="Class tools">
+                    <PalmSafeButton
+                      className={s.classTool}
+                      data-tour="class-all-boards"
+                      title="See every student's board at once"
+                      onPress={runAndClose(classTools.onOverview)}
+                    >
+                      <LayoutGrid size={18} strokeWidth={1.9} />
+                      <span>Class overview</span>
+                    </PalmSafeButton>
+                    <PalmSafeButton
+                      className={`${s.classTool} ${classTools.pensDown ? s.classToolOn : ""}`}
+                      aria-pressed={classTools.pensDown}
+                      title={
+                        classTools.pensDown
+                          ? "Students' boards are paused. Press to let them write again."
+                          : "Pause every student's board and bring them to yours"
+                      }
+                      onPress={runAndClose(classTools.onTogglePensDown)}
+                    >
+                      {classTools.pensDown ? <Play size={18} strokeWidth={1.9} /> : <Pause size={18} strokeWidth={1.9} />}
+                      <span>{classTools.pensDown ? "Pens up" : "Pens down"}</span>
+                    </PalmSafeButton>
+                    <PalmSafeButton
+                      className={s.classTool}
+                      title="Copy what's on your board onto every student's board"
+                      onPress={runAndClose(classTools.onSendBoard)}
+                    >
+                      <Send size={18} strokeWidth={1.9} />
+                      <span>Send my board</span>
+                      {classTools.questionSent && <span className={s.classToolDot} aria-label="sent" />}
+                    </PalmSafeButton>
+                    <PalmSafeButton
+                      className={s.classTool}
+                      title="Save every student's board as a PDF or as pictures"
+                      onPress={runAndClose(classTools.onSaveBoards)}
+                    >
+                      <Download size={18} strokeWidth={1.9} />
+                      <span>Save boards</span>
+                    </PalmSafeButton>
+                  </div>
+                )}
                 {classRoster.length === 0 ? (
                   <div className={s.rosterEmpty}>Waiting for students to join…</div>
                 ) : (
                   classRoster.map((student) => (
                     <PalmSafeButton
                       key={student.studentId}
-                      className={s.rosterItem}
+                      className={`${s.rosterItem} ${student.hand ? s.rosterItemHand : ""}`}
                       // lets a walkthrough point at one student (see src/lib/tours.js)
                       data-tour={`roster-${student.studentId}`}
+                      aria-label={`${student.name}${student.hand ? ", hand up" : ""}${student.done ? ", done" : ""}`}
                       onPress={runAndClose(() => onViewStudent(student))}
                     >
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#2E9E5B", flexShrink: 0 }} />
-                      {student.name}
+                      <span className={s.rosterName}>{student.name}</span>
+                      {/* what the student has signalled from their own page */}
+                      {student.hand && (
+                        <span className={`${s.rosterFlag} ${s.rosterFlagHand}`} title="Hand up">
+                          <Hand size={13} strokeWidth={2.2} /> Hand up
+                        </span>
+                      )}
+                      {student.done && (
+                        <span className={`${s.rosterFlag} ${s.rosterFlagDone}`} title="Says they're done">
+                          <Check size={13} strokeWidth={2.8} /> Done
+                        </span>
+                      )}
                     </PalmSafeButton>
                   ))
+                )}
+                {(classHands > 0 || classDone > 0) && (
+                  <div className={s.rosterFoot}>
+                    <span>
+                      {classHands > 0 ? `${classHands} hand${classHands === 1 ? "" : "s"} up` : ""}
+                      {classHands > 0 && classDone > 0 ? " · " : ""}
+                      {classDone > 0 ? `${classDone} of ${classRoster.length} done` : ""}
+                    </span>
+                    {onResetClassStatus && (
+                      <PalmSafeButton
+                        className={s.rosterReset}
+                        title="Puts every hand down and clears every Done tick, ready for the next question"
+                        onPress={runAndClose(onResetClassStatus)}
+                      >
+                        Clear all
+                      </PalmSafeButton>
+                    )}
+                  </div>
                 )}
               </>
             )}
@@ -298,7 +382,7 @@ export default function Toolbar(props) {
       : null;
 
   return (
-    <div className={s.chrome} onContextMenu={(e) => e.preventDefault()}>
+    <div className={`${s.chrome} ${compact ? s.chromeCompact : ""}`} onContextMenu={(e) => e.preventDefault()}>
       {menuPortal}
 
       {/* ---------- App bar ----------
@@ -333,10 +417,29 @@ export default function Toolbar(props) {
               data-tour="live-students"
               aria-expanded={menu?.id === "roster"}
               className={`${s.livePillBtn} ${menu?.id === "roster" ? s.livePillBtnOn : ""}`}
-              onPress={(e) => toggleMenu("roster", e, 280)}
+              onPress={(e) => toggleMenu("roster", e, 300)}
             >
               Students{classRoster.length > 0 ? ` (${classRoster.length})` : ""}
+              {classHands > 0 && (
+                <span className={s.handBadge} aria-label={`${classHands} hand${classHands === 1 ? "" : "s"} up`}>
+                  <Hand size={12} strokeWidth={2.4} aria-hidden="true" />
+                  {classHands}
+                </span>
+              )}
             </PalmSafeButton>
+            {/* Pens are down: said here so it can't be forgotten, and one
+                press lets students write again. */}
+            {classTools && classTools.pensDown && (
+              <PalmSafeButton
+                className={`${s.livePillBtn} ${s.livePillBtnWarn}`}
+                title="Students' boards are paused. Press to let them write again."
+                aria-label="Pens down. Press to let students write again"
+                onPress={classTools.onTogglePensDown}
+              >
+                <Pause size={12} strokeWidth={2.6} aria-hidden="true" />
+                <span className={s.pillLong}>Pens down</span>
+              </PalmSafeButton>
+            )}
             {isOwner && (
               <PalmSafeButton className={s.livePillBtn} onPress={onEndLiveClass}>
                 End

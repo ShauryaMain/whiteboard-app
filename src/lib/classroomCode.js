@@ -10,15 +10,32 @@ export function generateClassCode(length = 6) {
   return code;
 }
 
+// Who this student is for the life of this browser tab. Kept in the tab's
+// own storage so a refresh keeps them the same person; if that storage is
+// switched off (some private-browsing modes) it is simply remembered until
+// the page is closed.
+let rememberedStudentId = null;
+
 export function getOrCreateStudentId() {
   if (typeof window === "undefined") return null;
-  let id = sessionStorage.getItem("classroom_student_id");
+  let id = null;
+  try {
+    id = sessionStorage.getItem("classroom_student_id");
+  } catch (err) {
+    // storage switched off
+  }
+  if (!id) id = rememberedStudentId;
   if (!id) {
     id =
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
         : Math.random().toString(36).slice(2);
+  }
+  rememberedStudentId = id;
+  try {
     sessionStorage.setItem("classroom_student_id", id);
+  } catch (err) {
+    // as above
   }
   return id;
 }

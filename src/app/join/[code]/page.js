@@ -18,7 +18,7 @@ const STATUS_REQUEST_RETRY_MS = 2000;
 export default function JoinCodePage() {
   const { code } = useParams();
   const router = useRouter();
-  const [status, setStatus] = useState("connecting"); // connecting | connected | not_found
+  const [status, setStatus] = useState("connecting"); // connecting | connected | not_found | ended
   const channelRef = useRef(null);
   const navigatedRef = useRef(false);
 
@@ -45,7 +45,7 @@ export default function JoinCodePage() {
       const state = channel.presenceState();
       if (state.teacher && !timedOut) {
         clearTimeout(timeoutId);
-        setStatus("connected");
+        setStatus((prev) => (prev === "ended" ? prev : "connected"));
       }
     });
 
@@ -58,6 +58,14 @@ export default function JoinCodePage() {
         navigatedRef.current = true;
         router.push(`/join/${normalizedCode}/view?board=${payload.boardId}`);
       }
+    });
+
+    // The teacher ended the class while this student was still waiting to
+    // be let in: say so, rather than leaving them waiting for ever.
+    channel.on("broadcast", { event: "class-ended" }, () => {
+      clearTimeout(timeoutId);
+      navigatedRef.current = true;
+      setStatus("ended");
     });
 
     channel.subscribe(async (subStatus) => {
@@ -79,6 +87,20 @@ export default function JoinCodePage() {
       supabase.removeChannel(channel);
     };
   }, [code]);
+
+  if (status === "ended") {
+    return (
+      <div className={p.screen}>
+        <div className={`${p.sticky} ${p.stickyPink}`} role="alert">
+          <h1 className={p.stickyTitle}>This class has ended</h1>
+          <p className={p.stickyText}>Your teacher has finished the lesson.</p>
+          <button type="button" className={`${d.btn} ${d.btnPrimary}`} onClick={() => router.push("/join")} style={{ marginTop: 6 }}>
+            Join another class
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (status === "not_found") {
     return (

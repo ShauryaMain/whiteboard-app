@@ -300,7 +300,7 @@ function makeChannel(topic, classroom) {
       handlers.forEach((h) => {
         if (h.type !== type || h.event !== event) return;
         try {
-          h.callback(type === "broadcast" ? { type, event, payload } : {});
+          h.callback(type === "broadcast" ? { type, event, payload } : payload || {});
         } catch (err) {
           console.error("Demo class message failed:", err);
         }
