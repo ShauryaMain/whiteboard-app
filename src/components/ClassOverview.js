@@ -53,6 +53,7 @@ export default function ClassOverview({ code, students, question = null, pensDow
                   embedded
                   interactive={false}
                   autoFit
+                  glance
                   fitMargin={10}
                   question={question}
                   waitingText="Connecting…"

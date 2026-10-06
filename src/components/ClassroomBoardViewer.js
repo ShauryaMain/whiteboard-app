@@ -10,6 +10,7 @@ import {
   drawInkStroke as drawStroke, drawTextBoxes as drawTexts, drawGraph, drawTeacherLayer, hasTeacherLayer, contentBoxes,
 } from "@/lib/boardRender";
 import { getPencilOnly } from "@/lib/pencilPrefs";
+import { createWatcher, isNewerEdition, isStudentBoard, samePage, steadyNow } from "@/lib/boardWatch";
 import cls from "./Classroom.module.css";
 
 const MIN_SCALE = 0.1;
@@ -96,11 +97,17 @@ function drawPins(ctx, pins, scale) {
 //   fitMargin    px kept clear around the work when fitting
 //   withComments ask the board for the teacher's comments on it as well
 //                (only the teacher's own view of a student's board does)
+//   glance       a small picture of a student's board: it is sent each line
+//                when it is finished, not point by point as it is drawn
 //   ref          gets { send(event, payload), fitAll(), undoInk(), clearInk() }
+//
+// A student's board only sends what the student is doing while somebody is
+// watching it (see src/lib/boardWatch.js), so a view of one says "I'm
+// watching" for as long as it is on screen.
 export default function ClassroomBoardViewer({
   boardId, embedded = false, waitingText, pins, onBoardTap, onSnapshot, onLeave, fitOnLoad = false, tour, ref, children,
   question = null, drawTool = null, onInkChange, interactive = true, autoFit = false, fitMargin = FIT_MARGIN_PX,
-  withComments = false,
+  withComments = false, glance = false,
 }) {
   const router = useRouter();
   const canvasRef = useRef(null);
@@ -152,6 +159,10 @@ export default function ClassroomBoardViewer({
   const inkFrameRef = useRef(null);
   const liveExpiryRef = useRef(null);
   const withCommentsRef = useRef(withComments);
+  // A student's board stamps each whole board it sends with an "edition"
+  // (see src/lib/boardWatch.js): which one this view is showing.
+  const editionRef = useRef(null);
+  const fittedOnceRef = useRef(false);
 
   const [strokes, setStrokes] = useState([]);
   const [teacherInk, setTeacherInk] = useState([]);
@@ -445,14 +456,86 @@ export default function ClassroomBoardViewer({
       config: { broadcast: { self: false } },
     });
 
+    // A student's board: this view tells it that it is being watched.
+    const watcher = isStudentBoard(boardId)
+      ? createWatcher((event, payload) => channel.send({ type: "broadcast", event, payload }), {
+          glance,
+          edition: () => (hasReceivedSnapshot.current ? editionRef.current : null),
+        })
+      : null;
+    if (watcher && document.visibilityState === "hidden") watcher.setVisible(false);
+    let askAgainTimer = null;
+    let askedAt = -Infinity; // when this view last asked for the board
+    // When another view of the same board last asked for it in a way that
+    // gets this view what it needs too (and with the comments, if wanted).
+    let othersAskedAt = -Infinity;
+    let askAgainSince = 0;
+
     function requestSnapshot() {
       if (hasReceivedSnapshot.current) return;
+      askedAt = steadyNow();
       channel.send({
         type: "broadcast",
         event: "classroom-state-request",
-        payload: withCommentsRef.current ? { comments: true } : {},
+        payload: { ...(withCommentsRef.current ? { comments: true } : {}), ...(watcher ? watcher.tag() : {}) },
       });
     }
+
+    if (watcher) {
+      // Other views of the same board (a whole class can be shown one).
+      channel.on("broadcast", { event: "classroom-state-request" }, ({ payload }) => {
+        watcher.heard("classroom-state-request", payload);
+        const enough = payload && payload.v === 2 && watcher.covers(payload.watch) && (!withCommentsRef.current || payload.comments);
+        if (enough) othersAskedAt = steadyNow();
+      });
+      channel.on("broadcast", { event: "board-watch" }, ({ payload }) => {
+        watcher.heard("board-watch", payload);
+      });
+      channel.on("broadcast", { event: "board-unwatch" }, ({ payload }) => {
+        watcher.heard("board-unwatch", payload);
+      });
+      // The board has just connected, or found that someone watching is
+      // behind, and says which edition it is now.
+      channel.on("broadcast", { event: "board-here" }, ({ payload }) => {
+        if (hasReceivedSnapshot.current && payload && payload.edition && payload.edition === editionRef.current) {
+          // This view has that edition already. The board may not know it
+          // is being watched, though (it has only just come back).
+          watcher.speakUp();
+          return;
+        }
+        askAgain();
+      });
+    }
+
+    // What is on screen here may be behind what the board has: ask for it
+    // again. (After a moment that is different for each view, so a whole
+    // class doesn't ask in the same instant.)
+    function askAgain() {
+      if (watcher) watcher.cancelReport();
+      hasReceivedSnapshot.current = false;
+      remoteStrokes.current = {};
+      askedAt = steadyNow();
+      fullRedraw();
+      if (askAgainTimer) return;
+      askAgainSince = steadyNow();
+      askAgainTimer = setTimeout(() => {
+        askAgainTimer = null;
+        if (hasReceivedSnapshot.current) {
+          // The board's answer to somebody else got here first. This view
+          // has what it needs: it only has to say that it is watching.
+          if (watcher) watcher.speakUp();
+        } else if (othersAskedAt < askAgainSince) {
+          requestSnapshot();
+        }
+        // (otherwise somebody else has just asked, and the one answer will
+        // do for this view too; if it never comes, the retry below asks)
+      }, 20 + Math.round(Math.random() * (glance ? 2000 : 200)));
+    }
+    // A page in the background isn't watching.
+    const onVisibility = () => {
+      if (watcher) watcher.setVisible(document.visibilityState !== "hidden");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     // The board's answer. A small board arrives whole, in this one message.
     // A big one is too large for a single live message, so this message
@@ -462,11 +545,34 @@ export default function ClassroomBoardViewer({
     // The board answers everyone at once whenever anybody asks, so a viewer
     // that is already up to date ignores answers meant for someone else.
     channel.on("broadcast", { event: "classroom-state-snapshot" }, ({ payload }) => {
-      if (hasReceivedSnapshot.current) return;
+      // A student's board sent for somebody else, in a newer edition than
+      // the one on screen here: this view had fallen behind without knowing.
+      const newer = !!watcher && hasReceivedSnapshot.current && isNewerEdition(payload.edition, editionRef.current);
+      if (hasReceivedSnapshot.current && !newer) {
+        // …or from another page altogether (the student has refreshed, and
+        // this view never heard): let the board know what is on screen
+        // here, and it will say whether to ask again.
+        if (watcher && payload.edition && editionRef.current && !samePage(payload.edition, editionRef.current)) watcher.report();
+        return;
+      }
       // The teacher's view of a student's board waits for an answer that
       // has the comments in it (one sent for somebody else may not).
-      if (withCommentsRef.current && !Array.isArray(payload.comments)) return;
+      if (withCommentsRef.current && !Array.isArray(payload.comments)) {
+        if (newer) askAgain();
+        return;
+      }
+      if (watcher) {
+        // A student's board sends the line being drawn again, from the top,
+        // straight after this: any half of one held here is out of date (and
+        // would never be finished if the student has refreshed their page).
+        remoteStrokes.current = {};
+        // If this answer was for somebody else (this view's own asking
+        // never reached the board, or it didn't ask), the board doesn't
+        // know that this view is watching too.
+        if (!Array.isArray(payload.askedBy) || !payload.askedBy.includes(watcher.id)) watcher.speakUp();
+      }
       hasReceivedSnapshot.current = true;
+      editionRef.current = payload.edition || null;
       gridConfigRef.current = payload.grid || null;
       backgroundRef.current = normalizeBackground(payload.background);
       setReferenceDoc(payload.referenceDoc || null);
@@ -484,7 +590,10 @@ export default function ClassroomBoardViewer({
         setTexts(payload.texts || []);
         setImages(payload.images || []);
         setTeacherInk(payload.teacherInk || []);
-        if (fitOnLoadRef.current) pendingFitRef.current = true;
+        // (only the first time: a view the teacher has since zoomed in on
+        // isn't moved when the board is fetched again)
+        if (fitOnLoadRef.current && !fittedOnceRef.current) pendingFitRef.current = true;
+        fittedOnceRef.current = true;
       }
       setConnectionStatus("live");
       onSnapshotRef.current?.(payload);
@@ -520,7 +629,8 @@ export default function ClassroomBoardViewer({
         setImages((prev) => prev.filter((o) => c.images.has(o.id)));
         setTeacherInk((prev) => prev.filter((o) => c.teacherInk.has(o.id)));
       }
-      if (fitOnLoadRef.current) pendingFitRef.current = true;
+      if (fitOnLoadRef.current && !fittedOnceRef.current) pendingFitRef.current = true;
+      fittedOnceRef.current = true;
     });
 
     // The teacher writing on this board (it is a student's): seen here when
@@ -705,7 +815,11 @@ export default function ClassroomBoardViewer({
     });
 
     channel.subscribe((status) => {
-      if (status !== "SUBSCRIBED") return;
+      if (status !== "SUBSCRIBED") {
+        if (watcher) watcher.disconnected();
+        return;
+      }
+      if (watcher) watcher.connected();
       // Back after a dropped connection (Wi-Fi blip, tablet asleep): things
       // may have changed meanwhile, so ask for the board again.
       if (joinedOnceRef.current) {
@@ -722,7 +836,8 @@ export default function ClassroomBoardViewer({
     // yet in the moment right after "Start Class" — keep asking rather
     // than giving up after one try.
     const retryInterval = setInterval(() => {
-      if (!hasReceivedSnapshot.current) {
+      // (not when it has only just been asked: the answer is on its way)
+      if (!hasReceivedSnapshot.current && steadyNow() - askedAt >= 1000) {
         setConnectionStatus("waiting");
         requestSnapshot();
       }
@@ -730,16 +845,22 @@ export default function ClassroomBoardViewer({
 
     return () => {
       clearInterval(retryInterval);
+      if (askAgainTimer) clearTimeout(askAgainTimer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      // "I've stopped watching", before the connection goes.
+      if (watcher) watcher.stop();
       supabase.removeChannel(channel);
       channelRef.current = null;
       hasReceivedSnapshot.current = false;
+      editionRef.current = null;
+      fittedOnceRef.current = false;
       joinedOnceRef.current = false;
       collectingRef.current = null;
       if (liveExpiryRef.current) clearInterval(liveExpiryRef.current);
       liveExpiryRef.current = null;
       teacherLiveRef.current = {};
     };
-  }, [boardId]);
+  }, [boardId, glance]);
 
   // Canvas setup, resize, pan/zoom — no drawing tools, view navigation only.
   useEffect(() => {

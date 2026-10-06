@@ -57,7 +57,9 @@ export function collectBoard(boardId, { timeoutMs = 7000, job = null } = {}) {
       board[kind] = [...board[kind].filter((o) => !ids.has(o.id)), ...list];
     };
     const ask = () => {
-      if (!board && !settled) channel.send({ type: "broadcast", event: "classroom-state-request", payload: {} });
+      // (v: 2 with no "watch": the board's contents are wanted once, and
+      // nobody is going to be looking at it afterwards; see boardWatch.js)
+      if (!board && !settled) channel.send({ type: "broadcast", event: "classroom-state-request", payload: { v: 2 } });
     };
 
     channel.on("broadcast", { event: "classroom-state-snapshot" }, ({ payload }) => {

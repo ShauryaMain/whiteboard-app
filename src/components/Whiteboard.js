@@ -28,6 +28,7 @@ import {
   classStateMessage, questionFromBoard, createQuestionSender,
 } from "@/lib/classControl";
 import { NO_COMMENTS, noComments, NO_SAVE_PROBLEM, noSaveProblem, NO_TEACHER_LAYER, noTeacherLayer } from "@/lib/localBoard";
+import { createSendGate } from "@/lib/boardWatch";
 import { drawTeacherLayer, hasTeacherLayer } from "@/lib/boardRender";
 import StudentComments from "./StudentComments";
 import GridToolModal from "./GridToolModal";
@@ -2583,6 +2584,12 @@ export default function Whiteboard({
     const channel = supabase.channel(`board-${boardId}`, {
       config: { broadcast: { self: false } },
     });
+    // A student's own board only sends what the student is doing while
+    // somebody is watching it (see src/lib/boardWatch.js). Everything this
+    // board sends goes through the gate, which lets it out or keeps it back.
+    const gate = student ? createSendGate((message) => channel.send(message)) : null;
+    // (through the gate, which stamps it with the board's edition)
+    const sayHere = () => (gate || channel).send({ type: "broadcast", event: "board-here", payload: {} });
 
     // Someone else changing the board keeps a watching viewer "active",
     // so a student following along never gets paused.
@@ -2752,6 +2759,7 @@ export default function Whiteboard({
     // joining, or a whole class being shown one student's board), and the
     // answer goes to everyone on the connection anyway: so they share one.
     channel.on("broadcast", { event: "classroom-state-request" }, ({ payload }) => {
+      if (gate) gate.heard("classroom-state-request", payload);
       if (payload && payload.comments) snapshotCommentsRef.current = true;
       if (snapshotTimerRef.current) return;
       snapshotTimerRef.current = setTimeout(() => {
@@ -2760,6 +2768,16 @@ export default function Whiteboard({
         snapshotCommentsRef.current = false;
         sendClassSnapshot(withComments);
       }, 150);
+    });
+
+    // "Still watching" and "I've stopped", from whoever has this student's
+    // board on screen. If one of them turns out to have missed something
+    // (nothing was being sent for a while), everyone is told to ask again.
+    channel.on("broadcast", { event: "board-watch" }, ({ payload }) => {
+      if (gate && gate.heard("board-watch", payload)) sayHere();
+    });
+    channel.on("broadcast", { event: "board-unwatch" }, ({ payload }) => {
+      if (gate) gate.heard("board-unwatch", payload);
     });
 
     // A student's own board: the teacher pins notes on it from their view
@@ -2841,9 +2859,23 @@ export default function Whiteboard({
     });
 
     let joined = false;
+    let saidHere = false;
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         joined = true;
+        // A student's board that has just connected says so: anyone who
+        // already has it on screen (the student refreshed their page) asks
+        // for it afresh. So does one that has come back after a dropped
+        // connection, if what it sent meanwhile may have gone nowhere.
+        if (gate) {
+          if (!saidHere) {
+            saidHere = true;
+            gate.announced();
+            sayHere();
+          } else if (gate.rejoined()) {
+            sayHere();
+          }
+        }
         channel.send({ type: "broadcast", event: "reference-request", payload: {} });
         // Re-joined after being away (idle pause, sleep, dropped Wi-Fi):
         // fetch what changed meanwhile. The first join is covered by the
@@ -2851,9 +2883,11 @@ export default function Whiteboard({
         if (connectedOnceRef.current) catchUpWithServer();
         else retryUnsaved(sync);
         connectedOnceRef.current = true;
+      } else if (gate) {
+        gate.dropped();
       }
     });
-    channelRef.current = channel;
+    channelRef.current = gate || channel;
     // If the join hasn't gone through after a few seconds (the old
     // connection was still closing), give the connection a nudge.
     const joinWatchdog = setInterval(() => {
