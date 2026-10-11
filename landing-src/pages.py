@@ -2,12 +2,17 @@
 #
 # Every claim here must match what the app really does. Things to remember:
 # no protractor, no sticky notes, no video or audio calls, no offline mode,
-# not open source, the Graph tool places axes but does not plot functions,
-# a shape from Insert > Shape becomes ordinary ink (it can't be re-opened
-# and edited as a shape), the "What's new" pop-up and walkthroughs are for
-# signed-in users on their boards page,
-# saving happens in the background after each stroke, and students' boards
-# in a live class are not kept afterwards.
+# not open source, a shape from Insert > Shape becomes ordinary ink (it can't
+# be re-opened and edited as a shape), the "What's new" pop-up and
+# walkthroughs are for signed-in users on their boards page, and saving
+# happens in the background after each stroke.
+# The Graph tool plots equations (Plot tab) and draws statistics charts, and
+# a graph can be double-tapped to change it. Teachers sign in with Google or
+# with a code sent to their email. In a live class, students' boards are not
+# stored on our servers: the teacher can download them (Save boards: PDF or
+# pictures) before ending the class, and each student's browser keeps a copy
+# for a day so a refresh doesn't lose their work. The demo board is kept in
+# the visitor's own browser and moves into their account when they sign in.
 #
 # Links to other pages on this site are written [[url:page-name]].
 # {fig:name:caption} drops in one of the screenshots listed in IMG.
@@ -38,17 +43,29 @@ IMG = {
               "Shape tool in Clean Slate showing a triangular prism that can be turned, with dashed hidden edges, its volume and its surface area"),
     "anglecheck": ("clean-slate-shape-tool-angle-check", [700, 1200], 1200, 750,
                    "Shape tool in Clean Slate explaining that no regular polygon has a 100 degree interior angle and offering the regular pentagon instead"),
+    "plot": ("clean-slate-graph-plot-sliders", [700, 1200], 1200, 750,
+             "Clean Slate whiteboard plotting y = a sin(bx + c) against y = sin x, with sliders for a, b and c beside the graph"),
+    "shading": ("clean-slate-graph-shading-area", [700, 1200], 1200, 750,
+                "Graph on the Clean Slate whiteboard with the area under y = 4 - x squared over 2 shaded and labelled 13.333, and the inequality y < x - 3 shaded"),
+    "charts": ("clean-slate-statistics-charts", [700, 1200], 1200, 750,
+               "Statistics charts on the Clean Slate whiteboard: a scatter graph with a dashed line of best fit and r = 0.999, and box plots comparing two classes' test scores"),
+    "unitcircle": ("clean-slate-unit-circle", [700, 1200], 1200, 750,
+                   "Unit circle on the Clean Slate whiteboard with every standard angle in radians and the exact coordinates of each point"),
+    "overview": ("clean-slate-class-overview", [700, 1200], 1200, 615,
+                 "Class overview in a Clean Slate live class: five students' boards solving 2x + 3 = 11 side by side, with one hand up and two marked done"),
+    "write": ("clean-slate-mark-student-work", [700, 1200], 1200, 750,
+              "A teacher writing in red on a student's board during a Clean Slate live class, circling the mistake and writing 11 - 3 = 8"),
 }
 
 # slug -> short label (used in the nav, footer and related links)
 LABELS = {
     "online-whiteboard-for-teaching": ("Whiteboard for teaching", "A free online whiteboard built around how lessons actually run."),
     "online-whiteboard-for-tutoring": ("Whiteboard for tutoring", "One-to-one and small-group lessons, with the worksheet beside the board."),
-    "online-whiteboard-for-math": ("Whiteboard for math", "Exact shapes, ruler, compass, graph paper and a calculator with exact answers."),
-    "online-whiteboard-for-classroom": ("Whiteboard for the classroom", "Every student gets their own board. Join with a code, no accounts."),
+    "online-whiteboard-for-math": ("Whiteboard for math", "Graphs that plot equations, exact shapes, ruler, compass and a calculator with exact answers."),
+    "online-whiteboard-for-classroom": ("Whiteboard for the classroom", "Every student gets their own board. See them all at once. No accounts."),
     "free-online-whiteboard-no-sign-up": ("Whiteboard with no sign-up", "Open a board and draw. No account, no login, no download."),
     "whiteboard-for-ipad": ("Whiteboard for iPad", "Made for Apple Pencil, with palm rejection, in Safari."),
-    "microsoft-whiteboard-alternative": ("Microsoft Whiteboard alternative", "Free, works with any Google account, on any device."),
+    "microsoft-whiteboard-alternative": ("Microsoft Whiteboard alternative", "Free, sign in with Google or any email, on any device."),
     "jamboard-alternative": ("Jamboard alternative", "A free replacement for teachers, with no student sign-in."),
 }
 
@@ -75,12 +92,12 @@ PAGES = [
 <p>You teach from the question on the left and work it out on the right. Nothing to print, nothing to screenshot.</p>"""),
             ("See every student's working", """
 <p>Press Start live class and Clean Slate gives you a six-character code. Students type it on any device, add their first name, and they're in. They don't need an account or an email address.</p>
-<p>Each student sees your board and has a board of their own. You see the class list, open any student's board while they work, and pin a comment exactly where they went wrong.</p>
-{fig:join:Students join with a code and a first name.}"""),
+<p>Each student sees your board and has a board of their own, with the same tools as yours. Class overview shows every student's board at once, live. Students can put a hand up when they're stuck, and you can open anyone's board to pin a comment or write on their work.</p>
+{fig:overview:Class overview: every student's board at once, with hands up and done.}"""),
             ("One board for every subject", """
 <p>Pick the paper that suits the lesson: blank, lined, squared, dot grid or isometric.</p>
 <ul class="ticks">
-  <li><b>Maths:</b> exact shapes with the angles and lengths marked, a ruler, a compass, Cartesian and polar graph paper, and a scientific calculator with exact answers.</li>
+  <li><b>Maths:</b> graphs that plot the equations you type, statistics charts, exact shapes with the angles and lengths marked, a ruler, a compass and a scientific calculator with exact answers.</li>
   <li><b>Science:</b> label a diagram, or embed a PhET simulation next to your notes.</li>
   <li><b>English and humanities:</b> paste in a passage or a source, highlight it and annotate the margins.</li>
   <li><b>Languages:</b> lined paper for handwriting, and typed text boxes for vocabulary.</li>
@@ -90,8 +107,8 @@ PAGES = [
 <p>Clean Slate runs in the browser on iPads, Android tablets, Chromebooks, Windows PCs and Macs. There is nothing to install and no paid plan. It's made for a stylus: on an iPad, resting your palm on the screen doesn't leave marks or press buttons.</p>"""),
         ],
         "faq": [
-            ("Is Clean Slate free for teachers?", "Yes. There is no paid plan, no board limit and no ads. You sign in with a Google account to save and share boards."),
-            ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> opens straight away with all the drawing tools. Nothing you draw there is saved.'),
+            ("Is Clean Slate free for teachers?", "Yes. There is no paid plan, no board limit and no ads. You sign in with Google, or with a code sent to your email, to save and share boards."),
+            ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> opens straight away with every tool, a ready lesson and a pretend class to try. Your board is kept in your browser, and moves into your account if you sign in.'),
             ("Do my students need accounts?", "No. Students join a live class with a six-character code and their first name."),
             ("Can I use it with Zoom, Google Meet or Teams?", "Yes. Clean Slate has no video or audio of its own, so run it beside your call. Share your screen, or start a live class so students follow on their own devices."),
             ("Which devices does it work on?", "Any device with a modern browser: iPads (iPadOS 15 and newer), Android tablets, Chromebooks, Windows, Mac and Linux."),
@@ -106,6 +123,7 @@ PAGES = [
         "h1": "A free online whiteboard for tutoring",
         "lede": "Clean Slate is an online whiteboard for one-to-one and small-group tutoring. Keep the past paper beside the board, write as you would on paper, and pick up next week exactly where you stopped.",
         "hero": "worksheet",
+        "cta_primary": ("Try a tutoring board, no sign-in", "/demo?start=tutor"),
         "sections": [
             ("Built around a tutoring session", """
 <ul class="ticks">
@@ -117,19 +135,19 @@ PAGES = [
             ("Long lessons stay quick", """
 <p>What you draw appears on your own device first, and saving happens quietly in the background. The pen doesn't wait for the internet, so writing feels the same at the end of a two-hour session as it did at the start.</p>"""),
             ("The tools a maths or science tutor reaches for", """
-<p>The Maths menu has a ruler, a compass, graph paper you can set up as Cartesian or polar axes, and a scientific calculator that gives exact answers such as ½ or 2√2. You can send a calculator answer straight to the board.</p>
+<p>The Maths menu has a ruler, a compass, a Graph tool and a scientific calculator that gives exact answers such as ½ or 2√2. Type an equation into the Graph tool and it's plotted on the board, with sliders for letters like a, b and c. You can send a calculator answer straight to the board.</p>
 <p>Need a diagram for the question? Insert, then Shape draws a polygon, triangle, quadrilateral, circle or 3D solid to the sides and angles you type, with the measurements labelled.</p>
 {fig:calculator:The calculator gives exact answers and adds them to the board.}
 <p>For other subjects, switch the page to lined paper, paste in a text to annotate, or embed a PhET simulation.</p>"""),
             ("Use it alongside Zoom, Meet or Teams", """
 <p>Clean Slate is a whiteboard, not a video call. Keep your usual call running for voice and video and use Clean Slate for the working. Share your screen, or send your student the board so they have it on their own device.</p>"""),
             ("Small groups: a board for each student", """
-<p>For a group, start a live class. Students join with a six-character code and no account. Each one gets their own board, and you can open any of them while they work and pin a comment where it matters.</p>"""),
+<p>For a group, start a live class. Students join with a six-character code and no account. Each one gets their own board with the full set of tools. See all their boards at once, open any of them while they work, and pin a comment or write a correction where it matters.</p>"""),
         ],
         "faq": [
-            ("What is the best free online whiteboard for math tutoring?", "That depends on what you need. Clean Slate is free and has exact labelled shapes, a ruler, a compass, Cartesian and polar graph paper, a scientific calculator with exact answers, and a pane for the worksheet beside the board. It has no built-in video call."),
+            ("What is the best free online whiteboard for math tutoring?", "That depends on what you need. Clean Slate is free and has graphs that plot equations, exact labelled shapes, a ruler, a compass, a scientific calculator with exact answers, and a pane for the worksheet beside the board. It has no built-in video call."),
             ("Does it work with Zoom?", "Yes. Run Clean Slate in your browser beside Zoom, Google Meet or Teams, and either share your screen or share the board with your student."),
-            ("Does my student need an account?", "Not for a live class: they join with a code and their first name. To write on the same board as you, they sign in with a free Google account."),
+            ("Does my student need an account?", "Not for a live class: they join with a code and their first name. To write on the same board as you, they sign in free with Google or with a code sent to their email."),
             ("Can I keep a separate board for each student?", "Yes. Make as many boards as you like and name them. Each one saves automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it."),
             ("How much does it cost?", "Nothing. There is no paid plan and no board limit."),
         ],
@@ -137,13 +155,29 @@ PAGES = [
     },
     {
         "slug": "online-whiteboard-for-math",
-        "title": "Online Whiteboard for Math with Geometry Tools | Clean Slate",
-        "desc": "A free online whiteboard for math. Exact shapes with the angles marked, ruler, compass, graph paper and a scientific calculator. Try it with no sign-up.",
-        "kicker": "shapes · ruler · compass · graph paper · calculator",
+        "title": "Online Whiteboard for Math with Graphing and Geometry Tools | Clean Slate",
+        "desc": "A free online whiteboard for math. Plot equations with sliders, draw statistics charts and exact shapes, with a ruler, compass and calculator. No sign-up to try.",
+        "kicker": "graphs · shapes · ruler · compass · calculator",
         "h1": "A free online whiteboard for math",
-        "lede": "Clean Slate is an online whiteboard with real math tools built in: exact shapes with the angles and lengths marked, a ruler and compass, graph paper you can set up your way, and a scientific calculator that gives exact answers. It's free, and you can try it without signing up.",
-        "hero": "shapes",
+        "lede": "Clean Slate is an online whiteboard with real math tools built in: graphs that plot the equations you type, statistics charts, exact shapes with the angles and lengths marked, a ruler and compass, and a scientific calculator that gives exact answers. It's free, and you can try it without signing up.",
+        "hero": "plot",
+        "cta_primary": ("Try it on a graph, no sign-in", "/demo?start=tutor"),
         "sections": [
+            ("Graphs that plot the equations you type", """
+<p>Open the Maths menu and choose Graph. In the Plot tab, type an equation such as y = x² − 3 with the same keys as the calculator, and the curve is drawn on the board straight away.</p>
+<ul class="ticks">
+  <li><b>Sliders.</b> Letters like a, b and c get sliders on the board, so you can drag them in the lesson and the class watches the curve change.</li>
+  <li><b>Key points.</b> Mark the roots, the turning points and where two curves cross.</li>
+  <li><b>Read it off.</b> Tap a curve to read a point, with its tangent and gradient.</li>
+  <li><b>Shade it.</b> Shade inequalities and the area under a curve.</li>
+  <li><b>Points and tables.</b> Plot points from a table, join them up or add a line of best fit, and put a table of values beside the graph with the y row left blank for the class to fill in.</li>
+</ul>
+{fig:plot:Letters in an equation get sliders on the board.}
+{fig:shading:Shade an inequality, or the area under a curve.}
+<p>Put a graph beside each question: a board can hold several, and each one moves, resizes, copies and undoes like anything else. Double-tap a graph to change it. In a live class, students see every change as you make it.</p>"""),
+            ("Statistics charts", """
+<p>The same Graph tool draws bar charts, histograms, scatter graphs with a line of best fit, and box plots. Type or paste the data and the axes fit themselves.</p>
+{fig:charts:A scatter graph with its line of best fit, and box plots comparing two classes.}"""),
             ("Exact shapes: polygons, triangles, circles and 3D solids", """
 <p>Choose Insert, then Shape. Pick a family, type the numbers you want, and a live preview shows the shape before it goes on the board.</p>
 <ul class="ticks">
@@ -166,17 +200,18 @@ PAGES = [
   <li><b>Compass:</b> drag the pin to set the centre and the pencil to set the radius, then draw circles and arcs.</li>
 </ul>
 {fig:compass:The compass draws exact circles and arcs.}"""),
-            ("Graph paper, set up your way", """
-<p>The Graph tool places a set of axes on the board. You choose:</p>
+            ("Graph paper, set up the way you draw it", """
+<p>The graph's Axes and paper tab sets it all up, with a live preview before it goes on the board:</p>
 <ul class="ticks">
-  <li>Cartesian or polar axes.</li>
-  <li>The cell size, and how many columns and rows.</li>
-  <li>The value of each cell, with a unit such as cm or m.</li>
-  <li>Trig labels, so the axis is marked in multiples of π.</li>
-  <li>Whether to show the axes, the numbers and a unit circle.</li>
+  <li>A range and a scale for each axis, the origin where you want it, axis names, arrows and a title.</li>
+  <li>π or degrees along x, with ordinary numbers up y.</li>
+  <li>One tap for four quadrants, the first quadrant, the top half or a unit circle.</li>
+  <li>Number lines, with points and inequalities marked on them.</li>
+  <li>Squared, dotted, isometric, log or polar paper.</li>
+  <li>Your own presets, and snapping so ruler lines and points land on the grid.</li>
 </ul>
-<p>A live preview shows the graph before it goes on the board. Then drag it into place and draw on it.</p>
-{fig:graphtool:Graph settings, with a live preview.}"""),
+{fig:unitcircle:A unit circle with every standard angle and its exact values.}
+<p>Then draw on it with the pen, as you would on paper.</p>"""),
             ("A scientific calculator with exact answers", """
 <p>The calculator is laid out like a school scientific calculator. It gives exact answers such as ½, 2√2 or π/4, and one tap switches between the exact form and a decimal. It works in degrees or radians, keeps a history of your last answers, and its Add to board button writes the calculation onto the board.</p>
 {fig:calculator:sin(30) gives ½, not 0.5.}"""),
@@ -189,9 +224,10 @@ PAGES = [
             ("Can it draw accurate shapes?", "Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, and labels the measurements for you."),
             ("Can I change a shape after adding it?", "It becomes ordinary ink, so you can move it, copy it and rub parts out. To change its measurements, insert a new shape."),
             ("Does it have a ruler and a compass?", "Yes. Both are in the Maths menu. The ruler draws straight lines and measures lengths, and the compass draws circles and arcs."),
-            ("Does it have graph paper?", "Yes, in two ways. The Page menu sets the whole board to squared paper, and the Graph tool places Cartesian or polar axes with the scale you choose."),
-            ("Can it plot a function for me?", "No. The Graph tool gives you labelled axes and you draw the curve yourself, as you would on paper."),
-            ("Is the calculator a graphing calculator?", "No. It is a scientific calculator with exact answers, fractions, powers, roots, logs and trig in degrees or radians."),
+            ("Does it have graph paper?", "Yes, in two ways. The Page menu sets the whole board to squared paper, and the Graph tool places axes with the range and scale you choose for each one."),
+            ("Can it plot a function for me?", "Yes. Type the equation in the Graph tool's Plot tab and it's drawn on the board. Letters like a, b and c get sliders, and you can mark roots and turning points, read off gradients, and shade inequalities or the area under a curve."),
+            ("Can it draw statistics charts?", "Yes: bar charts, histograms, scatter graphs with a line of best fit, and box plots. Type or paste the data and the axes fit themselves."),
+            ("Is the calculator a graphing calculator?", "No. It is a scientific calculator with exact answers, fractions, powers, roots, logs and trig in degrees or radians. Plotting is done in the Graph tool."),
             ("Is it free?", f'Yes. You can also <a href="{APP}/demo">try the demo board</a> without signing up.'),
         ],
         "related": ["online-whiteboard-for-tutoring", "online-whiteboard-for-teaching", "whiteboard-for-ipad", "online-whiteboard-for-classroom"],
@@ -199,35 +235,52 @@ PAGES = [
     {
         "slug": "online-whiteboard-for-classroom",
         "title": "Free Online Whiteboard for the Classroom | Clean Slate",
-        "desc": "A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see everyone's working live.",
+        "desc": "A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see every board at once, live.",
         "kicker": "a board for every student",
         "h1": "A free online whiteboard for the classroom",
-        "lede": "With Clean Slate, every student in the room gets their own board. They join with a short code, you see each one's working as they write, and you can leave a comment exactly where it's needed. It's free, with no time limit.",
-        "hero": "join",
+        "lede": "With Clean Slate, every student in the room gets their own board. They join with a short code, you see every board at once as they write, and you can step in exactly where it's needed. It's free, with no time limit.",
+        "hero": "overview",
+        "cta_primary": ("Try a pretend class, no sign-in", "/demo?start=class"),
         "sections": [
             ("How a live class works", """
 <ol class="steps-list">
   <li><b>Start a live class.</b> Open any board and press Start live class. Clean Slate shows a six-character code.</li>
   <li><b>Students join with the code.</b> They type it on any device, add their first name, and they're in. No account, no email address.</li>
-  <li><b>Everyone works.</b> Students see your board on one tab and their own board on another. Switching tabs never loses their work.</li>
-  <li><b>You look in.</b> Pick a name from the class list to watch that student's board live, and pin a comment where it matters.</li>
-</ol>"""),
+  <li><b>Everyone works.</b> Students follow your board and work on their own, with the same tools you have. On a tablet or laptop they can put the two side by side.</li>
+  <li><b>You see the whole class.</b> Class overview shows every student's board at once, live. Open any one to look closer.</li>
+</ol>
+{fig:join:Students join with a code and a first name.}"""),
             ("See who is stuck before they ask", """
-<p>On paper you only see a student's working when you walk past. Here you can open any board from your own device, so you can spot the slip in line two while the student is still on line three.</p>
-<p>Comments appear on the student's board as numbered pins, so they know exactly which step you mean.</p>"""),
+<p>On paper you only see a student's working when you walk past. Here every board is on your screen, so you can spot the slip in line two while the student is still on line three.</p>
+<p>Students can put a hand up when they're stuck, or say they're done. Raised hands go to the top of your class list, and you lower them once you've helped.</p>"""),
+            ("Mark their work as they go", """
+<p>Open a student's board and choose how to help:</p>
+<ul class="ticks">
+  <li><b>Comment:</b> tap the board to pin a numbered note exactly where you mean.</li>
+  <li><b>Write:</b> circle the mistake or write the correction in red, green or blue. Only you can rub out what you write, and their own work is never touched.</li>
+</ul>
+{fig:write:Write on a student's board to mark their work.}"""),
+            ("Steer the whole class", """
+<ul class="ticks">
+  <li><b>Send my board</b> puts your question on every student's board, so everyone starts from the same place. They write over it but can't rub it out.</li>
+  <li><b>Show to class</b> puts one student's working on every screen, with their name or without it.</li>
+  <li><b>Pens down</b> pauses every student's board and brings them all to yours.</li>
+  <li><b>Save boards</b> downloads every student's board as a PDF, a page each, or as pictures, before you end the class.</li>
+</ul>"""),
             ("What students need", """
 <p>A device with a browser. It can be an iPad, an Android tablet, a Chromebook or a laptop. They don't install anything, and they don't create an account or give an email address.</p>"""),
             ("What it's built for", """
 <p>Clean Slate's live class is built for a normal class of 20 to 30 students working at the same time. There is no charge and no session time limit.</p>
-<p>Your own board has the full set of tools: the worksheet pane, exact shapes, the ruler and compass, graph paper, the calculator and every paper style. Students' boards are kept simple: pen, eraser, colours, undo and clear.</p>"""),
+<p>Students' boards have the same tools as yours, including graphs, shapes, the ruler, compass and calculator, and every paper style. Pictures, simulations and the worksheet pane are for your board only.</p>"""),
         ],
         "faq": [
             ("Do students need to sign in?", "No. They join with a six-character class code and their first name."),
             ("Is there a time limit on a class?", "No. A live class runs until you end it."),
             ("How many students can join?", "It is built for classes of 20 to 30 students working at once."),
-            ("Can students see each other's boards?", "No. Each student sees your board and their own."),
-            ("Can I write on a student's board?", "You leave comments as numbered pins on their board. The writing on a student's board is always their own."),
-            ("Is students' work saved after the class?", "No. Students' boards exist only while the class is running. Your own board is saved."),
+            ("Can I see every student's board at once?", "Yes. Class overview shows every board side by side, live, with raised hands and students who say they're done marked on each one."),
+            ("Can students see each other's boards?", "Only when you choose Show to class, which puts one student's board on every screen, with or without their name. Otherwise each student sees your board and their own."),
+            ("Can I write on a student's board?", "Yes. Pin a numbered comment, or switch to Write and mark their work in red, green or blue. Only you can rub out what you write, and their own writing is never changed."),
+            ("Is students' work saved after the class?", "Not on our servers. Press Save boards before you end the class to download everyone's board as a PDF or as pictures. If a student refreshes or rejoins during the class, their work comes back. Your own board is saved."),
         ],
         "related": ["online-whiteboard-for-teaching", "jamboard-alternative", "online-whiteboard-for-math", "whiteboard-for-ipad"],
     },
@@ -237,24 +290,25 @@ PAGES = [
         "desc": "A free online whiteboard with no sign-up, no login and no download. Open it and draw. Shapes, ruler, compass, graph paper and calculator included.",
         "kicker": "no account · no login · no download",
         "h1": "A free online whiteboard with no sign-up",
-        "lede": "Open the board and start drawing. There is no account to create, no login and nothing to download. Sign in only if you want to save your boards or teach a live class.",
+        "lede": "Open the board and start drawing. There is no account to create, no login and nothing to download. Sign in only if you want to keep your boards on every device or teach a live class.",
         "hero": "worksheet",
         "cta_primary": ("Open the whiteboard", "/demo"),
         "sections": [
             ("What you get without an account", """
-<p>The no-sign-up board is the real Clean Slate whiteboard, running in your browser tab.</p>
+<p>The no-sign-up board is the real Clean Slate whiteboard, running in your browser tab. Start from a ready lesson, a tutoring graph or a quick tour, or just draw.</p>
 <ul class="ticks">
   <li>Pen, highlighter, eraser, text boxes, and scribble to erase.</li>
   <li>Blank, lined, squared, dot grid and isometric paper.</li>
-  <li>Exact shapes, a ruler, a compass, graph paper and a scientific calculator.</li>
+  <li>Graphs that plot equations, exact shapes, a ruler, a compass and a scientific calculator.</li>
   <li>Pictures you paste or drop in, and a PDF or image open beside the board.</li>
   <li>Select, move, copy, paste, undo and redo.</li>
+  <li>A pretend live class, with five students to look in on.</li>
 </ul>
-<p>Nothing you draw is sent anywhere or saved. Reloading the page gives you a fresh board.</p>"""),
+<p>Your board stays in your own browser, so it's there when you come back. It isn't sent to us unless you sign in, and then it's saved to your account.</p>"""),
             ("When it's worth signing in", """
-<p>Signing in is free and uses a Google account. It adds the things that need somewhere to keep your work:</p>
+<p>Signing in is free. Use a Google account, or have a code sent to your email. It adds the things that need somewhere to keep your work:</p>
 <ul class="ticks">
-  <li>Boards that save automatically, with a preview of each one.</li>
+  <li>Boards that save automatically, with a preview of each one. The board you made in the demo comes with you.</li>
   <li>Sharing a board so someone else can write on it with you.</li>
   <li>Live classes, where every student gets their own board.</li>
 </ul>"""),
@@ -265,8 +319,8 @@ PAGES = [
         ],
         "faq": [
             ("Is it really free?", "Yes. There is no paid plan and no ads."),
-            ("Is anything saved if I don't sign in?", "No. The no-sign-up board lives only in your browser tab and resets when you reload."),
-            ("Can other people join my board without signing in?", "Students can join a live class with a code and no account. The teacher who starts the class signs in with Google."),
+            ("Is anything saved if I don't sign in?", "Only in your own browser. The demo keeps your board there, so it's waiting when you come back, and it's saved to your account if you sign in. Browsers can clear this, for example in a private window or after a week or so away in Safari."),
+            ("Can other people join my board without signing in?", "Students can join a live class with a code and no account. The teacher who starts the class signs in with Google or an email address."),
             ("Do I need to download anything?", "No. It runs in the browser."),
         ],
         "related": ["online-whiteboard-for-teaching", "online-whiteboard-for-math", "microsoft-whiteboard-alternative", "jamboard-alternative"],
@@ -308,10 +362,10 @@ PAGES = [
     {
         "slug": "microsoft-whiteboard-alternative",
         "title": "Free Microsoft Whiteboard Alternative | Clean Slate",
-        "desc": "Microsoft Whiteboard no longer works with personal accounts. Clean Slate is a free alternative that runs in any browser with any Google account.",
-        "kicker": "works with any Google account",
+        "desc": "Microsoft Whiteboard no longer works with personal accounts. Clean Slate is a free alternative that runs in any browser. Sign in with Google or any email.",
+        "kicker": "sign in with Google or any email",
         "h1": "A free Microsoft Whiteboard alternative",
-        "lede": "Microsoft Whiteboard no longer works with personal Microsoft accounts. Clean Slate is a free online whiteboard that runs in any browser, signs in with any Google account, and has the pen, eraser and menus where you expect them.",
+        "lede": "Microsoft Whiteboard no longer works with personal Microsoft accounts. Clean Slate is a free online whiteboard that runs in any browser, signs in with Google or any email address, and has the pen, eraser and menus where you expect them.",
         "hero": "worksheet",
         "sections": [
             ("What happened to Microsoft Whiteboard", """
@@ -329,17 +383,17 @@ PAGES = [
 <table class="cmp">
   <thead><tr><th scope="col"></th><th scope="col">Clean Slate</th><th scope="col">Microsoft Whiteboard</th></tr></thead>
   <tbody>
-    <tr><th scope="row">Account</th><td>Any Google account. The demo needs none.</td><td>Work or school Microsoft 365 accounts only</td></tr>
+    <tr><th scope="row">Account</th><td>Any Google account or email address. The demo needs none.</td><td>Work or school Microsoft 365 accounts only</td></tr>
     <tr><th scope="row">Where it runs</th><td>Any browser: Windows, Mac, Linux, Chromebook, iPad, Android</td><td>Web and Teams. The standalone apps are being retired.</td></tr>
     <tr><th scope="row">PDF beside the board</th><td>Yes, for everyone</td><td>Inserting documents needs a work or school account</td></tr>
     <tr><th scope="row">A board for each student</th><td>Yes. Students join with a code and no account.</td><td>No</td></tr>
     <tr><th scope="row">Price</th><td>Free</td><td>Included with Microsoft 365 for work or school</td></tr>
   </tbody>
 </table>
-<p>Clean Slate also adds tools aimed at teaching: shapes drawn to the angles and lengths you set, a compass, Cartesian and polar graph paper, a scientific calculator, and lined, squared, dot grid or isometric paper.</p>"""),
+<p>Clean Slate also adds tools aimed at teaching: graphs that plot the equations you type, shapes drawn to the angles and lengths you set, a compass, a scientific calculator, and lined, squared, dot grid or isometric paper.</p>"""),
             ("Moving your boards across", """
 <ol class="steps-list">
-  <li><b>Sign in to Clean Slate</b> with any Google account.</li>
+  <li><b>Sign in to Clean Slate</b> with Google, or with a code sent to any email address.</li>
   <li><b>Bring your old work across.</b> If you exported boards from Microsoft Whiteboard as pictures, drop them onto a new board.</li>
   <li><b>Carry on.</b> Draw over the picture, or start fresh beside it.</li>
 </ol>
@@ -376,16 +430,16 @@ PAGES = [
 <ul class="ticks">
   <li>There are no sticky notes. You add text with text boxes.</li>
   <li>There are no separate frames. A board is one page that you pan and zoom.</li>
-  <li>Students' own boards last for the live class and aren't saved afterwards. Your board is saved.</li>
+  <li>Students' own boards aren't kept on our servers. Press Save boards before you end the class to download them as a PDF or pictures. Your board is saved.</li>
 </ul>
-<p>What you gain is a set of teaching tools Jamboard didn't have: shapes drawn to the angles and lengths you set, a ruler and compass, graph paper, a scientific calculator, five paper styles, and a pane for the worksheet beside the board.</p>
+<p>What you gain is a set of teaching tools Jamboard didn't have: seeing every student's board at once, hands up, pens down, graphs that plot equations, shapes drawn to the angles and lengths you set, a ruler and compass, a scientific calculator, five paper styles, and a pane for the worksheet beside the board.</p>
 {fig:paper:Blank, lined, squared, dot grid or isometric paper.}"""),
             ("Works on Chromebooks and tablets", """
 <p>Clean Slate runs in Chrome on Chromebooks, and in the browser on iPads, Android tablets, Windows and Mac. Nothing is installed.</p>"""),
         ],
         "faq": [
             ("Is Clean Slate free?", "Yes. There is no paid plan and no board limit."),
-            ("Do students need a Google account?", "No. Students join a live class with a code and their first name. The teacher signs in with a Google account."),
+            ("Do students need a Google account?", "No. Students join a live class with a code and their first name. The teacher signs in with Google or an email address."),
             ("Does it have sticky notes?", "No. Use text boxes for typed notes."),
             ("Does it work on Chromebooks?", "Yes. It runs in Chrome."),
             ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> needs no sign-up.'),
@@ -396,11 +450,12 @@ PAGES = [
 
 HOME_FAQ = [
     ("Is Clean Slate really free?", "Yes. There is no paid plan, no board limit and no ads."),
-    ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> opens with no sign-up, no login and nothing to download. Nothing you draw there is saved. Sign in with a Google account when you want to save and share boards.'),
+    ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> opens with no sign-up, no login and nothing to download, with a ready lesson and a pretend class to try. Your board is kept in your browser, and moves into your account when you sign in with Google or an email address.'),
     ("Do my students need accounts?", "No. Students join a live class with a six-character code and their first name."),
     ("Does it work on an iPad with Apple Pencil?", 'Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See <a href="[[url:whiteboard-for-ipad]]">the whiteboard for iPad</a>.'),
     ("Can I open a PDF on the whiteboard?", "Yes. Open a PDF of up to 30 pages, or an image, in a pane beside the board, and write on it."),
-    ("Is it a replacement for Microsoft Whiteboard or Jamboard?", 'Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works with any Google account in any browser. See <a href="[[url:microsoft-whiteboard-alternative]]">the Microsoft Whiteboard alternative</a> and <a href="[[url:jamboard-alternative]]">the Jamboard alternative</a>.'),
+    ("Is it a replacement for Microsoft Whiteboard or Jamboard?", 'Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works in any browser, and you sign in with Google or any email address. See <a href="[[url:microsoft-whiteboard-alternative]]">the Microsoft Whiteboard alternative</a> and <a href="[[url:jamboard-alternative]]">the Jamboard alternative</a>.'),
+    ("Can it plot graphs?", 'Yes. Type an equation and it is drawn on the board, with sliders for letters like a, b and c. It also draws bar charts, histograms, scatter graphs and box plots. See <a href="[[url:online-whiteboard-for-math]]">the whiteboard for math</a>.'),
     ("Can it draw accurate shapes for maths?", 'Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, with the measurements labelled. See <a href="[[url:online-whiteboard-for-math]]">the whiteboard for math</a>.'),
     ("Does it have video or audio calls?", "No. Use it beside Zoom, Google Meet or Teams."),
     ("Are my boards saved?", "Yes. When you're signed in, boards save automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it."),

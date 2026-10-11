@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Free Online Whiteboard for the Classroom | Clean Slate</title>
-<meta name="description" content="A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see everyone&#x27;s working live.">
+<meta name="description" content="A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see every board at once, live.">
 <link rel="canonical" href="https://whiteboard-app-landing.vercel.app/online-whiteboard-for-classroom">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -15,7 +15,7 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://whiteboard-app-landing.vercel.app/online-whiteboard-for-classroom">
 <meta property="og:title" content="Free Online Whiteboard for the Classroom">
-<meta property="og:description" content="A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see everyone&#x27;s working live.">
+<meta property="og:description" content="A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see every board at once, live.">
 <meta property="og:image" content="https://whiteboard-app-landing.vercel.app/img/clean-slate-online-whiteboard.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -33,14 +33,14 @@
    "@id": "https://whiteboard-app-landing.vercel.app/online-whiteboard-for-classroom#webpage",
    "url": "https://whiteboard-app-landing.vercel.app/online-whiteboard-for-classroom",
    "name": "Free Online Whiteboard for the Classroom | Clean Slate",
-   "description": "A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see everyone's working live.",
+   "description": "A free online whiteboard for the classroom. Students join with a code and no account, each gets their own board, and you see every board at once, live.",
    "isPartOf": {
     "@id": "https://whiteboard-app-landing.vercel.app/#website"
    },
    "about": {
     "@id": "https://whiteboard-app-landing.vercel.app/#app"
    },
-   "primaryImageOfPage": "https://whiteboard-app-landing.vercel.app/img/clean-slate-join-class-code-900.webp",
+   "primaryImageOfPage": "https://whiteboard-app-landing.vercel.app/img/clean-slate-class-overview-1200.webp",
    "breadcrumb": {
     "@id": "https://whiteboard-app-landing.vercel.app/online-whiteboard-for-classroom#breadcrumb"
    },
@@ -108,10 +108,18 @@
     },
     {
      "@type": "Question",
+     "name": "Can I see every student's board at once?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. Class overview shows every board side by side, live, with raised hands and students who say they're done marked on each one."
+     }
+    },
+    {
+     "@type": "Question",
      "name": "Can students see each other's boards?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "No. Each student sees your board and their own."
+      "text": "Only when you choose Show to class, which puts one student's board on every screen, with or without their name. Otherwise each student sees your board and their own."
      }
     },
     {
@@ -119,7 +127,7 @@
      "name": "Can I write on a student's board?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "You leave comments as numbered pins on their board. The writing on a student's board is always their own."
+      "text": "Yes. Pin a numbered comment, or switch to Write and mark their work in red, green or blue. Only you can rub out what you write, and their own writing is never changed."
      }
     },
     {
@@ -127,7 +135,7 @@
      "name": "Is students' work saved after the class?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "No. Students' boards exist only while the class is running. Your own board is saved."
+      "text": "Not on our servers. Press Save boards before you end the class to download everyone's board as a PDF or as pictures. If a student refreshes or rejoins during the class, their work comes back. Your own board is saved."
      }
     }
    ]
@@ -154,17 +162,17 @@
   <div class="wrap hero-copy">
     <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Clean Slate</a> <span aria-hidden="true">›</span> <span aria-current="page">Whiteboard for the classroom</span></nav>
     <h1><span class="tape-label">a board for every student</span> <span class="h1-main">A free online whiteboard for the classroom</span></h1>
-    <p class="hero-lede">With Clean Slate, every student in the room gets their own board. They join with a short code, you see each one's working as they write, and you can leave a comment exactly where it's needed. It's free, with no time limit.</p>
+    <p class="hero-lede">With Clean Slate, every student in the room gets their own board. They join with a short code, you see every board at once as they write, and you can step in exactly where it's needed. It's free, with no time limit.</p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://whiteboard-app-beta.vercel.app/demo">Try it now, no sign-in
+      <a class="btn btn-primary" href="https://whiteboard-app-beta.vercel.app/demo?start=class">Try a pretend class, no sign-in
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-      <a class="btn btn-ghost" href="https://whiteboard-app-beta.vercel.app/">Start free with Google</a>
+      <a class="btn btn-ghost" href="https://whiteboard-app-beta.vercel.app/">Start free</a>
     </div>
-    <p class="cta-note">The demo opens a real board in your browser. Nothing to install, nothing saved.</p>
+    <p class="cta-note">The demo opens a real board in your browser. Nothing to install, and your board is kept in your browser until you sign in.</p>
   </div>
   <div class="wrap">
-    <div class="page-shot narrow">
-      <div class="shot-frame"><img src="/img/clean-slate-join-class-code-900.webp" srcset="/img/clean-slate-join-class-code-560.webp 560w, /img/clean-slate-join-class-code-900.webp 900w" sizes="(min-width:640px) 560px, 92vw" width="900" height="806" alt="Clean Slate join screen where a student types a six-character class code and their first name, with no account needed" fetchpriority="high" decoding="async"></div>
+    <div class="page-shot">
+      <div class="shot-frame"><img src="/img/clean-slate-class-overview-1200.webp" srcset="/img/clean-slate-class-overview-700.webp 700w, /img/clean-slate-class-overview-1200.webp 1200w" sizes="(min-width:1100px) 980px, 92vw" width="1200" height="615" alt="Class overview in a Clean Slate live class: five students&#x27; boards solving 2x + 3 = 11 side by side, with one hand up and two marked done" fetchpriority="high" decoding="async"></div>
       <span class="tape t1"></span><span class="tape t2"></span>
     </div>
   </div>
@@ -177,14 +185,33 @@
 <ol class="steps-list">
   <li><b>Start a live class.</b> Open any board and press Start live class. Clean Slate shows a six-character code.</li>
   <li><b>Students join with the code.</b> They type it on any device, add their first name, and they're in. No account, no email address.</li>
-  <li><b>Everyone works.</b> Students see your board on one tab and their own board on another. Switching tabs never loses their work.</li>
-  <li><b>You look in.</b> Pick a name from the class list to watch that student's board live, and pin a comment where it matters.</li>
+  <li><b>Everyone works.</b> Students follow your board and work on their own, with the same tools you have. On a tablet or laptop they can put the two side by side.</li>
+  <li><b>You see the whole class.</b> Class overview shows every student's board at once, live. Open any one to look closer.</li>
 </ol>
+<figure class="fig narrow"><div class="shot-frame"><img src="/img/clean-slate-join-class-code-900.webp" srcset="/img/clean-slate-join-class-code-560.webp 560w, /img/clean-slate-join-class-code-900.webp 900w" sizes="(min-width:640px) 520px, 92vw" width="900" height="806" alt="Clean Slate join screen where a student types a six-character class code and their first name, with no account needed" loading="lazy" decoding="async"></div><figcaption>Students join with a code and a first name.</figcaption></figure>
     </section>
     <section class="block">
       <h2>See who is stuck before they ask</h2>
-<p>On paper you only see a student's working when you walk past. Here you can open any board from your own device, so you can spot the slip in line two while the student is still on line three.</p>
-<p>Comments appear on the student's board as numbered pins, so they know exactly which step you mean.</p>
+<p>On paper you only see a student's working when you walk past. Here every board is on your screen, so you can spot the slip in line two while the student is still on line three.</p>
+<p>Students can put a hand up when they're stuck, or say they're done. Raised hands go to the top of your class list, and you lower them once you've helped.</p>
+    </section>
+    <section class="block">
+      <h2>Mark their work as they go</h2>
+<p>Open a student's board and choose how to help:</p>
+<ul class="ticks">
+  <li><b>Comment:</b> tap the board to pin a numbered note exactly where you mean.</li>
+  <li><b>Write:</b> circle the mistake or write the correction in red, green or blue. Only you can rub out what you write, and their own work is never touched.</li>
+</ul>
+<figure class="fig"><div class="shot-frame"><img src="/img/clean-slate-mark-student-work-1200.webp" srcset="/img/clean-slate-mark-student-work-700.webp 700w, /img/clean-slate-mark-student-work-1200.webp 1200w" sizes="(min-width:900px) 820px, 92vw" width="1200" height="750" alt="A teacher writing in red on a student&#x27;s board during a Clean Slate live class, circling the mistake and writing 11 - 3 = 8" loading="lazy" decoding="async"></div><figcaption>Write on a student's board to mark their work.</figcaption></figure>
+    </section>
+    <section class="block">
+      <h2>Steer the whole class</h2>
+<ul class="ticks">
+  <li><b>Send my board</b> puts your question on every student's board, so everyone starts from the same place. They write over it but can't rub it out.</li>
+  <li><b>Show to class</b> puts one student's working on every screen, with their name or without it.</li>
+  <li><b>Pens down</b> pauses every student's board and brings them all to yours.</li>
+  <li><b>Save boards</b> downloads every student's board as a PDF, a page each, or as pictures, before you end the class.</li>
+</ul>
     </section>
     <section class="block">
       <h2>What students need</h2>
@@ -193,7 +220,7 @@
     <section class="block">
       <h2>What it's built for</h2>
 <p>Clean Slate's live class is built for a normal class of 20 to 30 students working at the same time. There is no charge and no session time limit.</p>
-<p>Your own board has the full set of tools: the worksheet pane, exact shapes, the ruler and compass, graph paper, the calculator and every paper style. Students' boards are kept simple: pen, eraser, colours, undo and clear.</p>
+<p>Students' boards have the same tools as yours, including graphs, shapes, the ruler, compass and calculator, and every paper style. Pictures, simulations and the worksheet pane are for your board only.</p>
     </section>
     <section class="block" id="faq">
       <h2>Common questions</h2>
@@ -201,9 +228,10 @@
       <div class="faq-item"><h3>Do students need to sign in?</h3><p>No. They join with a six-character class code and their first name.</p></div>
       <div class="faq-item"><h3>Is there a time limit on a class?</h3><p>No. A live class runs until you end it.</p></div>
       <div class="faq-item"><h3>How many students can join?</h3><p>It is built for classes of 20 to 30 students working at once.</p></div>
-      <div class="faq-item"><h3>Can students see each other's boards?</h3><p>No. Each student sees your board and their own.</p></div>
-      <div class="faq-item"><h3>Can I write on a student's board?</h3><p>You leave comments as numbered pins on their board. The writing on a student's board is always their own.</p></div>
-      <div class="faq-item"><h3>Is students' work saved after the class?</h3><p>No. Students' boards exist only while the class is running. Your own board is saved.</p></div>
+      <div class="faq-item"><h3>Can I see every student's board at once?</h3><p>Yes. Class overview shows every board side by side, live, with raised hands and students who say they're done marked on each one.</p></div>
+      <div class="faq-item"><h3>Can students see each other's boards?</h3><p>Only when you choose Show to class, which puts one student's board on every screen, with or without their name. Otherwise each student sees your board and their own.</p></div>
+      <div class="faq-item"><h3>Can I write on a student's board?</h3><p>Yes. Pin a numbered comment, or switch to Write and mark their work in red, green or blue. Only you can rub out what you write, and their own writing is never changed.</p></div>
+      <div class="faq-item"><h3>Is students' work saved after the class?</h3><p>Not on our servers. Press Save boards before you end the class to download everyone's board as a PDF or as pictures. If a student refreshes or rejoins during the class, their work comes back. Your own board is saved.</p></div>
       </div>
     </section>
   </article>
@@ -215,7 +243,7 @@
     <div class="uses-grid">
       <a class="use" href="/online-whiteboard-for-teaching"><b>Whiteboard for teaching</b><span>A free online whiteboard built around how lessons actually run.</span><i aria-hidden="true">Read more →</i></a>
       <a class="use" href="/jamboard-alternative"><b>Jamboard alternative</b><span>A free replacement for teachers, with no student sign-in.</span><i aria-hidden="true">Read more →</i></a>
-      <a class="use" href="/online-whiteboard-for-math"><b>Whiteboard for math</b><span>Exact shapes, ruler, compass, graph paper and a calculator with exact answers.</span><i aria-hidden="true">Read more →</i></a>
+      <a class="use" href="/online-whiteboard-for-math"><b>Whiteboard for math</b><span>Graphs that plot equations, exact shapes, ruler, compass and a calculator with exact answers.</span><i aria-hidden="true">Read more →</i></a>
       <a class="use" href="/whiteboard-for-ipad"><b>Whiteboard for iPad</b><span>Made for Apple Pencil, with palm rejection, in Safari.</span><i aria-hidden="true">Read more →</i></a>
     </div>
   </div>
@@ -227,7 +255,7 @@
       <div class="due">Homework, due next lesson:</div>
       <h2>Start your next lesson on a <span class="mark">clean slate.<svg viewBox="0 0 300 30" preserveAspectRatio="none" fill="none" stroke-width="6" stroke-linecap="round" aria-hidden="true"><path d="M6 20c70-12 160-16 288-6"/></svg></span></h2>
       <div class="checks">
-        <label for="hw1"><input type="checkbox" id="hw1"><span>Sign in with Google (free)</span></label>
+        <label for="hw1"><input type="checkbox" id="hw1"><span>Sign in free, with Google or your email</span></label>
         <label for="hw2"><input type="checkbox" id="hw2"><span>Make a board and choose your paper</span></label>
         <label for="hw3"><input type="checkbox" id="hw3"><span>Share the class code with your students</span></label>
       </div>

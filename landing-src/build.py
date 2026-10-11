@@ -208,14 +208,19 @@ class Site:
             "isAccessibleForFree": True,
             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
             "image": SITE + "/" + OG_IMAGE,
-            "screenshot": [f"{SITE}/img/{IMG[k][0]}-{IMG[k][1][-1]}.webp" for k in ("worksheet", "shapes", "calculator", "compass", "graph")],
+            "screenshot": [f"{SITE}/img/{IMG[k][0]}-{IMG[k][1][-1]}.webp" for k in ("worksheet", "plot", "overview", "shapes", "charts", "calculator")],
             "featureList": [
-                "Demo board with no sign-up",
+                "Demo board with no sign-up, ready lesson boards and a pretend live class",
+                "Sign in with Google or with a code sent to your email",
                 "PDF or image worksheet beside the board",
-                "Live class: every student gets their own board and joins with a code",
+                "Live class: every student gets their own board and joins with a code, no accounts",
+                "Class overview of every student's board, hands up, pens down, and writing on a student's board",
+                "Save every student's board as a PDF or pictures",
+                "Graphs that plot equations, with sliders, shading, gradients and tables of values",
+                "Statistics charts: bar charts, histograms, scatter graphs with a line of best fit, and box plots",
                 "Exact shapes with angles and lengths labelled: polygons, triangles, quadrilaterals, circles and 3D solids",
                 "Ruler and compass",
-                "Cartesian and polar graph paper",
+                "Cartesian, polar, log and number-line graph paper, and a unit circle",
                 "Scientific calculator with exact answers",
                 "Blank, lined, squared, dot grid and isometric paper",
                 "Apple Pencil support with palm rejection",
@@ -306,9 +311,9 @@ class Site:
     <div class="cta-row">
       <a class="btn btn-primary" href="{APP}{cta_path}">{cta_label}
         {ARROW}</a>
-      <a class="btn btn-ghost" href="{APP}/">Start free with Google</a>
+      <a class="btn btn-ghost" href="{APP}/">Start free</a>
     </div>
-    <p class="cta-note">The demo opens a real board in your browser. Nothing to install, nothing saved.</p>
+    <p class="cta-note">The demo opens a real board in your browser. Nothing to install, and your board is kept in your browser until you sign in.</p>
   </div>
   <div class="wrap">
     <div class="page-shot{" narrow" if narrow else ""}">
