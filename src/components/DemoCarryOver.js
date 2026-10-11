@@ -2,18 +2,24 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { bringAcross, dismissDemoCarry, getDemoCarry, getServerDemoCarry, subscribeDemoCarry } from "@/lib/demoCarry";
+import { bringAcross, dismissDemoCarry, getDemoCarry, getServerDemoCarry, shouldCarry, subscribeDemoCarry } from "@/lib/demoCarry";
+import { readDemoStash } from "@/lib/demoStash";
+import { track } from "@/lib/track";
 import d from "./Dialog.module.css";
 import p from "./Paper.module.css";
 
-// Shown on the boards page. If someone pressed "Sign in free to keep your
-// work" on the demo board, this saves that board into their account as
-// soon as they're signed in, then opens it. (See src/lib/demoCarry.js.)
-export default function DemoCarryOver({ userId }) {
+// Shown on the boards page. If a demo board is waiting in this browser
+// (the visitor asked to keep it, or this account is brand new), this saves
+// it into their account as soon as they're signed in, then opens it.
+// (See src/lib/demoCarry.js.)
+export default function DemoCarryOver({ userId, createdAt }) {
   const router = useRouter();
   const carry = useSyncExternalStore(subscribeDemoCarry, getDemoCarry, getServerDemoCarry);
   // Saved, and the new board is on its way to opening.
   const [opening, setOpening] = useState(false);
+  // A board kept as someone worked on the demo, but this account isn't new:
+  // it's left where it is (it still opens on the demo board).
+  const wanted = carry === "none" ? false : shouldCarry(readDemoStash(), createdAt);
 
   // Still on screen? (Saving takes a moment; don't open the board if the
   // person has gone elsewhere in the meantime.)
@@ -26,19 +32,21 @@ export default function DemoCarryOver({ userId }) {
   }, []);
 
   function save() {
-    bringAcross(userId).then((boardId) => {
-      if (!onScreen.current || !boardId) return;
+    bringAcross(userId, createdAt).then((made) => {
+      if (!made) return;
+      track("demo_board_carried", { kind: made.kind, next: made.next || "none" });
+      if (!onScreen.current) return;
       setOpening(true);
-      router.push(`/board/${boardId}`);
+      router.push(`/board/${made.id}${made.next === "class" ? "?tour=classReady" : ""}`);
     });
   }
 
   useEffect(() => {
-    if (userId && carry === "waiting") save();
+    if (userId && carry === "waiting" && wanted) save();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, carry]);
+  }, [userId, carry, wanted]);
 
-  if (carry === "none" && !opening) return null;
+  if (!opening && (carry === "none" || !wanted)) return null;
 
   if (carry === "failed") {
     return (

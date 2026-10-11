@@ -1,0 +1,460 @@
+/* The demo board's guide (DemoGuide.js) and the sign-in pieces it shares
+   with the sign-in page: the "What are you planning?" opener, the small
+   "keep your board?" notes, the class summary, and the sign-in sheet.
+   Same notebook look as the rest of the app (Dialog / Paper modules). */
+
+/* ---------- the opener ---------- */
+
+.openerScreen {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background-color: var(--paper);
+  background-image: var(--paper-grid);
+  background-size: var(--grid-size);
+}
+
+.opener {
+  position: relative;
+  width: 560px;
+  max-width: 100%;
+  margin: auto 0;
+  background: var(--surface);
+  border: 2px solid var(--ink-line);
+  border-radius: 18px;
+  box-shadow: 6px 6px 0 var(--ink-line);
+  padding: 30px 26px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.opener::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 96px;
+  height: 20px;
+  margin-left: -48px;
+  background: var(--tape);
+  transform: rotate(-2deg);
+  pointer-events: none;
+}
+
+.openerHead {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kicker {
+  font-family: var(--font-hand);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--hand-blue);
+}
+
+.openerTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.openerText {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 68px;
+  padding: 12px 14px;
+  text-align: left;
+  border: 2px solid var(--ink-line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.choice:hover {
+  background: var(--accent-soft);
+}
+
+.choice:active {
+  transform: translate(2px, 2px);
+}
+
+.choice:focus-visible,
+.textBtn:focus-visible,
+.noteBtn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.choicePrimary {
+  box-shadow: var(--shadow-hard);
+}
+
+.choiceIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1.5px solid var(--ink-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.choiceText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.choiceTitle {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.choiceSub {
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.choiceArrow {
+  color: var(--muted);
+}
+
+.openerFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.openerFoot a {
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* phones: Clean Slate is made for a bigger screen */
+.phoneNote {
+  border: 1.5px dashed var(--hand-orange);
+  background: var(--insert-soft);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.phoneNote b {
+  font-weight: 700;
+}
+
+.phoneActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- small notes over the board ---------- */
+
+.note {
+  position: fixed;
+  z-index: 260;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  background: var(--sticky-y);
+  color: var(--ink);
+  border: 2px solid var(--ink-line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card-hard);
+  padding: 16px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: noteIn 0.22s ease-out;
+}
+
+.noteBlue {
+  background: var(--sticky-b);
+}
+
+@keyframes noteIn {
+  from {
+    transform: translateY(12px);
+  }
+  to {
+    transform: none;
+  }
+}
+
+.noteTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.noteText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #3A3B3F;
+}
+
+.noteActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.noteBtn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 11px;
+  border: 2px solid var(--ink-line);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.noteBtnPrimary {
+  background: var(--accent);
+  color: #FFFFFF;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.noteClose {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stats li {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink-line);
+  background: var(--surface);
+}
+
+/* ---------- the sign-in sheet ---------- */
+
+.sheetCard {
+  width: 440px;
+  gap: 14px;
+}
+
+.sheetLead {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.keeps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.keeps li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.keeps svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--success-strong);
+}
+
+.or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.or::before,
+.or::after {
+  content: "";
+  flex: 1;
+  height: 1.5px;
+  background: var(--border-strong);
+}
+
+.emailForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.emailNote {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.codeInput {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.problem {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.wide {
+  width: 100%;
+}
+
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.textBtn {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.textBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sheetFoot {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .opener {
+    padding: 26px 18px 18px;
+  }
+  .openerTitle {
+    font-size: 24px;
+  }
+  .choice {
+    grid-template-columns: 38px minmax(0, 1fr) 16px;
+    gap: 10px;
+    min-height: 60px;
+  }
+  .choiceIcon {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note {
+    animation: none;
+  }
+  .choice {
+    transition: none;
+  }
+}

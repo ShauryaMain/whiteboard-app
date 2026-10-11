@@ -102,7 +102,10 @@ export function latexToText(latex) {
       i += 5;
       let root = "";
       if (s[i] === "[") {
-        const end = s.indexOf("]", i);
+        // (an index with no closing "]" runs to the end, rather than
+        // sending this loop back to the start for ever)
+        const close = s.indexOf("]", i);
+        const end = close < 0 ? s.length : close;
         root = s.slice(i + 1, end);
         i = end + 1;
       }

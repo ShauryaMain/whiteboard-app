@@ -18,9 +18,17 @@ function onScreen(r, vw, vh) {
 }
 
 // Where the highlight ring and the note go for this step, right now.
-function measure(step, card) {
+// `plain` is the note's size when it sits beside something (a docked note
+// is wider and so shorter; measuring that would let it flip back and forth
+// between the two for ever).
+function measure(step, card, plain) {
   const vw = window.innerWidth, vh = window.innerHeight;
-  const cw = card ? card.offsetWidth : 300, ch = card ? card.offsetHeight : 170;
+  const docked = card && card.dataset.docked === "true";
+  // its size now (for docking), and its size beside something (for the
+  // spots beside it)
+  const nowW = card ? card.offsetWidth : 300, nowH = card ? card.offsetHeight : 170;
+  const cw = docked ? (plain ? plain.w : 300) : nowW;
+  const ch = docked ? (plain ? plain.h : nowH) : nowH;
   const target = step.target ? document.querySelector(step.target) : null;
   const tr = target ? target.getBoundingClientRect() : null;
   const seen = onScreen(tr, vw, vh);
@@ -46,7 +54,9 @@ function measure(step, card) {
   // No room beside it (or a small screen): sit along the top or bottom
   // edge, whichever is further from the thing being pointed at.
   const targetLow = seen ? tr.top + tr.height / 2 > vh * 0.55 : false;
-  return { found: !!target, ring, docked: true, left: Math.round((vw - cw) / 2), top: targetLow ? EDGE : Math.max(EDGE, vh - ch - EDGE) };
+  // (a note that isn't docked yet is about to get wider and shorter: use
+  // its docked size once it has one)
+  return { found: !!target, ring, docked: true, left: Math.round((vw - (docked ? nowW : Math.min(440, vw - 16))) / 2), top: targetLow ? EDGE : Math.max(EDGE, vh - (docked ? nowH : ch) - EDGE) };
 }
 
 function sameLayout(a, b) {
@@ -60,19 +70,29 @@ function sameLayout(a, b) {
 // press, and a note beside it saying what to do. It follows along by
 // watching the page (see src/lib/tours.js), so it keeps up whichever way
 // the person gets there, and it never blocks the board underneath.
-export default function TourGuide({ tour, onEnd }) {
+// `onStep(id)` (optional) hears each step as it's reached.
+export default function TourGuide({ tour, onEnd, onStep }) {
   const steps = tour.steps;
   const [stepId, setStepId] = useState(steps[0].id);
   const [layout, setLayout] = useState(null);
   const [started, setStarted] = useState(false);
   const cardRef = useRef(null);
+  const plainSize = useRef(null); // the note's size when not docked (see measure)
   const step = steps.find((x) => x.id === stepId) || steps[0];
   const number = steps.indexOf(step) + 1;
+  const onStepRef = useRef(onStep);
+  useEffect(() => {
+    onStepRef.current = onStep;
+  }, [onStep]);
+  useEffect(() => {
+    if (onStepRef.current) onStepRef.current(stepId);
+  }, [stepId]);
 
   // Keep up with the page: move on when the step's condition is met, and
   // keep the ring and note lined up as things move.
   useEffect(() => {
     let fresh = true;
+    plainSize.current = null; // a new step's note may be a different size
     function tick() {
       const jump = step.watch ? step.watch() : null;
       if (jump && jump !== step.id) {
@@ -84,7 +104,11 @@ export default function TourGuide({ tour, onEnd }) {
         const el = step.target ? document.querySelector(step.target) : null;
         if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
       }
-      const next = measure(step, cardRef.current);
+      const card = cardRef.current;
+      if (card && card.dataset.docked !== "true" && card.offsetWidth > 0) {
+        plainSize.current = { w: card.offsetWidth, h: card.offsetHeight };
+      }
+      const next = measure(step, card, plainSize.current);
       if (next.found) setStarted(true);
       setLayout((prev) => (sameLayout(prev, next) ? prev : next));
     }
@@ -126,6 +150,7 @@ export default function TourGuide({ tour, onEnd }) {
       <div
         ref={cardRef}
         className={`${s.card} ${visible && layout.docked ? s.cardDocked : ""}`}
+        data-docked={visible && layout.docked ? "true" : "false"}
         style={visible ? { left: layout.left, top: layout.top } : { left: 0, top: 0, visibility: "hidden" }}
         role="dialog"
         aria-label={`Walkthrough: ${tour.name}`}

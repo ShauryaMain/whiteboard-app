@@ -122,9 +122,25 @@ export const TOURS = {
       },
       {
         id: "done",
-        title: "That's a live class",
-        body: "Watch Ben read your note and fix his working. In a real class your students join with a code on their own devices, with no accounts. Sign in free to run one.",
-        target: CLASS.signIn,
+        title: "Now watch Ben",
+        body: "He reads your note and fixes his working, live. In a real class, every student does this on their own device, with no accounts.",
+        target: CLASS.board,
+        place: "left",
+        last: true,
+      },
+    ],
+  },
+  // After keeping a demo lesson "for my next lesson": where the class
+  // starts. (Opened with ?tour=classReady by DemoCarryOver.js.)
+  classReady: {
+    id: "classReady",
+    name: "Your lesson board",
+    steps: [
+      {
+        id: "start",
+        title: "Your lesson board is ready",
+        body: "When your class is in front of you, press Start live class. You get a code, and students type it on their own devices to join, with no accounts.",
+        target: LIVE.start,
         place: "below",
         last: true,
       },

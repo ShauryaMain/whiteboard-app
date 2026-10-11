@@ -1,14 +1,16 @@
-// "Sign in free to keep your work": carries a visitor's demo board into
-// their account.
+// Carries a visitor's demo board into their account.
 //
-// The demo board lives only in the browser tab's memory, and signing in
-// means leaving that page (to Google and back). So:
+// The demo board lives in the browser tab's memory, and signing in means
+// leaving that page. So:
 //
-//   1. On the demo, pressing the button calls stashDemoBoard(). It asks
-//      the demo for a copy of the board and keeps it on this device.
+//   1. As they work, the demo keeps a copy of the board in this browser
+//      (demoBackend.js, demoStash.js). Pressing a "keep it" button calls
+//      stashDemoBoard(), which keeps it straight away and marks it as one
+//      they asked to keep.
 //   2. Once the person is signed in and their boards page opens,
 //      bringAcross() saves that copy as a real board in their account,
-//      and they are taken straight to it.
+//      and they are taken straight to it. A copy they didn't ask to keep is
+//      only carried into a brand-new account (see shouldCarry).
 //
 // What comes across: the ink, text boxes, page style, graph and any
 // simulations. Pictures and the worksheet don't (in the demo they exist
@@ -16,54 +18,84 @@
 // at all, nothing is kept and nothing is created.
 
 import { supabase } from "./supabaseClient";
+import {
+  DEMO_STASH_KEY,
+  clearDemoStash,
+  keepRequested,
+  markCarried,
+  readDemoStash,
+  stashStartedAt,
+  wasCarried,
+  writeDemoStash,
+} from "./demoStash";
 
-const KEY = "cleanslate_demo_carry";
-const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // a copy older than a week is dropped
+const KEY = DEMO_STASH_KEY;
 const BATCH = 40; // rows per request, the same as the board's own batched saves
+// An account this new counts as just made (so a board kept as they worked,
+// without pressing "keep", still comes across).
+const NEW_ACCOUNT_MS = 30 * 60 * 1000;
+// ...as long as the demo board was started at most this long before
+const AUTO_CARRY_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const CLOCK_LEEWAY_MS = 5 * 60 * 1000;
 
 // ---------- the copy kept on this device ----------
 
-function readStored() {
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    if (!raw) return null;
-    const stored = JSON.parse(raw);
-    const ok = stored && stored.version === 1 && Array.isArray(stored.strokes) && Array.isArray(stored.texts);
-    if (!ok || Date.now() - (stored.savedAt || 0) > MAX_AGE_MS) {
-      window.localStorage.removeItem(KEY);
-      return null;
-    }
-    return stored;
-  } catch (err) {
-    return null; // storage switched off, or not valid: nothing to carry
-  }
-}
+const readStored = readDemoStash;
+const forget = clearDemoStash;
 
-function forget() {
+// Called on the demo page when the visitor asks to keep their board (just
+// before signing in). `next` is what to show once it opens ("class": point
+// at Start live class). A lesson board is kept even if they haven't
+// changed it. Returns true if there was something to keep.
+export function stashDemoBoard({ next } = {}) {
   try {
-    window.localStorage.removeItem(KEY);
-  } catch (err) {
-    // nothing to do
-  }
-}
-
-// Called on the demo page, just before leaving it to sign in. Returns true
-// if there was something to keep.
-export function stashDemoBoard() {
-  try {
-    const snapshot = typeof supabase.__carry === "function" ? supabase.__carry() : null;
+    const snapshot = typeof supabase.__carry === "function" ? supabase.__carry(true) : null;
     if (!snapshot) {
       forget(); // nothing of theirs on the board: don't bring back an old copy either
       return false;
     }
-    window.localStorage.setItem(KEY, JSON.stringify({ ...snapshot, savedAt: Date.now() }));
-    return true;
+    return writeDemoStash({ ...snapshot, keepAt: Date.now(), next: next || undefined });
   } catch (err) {
     // Too big for this browser's storage, or storage is switched off.
     // Signing in still works; the board just isn't carried across.
     console.warn("Couldn't keep the demo board for sign-in:", err);
     return false;
   }
+}
+
+// Whether the board waiting in this browser should be saved into this
+// account:
+//   - never if that demo board was already saved into an account
+//   - yes if they pressed "keep it" in the last hour (they're signing in
+//     to keep it)
+//   - otherwise only into a brand-new account (made in the last half hour)
+//     when the demo board was started before the account was made:
+//     someone who tried the demo, then signed up. Not a teacher who has had
+//     an account for months poking at the demo, nor a second demo board
+//     opened after signing up.
+export function shouldCarry(stored, accountCreatedAt, now = Date.now()) {
+  if (!stored) return false;
+  const started = stashStartedAt(stored);
+  if (wasCarried(started)) return false;
+  if (keepRequested(stored, now)) return true;
+  const made = Date.parse(accountCreatedAt || "");
+  if (!Number.isFinite(made) || now - made >= NEW_ACCOUNT_MS) return false;
+  // (a few minutes' leeway: this computer's clock may not match the server's)
+  return started > 0 && started <= made + CLOCK_LEEWAY_MS && made - started < AUTO_CARRY_AGE_MS;
+}
+
+// True when the board waiting here is one they just asked to keep (the
+// sign-in page then says it will be saved).
+export function demoKeepRequested() {
+  if (typeof window === "undefined") return false;
+  const stored = readStored();
+  return Boolean(stored) && !wasCarried(stashStartedAt(stored)) && keepRequested(stored);
+}
+
+// What the waiting board asked to show next (see stashDemoBoard).
+export function waitingDemoNext() {
+  const stored = readStored();
+  return stored && stored.next ? stored.next : null;
 }
 
 // ---------- a tiny store, so the screens can react ----------
@@ -187,20 +219,22 @@ async function saveAsBoard(snapshot, userId) {
   return { id: boardId };
 }
 
-// Saves the waiting demo board to this account. Resolves to the new
-// board's id, or null if there was nothing waiting or it couldn't be
-// saved. Safe to call twice: the second call joins the first.
-export function bringAcross(userId) {
+// Saves the waiting demo board to this account. Resolves to
+// { id, next, kind } for the new board, or null if there was nothing
+// (to carry) or it couldn't be saved. Safe to call twice: the second call
+// joins the first.
+export function bringAcross(userId, accountCreatedAt) {
   if (inFlight) return inFlight;
   const snapshot = readStored();
-  if (!snapshot || !userId) return Promise.resolve(null);
+  if (!snapshot || !userId || !shouldCarry(snapshot, accountCreatedAt)) return Promise.resolve(null);
   setState("saving");
   inFlight = saveAsBoard(snapshot, userId)
     .then((result) => {
       if (result.id) {
+        markCarried(stashStartedAt(snapshot));
         forget();
         setState("none");
-        return result.id;
+        return { id: result.id, next: snapshot.next || null, kind: snapshot.kind || "explore" };
       }
       console.error("Demo board: couldn't bring it across:", result.error);
       setState("failed");

@@ -131,13 +131,26 @@
   gap: 14px;
 }
 
+/* one row that scrolls sideways once there are more updates than fit
+   (wrapping onto more rows pushed the pop-up past a laptop screen) */
 .chips {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  /* room for the picked button's shadow */
+  padding: 2px 4px 6px 2px;
+  margin: -2px -4px -6px -2px;
 }
 
 .chip {
+  flex: 0 0 auto;
+  white-space: nowrap;
   min-height: 36px;
   padding: 0 13px;
   border: 1.5px solid #CFCBC1;

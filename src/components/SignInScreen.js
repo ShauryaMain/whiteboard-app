@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
-import { demoCarryLeftPictures, getDemoCarry, getServerDemoCarry, subscribeDemoCarry } from "@/lib/demoCarry";
+import { demoCarryLeftPictures, demoKeepRequested, getDemoCarry, getServerDemoCarry, subscribeDemoCarry } from "@/lib/demoCarry";
 import GoogleSignInButton, { GOOGLE_CLIENT_ID } from "./GoogleSignInButton";
+import EmailCodeSignIn from "./EmailCodeSignIn";
+import { emailCodesAvailable } from "@/lib/emailCode";
+import { supabase } from "@/lib/supabaseClient";
+import o from "./Onboarding.module.css";
 import d from "./Dialog.module.css";
 import p from "./Paper.module.css";
 import { LANDING_URL } from "@/lib/links";
@@ -28,14 +32,30 @@ const LINK_BUTTON = {
 
 // The first screen a teacher sees (and the loading state before it).
 export default function SignInScreen({ loading, onSignIn }) {
-  // Someone who pressed "Sign in free to keep your work" on the demo has a
-  // board waiting on this device (see src/lib/demoCarry.js).
-  const demoWaiting = useSyncExternalStore(subscribeDemoCarry, getDemoCarry, getServerDemoCarry) === "waiting";
+  // Someone who just pressed "Keep it" on the demo has a board waiting on
+  // this device (see src/lib/demoCarry.js). (A board kept only as they
+  // worked is saved only into a brand-new account, so nothing is promised
+  // for that one.)
+  const demoWaiting = useSyncExternalStore(subscribeDemoCarry, getDemoCarry, getServerDemoCarry) === "waiting" && demoKeepRequested();
   // Google's own button is used when it has been set up (see
   // GoogleSignInButton.js). If it can't load or fails, the usual button
   // takes over, so there is always a way in.
   const [googleDirect, setGoogleDirect] = useState(Boolean(GOOGLE_CLIENT_ID));
   const [retryNote, setRetryNote] = useState(false);
+  // "Email me a code", for anyone who'd rather not use Google (shown once
+  // the site says it can send codes).
+  const [emailReady, setEmailReady] = useState(false);
+  useEffect(() => {
+    // (only once it's clear they're not signed in already)
+    if (loading) return undefined;
+    let live = true;
+    emailCodesAvailable().then((ok) => {
+      if (live) setEmailReady(ok);
+    });
+    return () => {
+      live = false;
+    };
+  }, [loading]);
   if (loading) {
     return (
       <div className={p.screen}>
@@ -103,6 +123,13 @@ export default function SignInScreen({ loading, onSignIn }) {
             Sign in with Google
           </button>
         )}
+        {emailReady && (
+          <>
+            <div className={o.or}>or</div>
+            {/* signing in here lands on the boards page by itself */}
+            <EmailCodeSignIn client={supabase} from="signin_page" />
+          </>
+        )}
         <p className={p.footNote} style={{ margin: 0 }}>
           Just looking?{" "}
           <Link href="/demo" prefetch={false} onClick={openDemo}>
@@ -110,7 +137,9 @@ export default function SignInScreen({ loading, onSignIn }) {
           </Link>
         </p>
         <p className={p.footNote} style={{ margin: 0 }}>
-          Joining a class as a student? <Link href="/join">Enter your class code</Link>
+          {/* a full page load, so nothing from the teacher pages (like the visit counts) comes along */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          Joining a class as a student? <a href="/join">Enter your class code</a>
         </p>
       </div>
       <span className={p.hand} aria-hidden="true" style={{ transform: "rotate(-2deg)" }}>

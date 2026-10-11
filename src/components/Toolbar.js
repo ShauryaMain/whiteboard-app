@@ -12,6 +12,7 @@ import {
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
 import { stashDemoBoard } from "@/lib/demoCarry";
+import { askDemoGuide, DEMO_LEAVE_EVENT, DEMO_SIGNIN_EVENT } from "@/lib/demoEvents";
 import s from "./StudioChrome.module.css";
 
 const INK_COLORS = [
@@ -39,15 +40,17 @@ const COMPASS_HINT = ["Compass", "Drag the pin to set the centre and the pencil 
 const STROKE_ERASER_HINT = ["Eraser", "Whole stroke removes any line you touch, in one go."];
 const PEN_NO_SCRIBBLE_HINT = ["Pen", "Draw freehand. For straight lines, turn on the Ruler in Maths."];
 const SELECTED_HINT = ["Selected", "Drag to move it, or use the bar next to it. Tap empty space to deselect."];
-const GRAPH_MOVE_HINT = ["Graph", "Drag the graph to move it, or drag its blue corner dot to resize it."];
+const GRAPH_SELECTED_HINT = ["Graph", "Drag to move it, drag the corner dot to resize it, double-tap to change it, or tap a curve to read off a point."];
 
 const ICON = { size: 22, strokeWidth: 1.8 };
 const SMALL_ICON = { size: 18, strokeWidth: 1.8 };
 
 // Leaving the demo board needs a full page load (not an in-app hop), so
-// the real app starts on its real backend.
+// the real app starts on its real backend. The demo's guide may first
+// offer to keep the board (see DemoGuide.js).
 function leaveDemo(e) {
   if (e && e.preventDefault) e.preventDefault();
+  if (askDemoGuide(DEMO_LEAVE_EVENT)) return;
   window.location.assign("/");
 }
 
@@ -67,6 +70,11 @@ async function keepDemoAndSignIn(e) {
     const active = document.activeElement;
     if (active && active !== document.body && typeof active.blur === "function") active.blur();
     await new Promise((resolve) => setTimeout(resolve, 80));
+    // The demo's guide signs them in over the board (DemoGuide.js).
+    if (askDemoGuide(DEMO_SIGNIN_EVENT)) {
+      leavingDemo = false;
+      return;
+    }
     stashDemoBoard();
   } catch (err) {
     console.warn("Couldn't keep the demo board for sign-in:", err);
@@ -81,7 +89,7 @@ export default function Toolbar(props) {
     color, setColor, strokeWidth, setStrokeWidth,
     onUndo, onRedo, onClear, canUndo, canRedo,
     rulerActive, onToggleRuler, compassActive, onToggleCompass,
-    getHasGrid, gridToolActive, onOpenGraph, onFinishGraphMove, onRemoveGrid,
+    getSelectedGraphId, onOpenGraph, onEditGraph, graphSelected,
     background, onSetBackground,
     onInsertImage, onPaste, onSelectAll, hasSelection,
     eraserMode, onSetEraserMode, scribbleErase, onSetScribbleErase,
@@ -96,6 +104,23 @@ export default function Toolbar(props) {
   // menu: null | { id: "maths" | "insert" | "page" | "roster", left, top, hasGrid }
   const [menu, setMenu] = useState(null);
   const menuRef = useRef(null);
+  // On a narrow screen the row of tools scrolls sideways; its right edge
+  // fades while there are more tools to scroll to.
+  const toolRowRef = useRef(null);
+  const [moreTools, setMoreTools] = useState(false);
+  useEffect(() => {
+    const row = toolRowRef.current;
+    if (!row) return undefined;
+    const check = () => setMoreTools(row.scrollLeft + row.clientWidth < row.scrollWidth - 4);
+    const frame = requestAnimationFrame(check);
+    row.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    return () => {
+      cancelAnimationFrame(frame);
+      row.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
+  }, []);
 
   useEffect(() => {
     if (!menu) return undefined;
@@ -122,7 +147,7 @@ export default function Toolbar(props) {
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    setMenu({ id, left, top: rect.bottom + 6, hasGrid: getHasGrid ? getHasGrid() : false });
+    setMenu({ id, left, top: rect.bottom + 6, graphId: getSelectedGraphId ? getSelectedGraphId() : null });
   }
 
   function runAndClose(fn) {
@@ -142,7 +167,7 @@ export default function Toolbar(props) {
   let hint = TOOL_HINTS[activeTool] || TOOL_HINTS.pen;
   if (activeTool === "eraser" && eraserMode === "stroke") hint = STROKE_ERASER_HINT;
   if (activeTool === "pen" && scribbleErase === false) hint = PEN_NO_SCRIBBLE_HINT;
-  if (gridToolActive) hint = GRAPH_MOVE_HINT;
+  if (activeTool === "select" && graphSelected) hint = GRAPH_SELECTED_HINT;
   else if (activeTool === "select" && hasSelection) hint = SELECTED_HINT;
   else if (compassActive && activeTool !== "move") hint = COMPASS_HINT;
   else if (rulerActive && activeTool !== "move") hint = RULER_HINT;
@@ -179,21 +204,16 @@ export default function Toolbar(props) {
                 />
                 <MenuItem
                   icon={<Grid3x3 {...SMALL_ICON} />}
-                  title={menu.hasGrid ? "Edit graph" : "Graph"}
-                  desc={
-                    menu.hasGrid
-                      ? "Change the graph's scale, labels or style, then move it into place."
-                      : "Place axes you can customise — scale, trig labels, polar."
-                  }
+                  title="Graph"
+                  desc="Add axes, graph paper, a number line or a chart. A board can have several."
                   onPress={runAndClose(onOpenGraph)}
                 />
-                {menu.hasGrid && (
+                {menu.graphId && (
                   <MenuItem
-                    danger
                     icon={<Grid3x3 {...SMALL_ICON} />}
-                    title="Remove graph"
-                    desc={student ? "Takes the graph off your board." : "Takes the graph off the board for everyone."}
-                    onPress={runAndClose(onRemoveGrid)}
+                    title="Edit graph"
+                    desc="Change the selected graph (or double-tap it)."
+                    onPress={runAndClose(onEditGraph)}
                   />
                 )}
                 <MenuItem
@@ -511,7 +531,7 @@ export default function Toolbar(props) {
       )}
 
       {/* ---------- Tool row ---------- */}
-      <div className={s.toolRow} role="toolbar" aria-label="Board tools" data-tour="tool-row">
+      <div ref={toolRowRef} className={`${s.toolRow} ${moreTools ? s.toolRowMore : ""}`} role="toolbar" aria-label="Board tools" data-tour="tool-row">
         <ToolButton label="Select" active={activeTool === "select"} onPress={() => onSelectTool("select")}>
           <MousePointer2 {...ICON} />
         </ToolButton>
@@ -541,7 +561,7 @@ export default function Toolbar(props) {
           menu
           label="Maths"
           open={menu?.id === "maths"}
-          badge={rulerActive || compassActive || calculatorActive || gridToolActive}
+          badge={rulerActive || compassActive || calculatorActive}
           onPress={(e) => toggleMenu("maths", e)}
         >
           <Ruler {...ICON} />
@@ -570,13 +590,7 @@ export default function Toolbar(props) {
 
       {/* ---------- Context bar: options + a plain-English hint ---------- */}
       <div className={s.contextBar}>
-        {gridToolActive ? (
-          <PalmSafeButton className={`${s.ctxBtn} ${s.ctxBtnPrimary}`} onPress={onFinishGraphMove}>
-            <Check size={15} strokeWidth={2.2} />
-            Done placing graph
-          </PalmSafeButton>
-        ) : (
-          <>
+        <>
             {isInk && (
               <>
                 <div className={s.ctxGroup} role="group" aria-label="Ink colour">
@@ -680,8 +694,7 @@ export default function Toolbar(props) {
                 Pencil only
               </PalmSafeButton>
             )}
-          </>
-        )}
+        </>
         <div className={s.hint}>
           {/* a hand-drawn arrow pointing back at the tools, like the
               margin notes on the landing page */}

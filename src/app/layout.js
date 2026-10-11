@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import Script from "next/script";
 import { AuthProvider } from "@/lib/AuthContext";
 import Analytics from "@/components/Analytics";
+import Tracking from "@/components/Tracking";
 
 // Geist, bundled with the app (no request to Google at runtime or build
 // time). One variable-weight file covers every weight the UI uses.
@@ -53,6 +54,9 @@ export default function RootLayout({ children }) {
         <AuthProvider>{children}</AuthProvider>
         {/* Anonymous visit counts (Vercel Web Analytics). */}
         <Analytics />
+        {/* Where people stop on the way from the demo to a first class
+            (PostHog; only with a key, never on student pages). */}
+        <Tracking />
       </body>
     </html>
   );

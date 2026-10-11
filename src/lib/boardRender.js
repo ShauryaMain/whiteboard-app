@@ -8,6 +8,7 @@
 // handles the pen as it moves. The two draw the same things the same way.)
 
 import { renderGrid } from "./gridRenderer";
+import { graphBounds, graphsOf } from "./graphList";
 import { drawBackgroundPattern } from "./boardBackground";
 import { strokeDash, strokeBounds, textBounds, imageBounds, unionBounds } from "./boardObjects";
 
@@ -120,17 +121,13 @@ export function drawTextBoxes(ctx, textsArr) {
 }
 
 // The same graph renderer as the board (and the graph dialog's preview).
+// (every graph on the board: see graphList.js)
 export function drawGraph(ctx, grid, scale) {
-  if (!grid) return;
-  const { x, y, size, cols } = grid;
-  renderGrid(ctx, grid, { cellPx: size / cols, originXPx: x, originYPx: y, lineScale: 1 / scale });
+  for (const g of graphsOf(grid)) {
+    renderGrid(ctx, g, { cellPx: g.size / g.cols, originXPx: g.x, originYPx: g.y, lineScale: 1 / scale });
+  }
 }
 
-function graphBounds(grid) {
-  if (!grid || !grid.size || !grid.cols) return null;
-  const rows = grid.type === "polar" ? grid.cols : grid.rows || grid.cols;
-  return { minX: grid.x, minY: grid.y, maxX: grid.x + grid.size, maxY: grid.y + (grid.size / grid.cols) * rows };
-}
 
 // ---------- what the teacher has put on a student's board ----------
 //

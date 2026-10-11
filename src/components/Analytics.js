@@ -16,7 +16,7 @@ const ON = process.env.NODE_ENV === "production";
 // Private bits of an address are swapped for their placeholder, so a board
 // opens as "/board/[id]" and a class as "/join/[code]". Board IDs and class
 // codes never appear in the visit counts.
-function routeFor(pathname, params) {
+export function routeFor(pathname, params) {
   let route = pathname || "/";
   for (const [key, value] of Object.entries(params || {})) {
     const values = Array.isArray(value) ? value : [value];

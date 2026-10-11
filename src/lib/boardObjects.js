@@ -4,6 +4,9 @@
 // only (no React, no Supabase), so they're easy to reason about.
 
 export const OBJECT_KINDS = ["strokes", "texts", "images"];
+// Graphs are selected, moved, copied and deleted like the rest, but they
+// are saved and sent with the board's graph setting (see graphList.js),
+// not as rows of their own — so they are not one of OBJECT_KINDS.
 
 export function newId() {
   return typeof crypto !== "undefined" && crypto.randomUUID
@@ -12,12 +15,12 @@ export function newId() {
 }
 
 export function emptySelection() {
-  return { strokes: [], texts: [], images: [] };
+  return { strokes: [], texts: [], images: [], graphs: [] };
 }
 
 export function selectionCount(sel) {
   if (!sel) return 0;
-  return sel.strokes.length + sel.texts.length + sel.images.length;
+  return (sel.strokes || []).length + (sel.texts || []).length + (sel.images || []).length + (sel.graphs || []).length;
 }
 
 // A stroke's dash pattern ([dash, gap] in board units) if it has a usable
@@ -153,8 +156,11 @@ export function hitTestImages(images, worldPos) {
 // points is inside the box; eraser strokes only when they're entirely inside
 // (so moving a region carries its rub-outs with it without grabbing erasers
 // that belong to other drawings).
-export function objectsInRect(rect, { strokes, texts, images }, textHeightFn) {
+export function objectsInRect(rect, { strokes, texts, images, graphs = [], graphBox = null }, textHeightFn) {
   const sel = emptySelection();
+  // a graph only when the box goes all the way round it (so boxing some
+  // working written on a graph doesn't pick the graph up too)
+  if (graphBox) for (const g of graphs) if (boundsContain(rect, graphBox(g))) sel.graphs.push(g.id);
   for (const s of strokes) {
     if (!s.points || !s.points.length) continue;
     if (s.tool === "eraser") {
@@ -194,6 +200,15 @@ export function cloneObjects(data, dx, dy) {
     strokes: (data.strokes || []).map((s) => ({ ...translateStroke(s, dx, dy), id: newId() })),
     texts: (data.texts || []).map((t) => ({ ...translateText(t, dx, dy), id: newId() })),
     images: (data.images || []).map((img) => ({ ...translateImage(img, dx, dy), id: newId() })),
+    // a copied graph has none of the original's read-offs in progress
+    graphs: (data.graphs || []).map((g) => {
+      const copy = { ...g, x: g.x + dx, y: g.y + dy, id: newId() };
+      if (copy.plot && typeof copy.plot === "object" && "trace" in copy.plot) {
+        copy.plot = { ...copy.plot };
+        delete copy.plot.trace;
+      }
+      return copy;
+    }),
   };
 }
 
@@ -202,6 +217,7 @@ export function selectionFromData(data) {
     strokes: (data.strokes || []).map((s) => s.id),
     texts: (data.texts || []).map((t) => t.id),
     images: (data.images || []).map((i) => i.id),
+    graphs: (data.graphs || []).map((g) => g.id),
   };
 }
 

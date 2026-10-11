@@ -7,6 +7,7 @@
 import { drawBackgroundPattern } from "./boardBackground";
 import { strokeBounds, imageBounds, textBounds, unionBounds, strokeDash } from "./boardObjects";
 import { renderGrid } from "./gridRenderer";
+import { graphBounds, graphsOf } from "./graphList";
 
 export const THUMB_W = 400;
 export const THUMB_H = 250;
@@ -86,7 +87,7 @@ export function renderBoardThumbnail({ strokes = [], texts = [], images = [], gr
     ...visible.map(strokeBounds),
     ...texts.map((t) => textBounds(t, textHeight(measure, t))),
     ...images.map(imageBounds),
-    grid ? { minX: grid.x, minY: grid.y, maxX: grid.x + grid.size, maxY: grid.y + (grid.size / grid.cols) * (grid.rows || grid.cols) } : null,
+    graphBounds(grid),
   ]);
   if (!bounds) return null;
 
@@ -129,9 +130,9 @@ export function renderBoardThumbnail({ strokes = [], texts = [], images = [], gr
     lines.forEach((line, i) => ictx.fillText(line, t.x, t.y + i * t.fontSize * 1.3));
     ictx.restore();
   }
-  if (grid) {
+  for (const g of graphsOf(grid)) {
     try {
-      renderGrid(ictx, grid, { cellPx: grid.size / grid.cols, originXPx: grid.x, originYPx: grid.y, lineScale: 1 / scale });
+      renderGrid(ictx, g, { cellPx: g.size / g.cols, originXPx: g.x, originYPx: g.y, lineScale: 1 / scale });
     } catch (err) {
       // a graph that can't be drawn just leaves it out of the preview
     }

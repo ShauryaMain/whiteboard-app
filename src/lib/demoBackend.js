@@ -3,20 +3,46 @@
 //
 // It answers the same calls the board makes (reads, saves, live channels,
 // file uploads, sign-in) but keeps everything in this browser tab's memory.
-// Nothing a demo visitor draws is sent anywhere or saved, and the real
-// database is never contacted. Reloading the page starts a fresh demo.
+// The real database is never contacted.
 //
-// Two extras:
+// Extras:
+//   - The board it starts with depends on the visitor's answer to "What
+//     are you planning?" (a class lesson, a 1:1 tutoring session, or the
+//     tour board). See start() below and DemoGuide.js.
+//   - As the visitor works, a copy of their board is kept in this browser
+//     (demoStash.js), so coming back opens it again and signing in saves
+//     it to their account (demoCarry.js).
 //   - "Try a live class" is answered by pretend students (demoClassroom.js).
-//   - "Sign in free to keep your work" asks this file for a copy of the
-//     board (carrySnapshot below), which demoCarry.js holds on to until
-//     the visitor has signed in and it can be saved as a real board.
 
 import { createDemoClassroom } from "./demoClassroom";
+import { clearDemoStash, readDemoStash, stashKeepAt, stashStartedAt, wasCarried, writeDemoStash } from "./demoStash";
 
 export const DEMO_BOARD_ID = "demo";
 const DEMO_USER = { id: "demo-user", email: "", user_metadata: { full_name: "Demo visitor" } };
 const DEMO_SESSION = { user: DEMO_USER, access_token: "demo", expires_at: 4102444800 };
+
+// The boards a visitor can start from (the answers to "What are you
+// planning?"), and what each is called once it's kept in an account.
+export const DEMO_KINDS = ["class", "tutor", "explore"];
+const BOARD_NAMES = {
+  class: "Solving linear equations",
+  tutor: "Straight-line graphs",
+  explore: "My demo board",
+};
+
+// The worksheet shown beside the class lesson board (a picture, so it
+// opens on every browser, older iPads included).
+export const DEMO_WORKSHEET = {
+  url: "/demo/linear-equations-worksheet.png",
+  path: "demo/linear-equations-worksheet.png",
+  pageCount: 1,
+  fileType: "image/png",
+  fileName: "Solving linear equations: worksheet",
+};
+
+// Something the board saved, or a file the visitor added, so the demo's
+// guide (DemoGuide.js) can tell when there's work worth keeping.
+export const DEMO_CHANGE_EVENT = "cleanslate:demo-change";
 
 // True when the page that is loading is the demo board.
 export function isDemoPath(pathname) {
@@ -27,7 +53,7 @@ export function isDemoPage() {
   return typeof window !== "undefined" && isDemoPath(window.location.pathname);
 }
 
-// ---------- the starter board ----------
+// ---------- the starter boards ----------
 
 // A slightly wobbly line through the given points, so the starter drawing
 // looks hand-drawn rather than computer-perfect.
@@ -54,9 +80,19 @@ function circlePoints(cx, cy, r) {
   return out;
 }
 
-function starterStrokes() {
-  // A sketch of y = (x - 2)^2 - 1: axes, the curve, and its two roots circled.
-  const ox = 150;
+const text = (id, x, y, fontSize, width, color, value) => ({
+  id, board_id: DEMO_BOARD_ID, x, y, text: value, color, font_size: fontSize, width, rotation: 0,
+});
+
+// Text boxes whose id starts with this are the demo's own instructions.
+// They're left behind when a board is kept (unless the visitor edited
+// them); everything else on a starter board is the lesson itself.
+const TIP = "demo-tip-";
+
+// "Just looking around": a tour of the board, with a sketch of
+// y = (x - 2)^2 - 1, its axes and its two roots circled.
+function exploreBoard() {
+  const ox = 120;
   const oy = 420;
   const unit = 44;
   const curve = [];
@@ -64,42 +100,176 @@ function starterStrokes() {
     const x = -0.3 + (4.6 * i) / 46;
     curve.push([ox + unit * x, oy - unit * ((x - 2) * (x - 2) - 1)]);
   }
-  return [
-    inkStroke("demo-s1", "#1a1a1a", 3, linePoints(80, oy, 390, oy, 30)),
-    inkStroke("demo-s2", "#1a1a1a", 3, [[380, oy - 7], [391, oy], [380, oy + 7]]),
-    inkStroke("demo-s3", "#1a1a1a", 3, linePoints(ox, 480, ox, 215, 28)),
-    inkStroke("demo-s4", "#1a1a1a", 3, [[ox - 7, 226], [ox, 214], [ox + 7, 226]]),
-    inkStroke("demo-s5", "#1E88E5", 4, curve),
-    inkStroke("demo-s6", "#E53935", 3, circlePoints(ox + unit, oy, 12)),
-    inkStroke("demo-s7", "#E53935", 3, circlePoints(ox + unit * 3, oy, 12)),
-  ];
+  return {
+    background: "graph",
+    grid: null,
+    strokes: [
+      inkStroke("demo-s1", "#1a1a1a", 3, linePoints(80, oy, 390, oy, 30)),
+      inkStroke("demo-s2", "#1a1a1a", 3, [[380, oy - 7], [391, oy], [380, oy + 7]]),
+      inkStroke("demo-s3", "#1a1a1a", 3, linePoints(ox, 480, ox, 215, 28)),
+      inkStroke("demo-s4", "#1a1a1a", 3, [[ox - 7, 226], [ox, 214], [ox + 7, 226]]),
+      inkStroke("demo-s5", "#1E88E5", 4, curve),
+      inkStroke("demo-s6", "#E53935", 3, circlePoints(ox + unit, oy, 12)),
+      inkStroke("demo-s7", "#E53935", 3, circlePoints(ox + unit * 3, oy, 12)),
+    ],
+    texts: [
+      text(`${TIP}1`, 56, 36, 32, 640, "#1a1a1a", "This is a real Clean Slate board."),
+      text(`${TIP}2`, 56, 96, 20, 640, "#1E88E5", "Pick the Pen and write anywhere. Scribble over something to rub it out."),
+      text(`${TIP}3`, 440, 236, 20, 300, "#1a1a1a", "Maths menu: ruler, compass, graph paper and a calculator."),
+      text(`${TIP}4`, 440, 340, 20, 300, "#1a1a1a", "Insert menu: pictures, a worksheet beside the board, simulations."),
+      text(`${TIP}5`, 56, 520, 18, 660, "#8E24AA", "Your work stays in this browser for now. Sign in free to keep it on every device and run a live class."),
+    ],
+  };
 }
 
-function starterTexts() {
-  const text = (id, x, y, fontSize, width, color, value) => ({
-    id, board_id: DEMO_BOARD_ID, x, y, text: value, color, font_size: fontSize, width, rotation: 0,
-  });
-  return [
-    text("demo-t1", 56, 36, 32, 640, "#1a1a1a", "This is a real Clean Slate board."),
-    text("demo-t2", 56, 96, 20, 640, "#1E88E5", "Pick the Pen and write anywhere. Scribble over something to rub it out."),
-    text("demo-t3", 440, 236, 20, 300, "#1a1a1a", "Maths menu: ruler, compass, graph paper and a calculator."),
-    text("demo-t4", 440, 340, 20, 300, "#1a1a1a", "Insert menu: pictures, a worksheet beside the board, simulations."),
-    text("demo-t5", 56, 520, 18, 660, "#8E24AA", "Nothing on this demo board is saved. Sign in (it's free) to keep your boards and run a live class."),
-  ];
+// "A lesson for my class": solving linear equations (IGCSE and US
+// Algebra 1 both start here), with the worksheet open beside the board.
+// The pretend class solves question 1. `narrow`: laid out for a phone.
+function classBoard(narrow) {
+  if (narrow) {
+    return {
+      background: "graph",
+      grid: null,
+      strokes: [
+        inkStroke("lesson-s1", "#1E88E5", 3.5, linePoints(22, 66, 300, 64, 20)),
+        inkStroke("lesson-s2", "#8E24AA", 2.5, [
+          ...linePoints(12, 118, 352, 118, 16),
+          ...linePoints(352, 118, 352, 226, 6),
+          ...linePoints(352, 226, 12, 226, 16),
+          ...linePoints(12, 226, 12, 118, 6),
+        ]),
+      ],
+      texts: [
+        text("lesson-t1", 20, 26, 26, 340, "#1a1a1a", "Solving linear equations"),
+        text("lesson-t2", 20, 78, 16, 340, "#1E88E5", "Do the same to both sides until x is on its own."),
+        text("lesson-t3", 24, 128, 17, 320, "#1a1a1a", "Example:  4x − 5 = 11"),
+        text("lesson-t4", 36, 160, 17, 310, "#1a1a1a", "add 5 to both sides:  4x = 16"),
+        text("lesson-t5", 36, 192, 17, 310, "#1a1a1a", "divide both sides by 4:  x = 4"),
+        text("lesson-t6", 20, 250, 21, 300, "#E53935", "Your turn"),
+        text("lesson-t7", 20, 290, 18, 240, "#1a1a1a", "1)  2x + 3 = 11"),
+        text("lesson-t8", 20, 326, 18, 240, "#1a1a1a", "2)  5x − 4 = 21"),
+        text("lesson-t9", 20, 362, 18, 240, "#1a1a1a", "3)  3(x + 2) = 18"),
+        text("lesson-t10", 20, 398, 18, 240, "#1a1a1a", "4)  7 − 2x = 1"),
+        text(`${TIP}1`, 20, 446, 15, 340, "#8E24AA", "Press Live class: five pretend students solve question 1 on their own boards, and you watch them work."),
+      ],
+    };
+  }
+  return {
+    background: "graph",
+    grid: null,
+    strokes: [
+      // underline the title, and a box round the worked example
+      inkStroke("lesson-s1", "#1E88E5", 4, linePoints(58, 82, 420, 80, 24)),
+      inkStroke("lesson-s2", "#8E24AA", 2.5, [
+        ...linePoints(46, 140, 470, 140, 20),
+        ...linePoints(470, 140, 470, 262, 8),
+        ...linePoints(470, 262, 46, 262, 20),
+        ...linePoints(46, 262, 46, 140, 8),
+      ]),
+    ],
+    texts: [
+      text("lesson-t1", 56, 30, 32, 460, "#1a1a1a", "Solving linear equations"),
+      text("lesson-t2", 56, 96, 18, 460, "#1E88E5", "Do the same to both sides until x is on its own."),
+      text("lesson-t3", 60, 150, 20, 400, "#1a1a1a", "Example:  4x − 5 = 11"),
+      text("lesson-t4", 80, 186, 20, 380, "#1a1a1a", "add 5 to both sides:  4x = 16"),
+      text("lesson-t5", 80, 222, 20, 380, "#1a1a1a", "divide both sides by 4:  x = 4"),
+      text("lesson-t6", 56, 292, 24, 300, "#E53935", "Your turn"),
+      text("lesson-t7", 56, 334, 20, 220, "#1a1a1a", "1)  2x + 3 = 11"),
+      text("lesson-t8", 56, 374, 20, 220, "#1a1a1a", "2)  5x − 4 = 21"),
+      text("lesson-t9", 56, 414, 20, 220, "#1a1a1a", "3)  3(x + 2) = 18"),
+      text("lesson-t10", 56, 454, 20, 220, "#1a1a1a", "4)  7 − 2x = 1"),
+      text(`${TIP}1`, 56, 516, 17, 460, "#8E24AA", "Press Try a live class: five pretend students solve question 1 on their own boards, and you watch them work."),
+    ],
+  };
 }
 
-// The starter board is laid out for a tablet-sized screen (about 720px
-// wide). On a narrower screen (a phone) it is shrunk to fit and moved
-// down a little, clear of the zoom control in the top corner.
-function starterFit() {
-  const width = typeof window === "undefined" ? 1024 : window.innerWidth || 1024;
-  const k = Math.min(1, Math.max(0.5, (width - 16) / 720));
-  return { k, dy: k < 1 ? 56 : 0 };
+// "A 1:1 tutoring session": straight-line graphs (y = mx + c), with axes
+// ready to draw on. The graph snaps, so points and ruler lines land exactly
+// on the grid. `narrow`: laid out for a phone (the graph under the
+// questions).
+function tutorBoard(narrow) {
+  const cell = narrow ? 24 : 30;
+  const grid = {
+    id: "graph-first",
+    type: "cartesian",
+    x: narrow ? 20 : 420,
+    y: narrow ? 356 : 44,
+    size: cell * 7,
+    cols: 7,
+    rows: 12,
+    showAxes: true,
+    showNumbers: true,
+    showUnitCircle: false,
+    arrows: true,
+    minor: 0,
+    snap: true,
+    color: "#cfd8e3",
+    unitsPerCell: 1,
+    trig: false,
+    trigStep: { num: 1, den: 2 },
+    axes: {
+      x: { min: -2, max: 5, step: 1, label: "number", piStep: { num: 1, den: 2 }, log: false, perDecade: 3, name: "" },
+      y: { min: -6, max: 6, step: 1, label: "number", piStep: { num: 1, den: 2 }, log: false, perDecade: 3, name: "" },
+    },
+  };
+  if (narrow) {
+    return {
+      background: "blank",
+      grid,
+      strokes: [inkStroke("lesson-s1", "#1E88E5", 3.5, linePoints(22, 66, 270, 64, 18))],
+      texts: [
+        text("lesson-t1", 20, 26, 26, 340, "#1a1a1a", "Straight-line graphs"),
+        text("lesson-t2", 20, 78, 16, 340, "#1E88E5", "1:1 session  ·  y = mx + c"),
+        text("lesson-t3", 20, 116, 16, 340, "#1a1a1a", "1)  Complete the table for y = 2x − 3, then draw the line."),
+        text("lesson-t4", 20, 172, 16, 340, "#1a1a1a", "x:   −1    0    1    2    3"),
+        text("lesson-t5", 20, 198, 16, 340, "#1a1a1a", "y:"),
+        text("lesson-t6", 20, 236, 16, 340, "#1a1a1a", "2)  Find the gradient of the line through (1, 2) and (3, 6)."),
+        text("lesson-t7", 20, 290, 16, 340, "#1a1a1a", "3)  The line parallel to y = 2x − 3 through (0, 5)?"),
+        text(`${TIP}1`, 204, 362, 14, 160, "#8E24AA", "This graph snaps: a dot or a ruler line near a crossing lands exactly on it. Double-tap the graph to plot an equation."),
+      ],
+    };
+  }
+  return {
+    background: "blank",
+    grid,
+    strokes: [inkStroke("lesson-s1", "#1E88E5", 4, linePoints(58, 82, 360, 80, 22))],
+    texts: [
+      text("lesson-t1", 56, 30, 32, 340, "#1a1a1a", "Straight-line graphs"),
+      text("lesson-t2", 56, 96, 18, 340, "#1E88E5", "1:1 session  ·  y = mx + c"),
+      text("lesson-t3", 56, 144, 19, 330, "#1a1a1a", "1)  Complete the table for y = 2x − 3, then draw the line."),
+      text("lesson-t4", 56, 214, 19, 330, "#1a1a1a", "x:   −1    0    1    2    3"),
+      text("lesson-t5", 56, 248, 19, 330, "#1a1a1a", "y:"),
+      text("lesson-t6", 56, 300, 19, 330, "#1a1a1a", "2)  Find the gradient of the line through (1, 2) and (3, 6)."),
+      text("lesson-t7", 56, 378, 19, 330, "#1a1a1a", "3)  Write the equation of the line parallel to y = 2x − 3 through (0, 5)."),
+      text(`${TIP}1`, 56, 468, 17, 340, "#8E24AA", "This graph snaps: a dot or a ruler line near a crossing lands exactly on it. Double-tap the graph to plot an equation."),
+    ],
+  };
 }
+
+const STARTERS = { class: classBoard, tutor: tutorBoard, explore: exploreBoard };
+
+// The starter boards are laid out for a tablet-sized screen (about 720px
+// wide). The lesson boards also have a phone layout (about 380px wide).
+// On a narrower screen they are shrunk to fit and moved down a little,
+// clear of the zoom control in the top corner.
+function screenWidth() {
+  return typeof window === "undefined" ? 1024 : window.innerWidth || 1024;
+}
+
+function isNarrow() {
+  return screenWidth() < 600;
+}
+
+function starterFit(layoutWidth) {
+  const width = screenWidth();
+  const k = Math.min(1, Math.max(0.5, (width - 16) / layoutWidth));
+  return { k, dy: k < 1 || layoutWidth < 600 ? 56 : 0 };
+}
+
+const round = (n) => Math.round(n * 100) / 100;
 
 function fitStroke(row, { k, dy }) {
   if (k === 1 && !dy) return row;
-  const round = (n) => Math.round(n * 100) / 100;
   return {
     ...row,
     data: {
@@ -121,27 +291,57 @@ function fitText(row, { k, dy }) {
   };
 }
 
-function starterTables() {
+function fitGrid(grid, { k, dy }) {
+  if (!grid || (k === 1 && !dy)) return grid;
+  return { ...grid, x: round(grid.x * k), y: round(grid.y * k + dy), size: round(grid.size * k) };
+}
+
+const stamp = (rows) => {
   const now = Date.now();
-  const fit = starterFit();
-  const stamp = (rows) => rows.map((r, i) => ({ ...r, created_at: new Date(now + i).toISOString() }));
+  return rows.map((r, i) => ({ ...r, created_at: new Date(now + i).toISOString() }));
+};
+
+function boardRow(kind, background, grid, sims) {
   return {
-    boards: stamp([
-      {
-        id: DEMO_BOARD_ID,
-        owner_id: DEMO_USER.id,
-        name: "Demo board",
-        grid_config: null,
-        background: "graph",
-        sim_embeds: [],
-        thumbnail: null,
-      },
-    ]),
-    strokes: stamp(starterStrokes().map((r) => fitStroke(r, fit))),
-    texts: stamp(starterTexts().map((r) => fitText(r, fit))),
+    id: DEMO_BOARD_ID,
+    owner_id: DEMO_USER.id,
+    name: kind === "explore" ? "Demo board" : BOARD_NAMES[kind],
+    grid_config: grid || null,
+    background: background || "blank",
+    sim_embeds: sims || [],
+    thumbnail: null,
+  };
+}
+
+function starterTables(kind) {
+  const phoneLayout = isNarrow() && kind !== "explore";
+  const fit = starterFit(phoneLayout ? 380 : 720);
+  const board = (STARTERS[kind] || exploreBoard)(phoneLayout);
+  return {
+    boards: stamp([boardRow(kind, board.background, fitGrid(board.grid, fit), [])]),
+    strokes: stamp(board.strokes.map((r) => fitStroke(r, fit))),
+    texts: stamp(board.texts.map((r) => fitText(r, fit))),
     images: [],
   };
 }
+
+// The visitor's own board, as kept in this browser (see demoStash.js).
+function restoredTables(stash) {
+  const kind = DEMO_KINDS.includes(stash.kind) ? stash.kind : "explore";
+  let n = 0;
+  return {
+    boards: stamp([boardRow(kind, stash.background, stash.grid_config, Array.isArray(stash.sim_embeds) ? stash.sim_embeds : [])]),
+    strokes: stamp(stash.strokes.map((data) => ({ id: `kept-s${n++}`, board_id: DEMO_BOARD_ID, data }))),
+    texts: stamp(
+      stash.texts.map((t) => ({
+        id: `kept-t${n++}`, board_id: DEMO_BOARD_ID, x: t.x, y: t.y, text: t.text, color: t.color,
+        font_size: t.font_size, width: t.width, rotation: t.rotation || 0,
+      }))
+    ),
+    images: [],
+  };
+}
+
 
 // ---------- tables ----------
 
@@ -204,6 +404,14 @@ export class DemoQuery {
   maybeSingle() { this.one = true; return this; }
   single() { this.one = true; return this; }
 
+  // Lets the demo keep a copy of the board as it changes (see
+  // createDemoClient). A student's own board in a live class has no such
+  // hook.
+  changed() {
+    const hook = this.tables.__changed;
+    if (typeof hook === "function") hook({ table: this.table, op: this.op });
+  }
+
   run() {
     const all = this.tables[this.table] || (this.tables[this.table] = []);
     const matches = (r) => this.filters.every((f) => f(r));
@@ -216,6 +424,7 @@ export class DemoQuery {
         if (at >= 0) all[at] = { ...all[at], ...row };
         else all.push({ created_at: new Date().toISOString(), ...row });
       });
+      this.changed();
       return { data: null, error: null, count: null, status: 201 };
     }
 
@@ -223,11 +432,13 @@ export class DemoQuery {
       all.forEach((r, i) => {
         if (matches(r)) all[i] = { ...r, ...this.payload };
       });
+      this.changed();
       return { data: null, error: null, count: null, status: 204 };
     }
 
     if (this.op === "delete") {
       this.tables[this.table] = all.filter((r) => !matches(r));
+      this.changed();
       return { data: null, error: null, count: null, status: 204 };
     }
 
@@ -313,7 +524,8 @@ function makeChannel(topic, classroom) {
 // ---------- file uploads ----------
 
 // Pictures and worksheets stay in the tab's memory and are shown from there.
-function makeStorage() {
+// `onUpload(bucket)` hears about each one (the demo's guide counts them).
+function makeStorage(onUpload) {
   const urls = new Map();
   return {
     from(bucket) {
@@ -323,6 +535,7 @@ function makeStorage() {
           const old = urls.get(key(path));
           if (old) URL.revokeObjectURL(old);
           urls.set(key(path), URL.createObjectURL(file));
+          if (onUpload) onUpload(bucket);
           return later({ data: { path }, error: null });
         },
         getPublicUrl(path) {
@@ -341,41 +554,46 @@ function makeStorage() {
   };
 }
 
-// ---------- the client ----------
-
-// ---------- a copy of the board, for "keep your work" ----------
+// ---------- a copy of the board, kept as they work ----------
 
 function sorted(rows) {
   return rows.slice().sort((a, b) => compare(a.created_at, b.created_at) || compare(String(a.id), String(b.id)));
 }
 
-// What the visitor has on the demo board, in a form that can be saved as a
-// real board once they've signed in: the ink, the text boxes, the page
-// style, the graph and any simulations. Returns null when the board is
-// still exactly as it started (there is nothing of theirs to keep).
-//
-// The demo's own instruction notes are left behind unless they were
-// edited. Pictures and the worksheet aren't included: in the demo they
-// only exist in this tab's memory.
-function carrySnapshot(tables, pristine) {
+function boardKey(tables) {
   const board = (tables.boards || []).find((b) => b.id === DEMO_BOARD_ID) || {};
-  const strokes = sorted(tables.strokes || []);
-  const texts = sorted(tables.texts || []);
-  const images = tables.images || [];
-  const key = JSON.stringify({
-    strokes: strokes.map((r) => [r.id, r.data]),
-    texts: texts.map((r) => [r.id, r.x, r.y, r.text, r.color, r.font_size, r.width, r.rotation || 0]),
-    images: images.length,
+  return JSON.stringify({
+    strokes: sorted(tables.strokes || []).map((r) => [r.id, r.data]),
+    texts: sorted(tables.texts || []).map((r) => [r.id, r.x, r.y, r.text, r.color, r.font_size, r.width, r.rotation || 0]),
+    images: (tables.images || []).length,
     background: board.background || null,
     grid: board.grid_config || null,
     sims: board.sim_embeds || [],
   });
-  if (key === pristine.key) return null;
-  const starterText = pristine.texts;
-  const keptTexts = texts.filter((r) => !(starterText.has(r.id) && starterText.get(r.id) === r.text));
+}
+
+// What the visitor has on the demo board, in a form that can be kept in
+// this browser and saved as a real board once they've signed in: the ink,
+// the text boxes, the page style, the graph and any simulations.
+//
+// Returns null when the board is exactly as it started (nothing of theirs
+// to keep), unless `force` is set and it's a lesson board (someone who
+// asks to keep the lesson as it is gets the lesson).
+//
+// The demo's own instruction notes are left behind unless they were
+// edited. Pictures and the worksheet aren't included: in the demo they
+// only exist in this tab's memory.
+function carrySnapshot(tables, pristine, kind, force) {
+  const board = (tables.boards || []).find((b) => b.id === DEMO_BOARD_ID) || {};
+  const unchanged = pristine.key !== null && boardKey(tables) === pristine.key;
+  if (unchanged && !(force && kind !== "explore")) return null;
+  const strokes = sorted(tables.strokes || []);
+  const texts = sorted(tables.texts || []);
+  const keptTexts = texts.filter((r) => !(String(r.id).startsWith(TIP) && pristine.texts.get(r.id) === r.text));
   return {
     version: 1,
-    name: "My demo board",
+    kind,
+    name: BOARD_NAMES[kind] || BOARD_NAMES.explore,
     background: board.background || null,
     grid_config: board.grid_config || null,
     sim_embeds: Array.isArray(board.sim_embeds) ? board.sim_embeds : [],
@@ -383,28 +601,128 @@ function carrySnapshot(tables, pristine) {
     texts: keptTexts.map((r) => ({
       x: r.x, y: r.y, text: r.text, color: r.color, font_size: r.font_size, width: r.width, rotation: r.rotation || 0,
     })),
-    leftBehind: { pictures: images.length },
+    leftBehind: { pictures: (tables.images || []).length },
   };
 }
 
-function pristineState(tables) {
-  const texts = new Map((tables.texts || []).map((r) => [r.id, r.text]));
-  const board = tables.boards[0];
-  const key = JSON.stringify({
-    strokes: sorted(tables.strokes).map((r) => [r.id, r.data]),
-    texts: sorted(tables.texts).map((r) => [r.id, r.x, r.y, r.text, r.color, r.font_size, r.width, r.rotation || 0]),
-    images: 0,
-    background: board.background || null,
-    grid: board.grid_config || null,
-    sims: board.sim_embeds || [],
-  });
-  return { key, texts };
+function pristineState(tables, restored) {
+  return {
+    // a board brought back from this browser is all theirs already
+    key: restored ? null : boardKey(tables),
+    texts: new Map((tables.texts || []).map((r) => [r.id, r.text])),
+  };
 }
 
+// How much of the board is the visitor's own work, for the demo's guide.
+function workSummary(tables, pristine) {
+  const starter = pristine.texts;
+  const strokes = (tables.strokes || []).filter((r) => !String(r.id).startsWith("demo-s") && !String(r.id).startsWith("lesson-s") && !String(r.id).startsWith("kept-")).length;
+  const texts = (tables.texts || []).filter((r) => !starter.has(r.id) || starter.get(r.id) !== r.text).length;
+  // what was already theirs when the board was brought back from this browser
+  const kept = (tables.strokes || []).filter((r) => String(r.id).startsWith("kept-")).length + (tables.texts || []).filter((r) => String(r.id).startsWith("kept-")).length;
+  return { strokes, texts, pictures: (tables.images || []).length, kept };
+}
+
+function emit(detail) {
+  try {
+    window.dispatchEvent(new CustomEvent(DEMO_CHANGE_EVENT, { detail }));
+  } catch (err) {
+    // an old browser without CustomEvent: the guide just stays quiet
+  }
+}
+
+// ---------- the client ----------
+
 export function createDemoClient() {
-  const tables = starterTables();
-  const pristine = pristineState(tables);
   const classroom = createDemoClassroom();
+  // The board is set up by start() (the answer to "What are you planning?",
+  // or the visitor's kept board). Anything that reads it first gets the
+  // tour board.
+  let state = null; // { kind, tables, pristine, restored, startedAt }
+  let saveTimer = null;
+  let keptOk = false; // whether the latest copy made it into this browser
+
+  // A copy of the board as it is now (null when there's nothing of theirs),
+  // marked with when this demo board was started.
+  function snapshotNow(force) {
+    if (!state) return null;
+    const snapshot = carrySnapshot(state.tables, state.pristine, state.kind, force);
+    return snapshot ? { ...snapshot, startedAt: state.startedAt } : null;
+  }
+
+  function keepNow() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (!state) return false;
+    // already saved into an account (this is a second tab, or a page the
+    // browser kept from before): don't keep it again
+    if (wasCarried(state.startedAt)) return false;
+    const snapshot = snapshotNow(false);
+    if (!snapshot) return false;
+    const kept = readDemoStash();
+    // the same board kept earlier: a "keep it" press and what to show next
+    // still count
+    const same = kept && stashStartedAt(kept) === state.startedAt;
+    keptOk = writeDemoStash({
+      ...snapshot,
+      keepAt: same ? stashKeepAt(kept) || undefined : undefined,
+      next: same ? kept.next : undefined,
+    });
+    // couldn't keep it (storage full or switched off): don't leave an
+    // older copy behind to be brought back as if it were this one
+    if (!keptOk) clearDemoStash();
+    return keptOk;
+  }
+
+  function changed(change) {
+    if (!state) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(keepNow, 700);
+    emit({ ...change, work: workSummary(state.tables, state.pristine) });
+  }
+
+  function start(kind) {
+    if (state) return state.kind;
+    const stash = kind === "restore" ? readDemoStash() : null;
+    if (stash) {
+      const tables = restoredTables(stash);
+      tables.__changed = changed;
+      state = {
+        kind: DEMO_KINDS.includes(stash.kind) ? stash.kind : "explore",
+        tables,
+        pristine: pristineState(tables, true),
+        restored: true,
+        startedAt: stashStartedAt(stash) || Date.now(),
+      };
+      keptOk = true;
+    } else {
+      const k = DEMO_KINDS.includes(kind) ? kind : "explore";
+      const tables = starterTables(k);
+      tables.__changed = changed;
+      state = { kind: k, tables, pristine: pristineState(tables, false), restored: false, startedAt: Date.now() };
+    }
+    return state.kind;
+  }
+
+  // Leaving the page or switching apps: keep the latest strokes now rather
+  // than lose the last moment of work.
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    const flush = () => {
+      if (saveTimer) keepNow();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush();
+    });
+  }
+
+  const tablesNow = () => {
+    if (!state) start("explore");
+    return state.tables;
+  };
+
   const leaveDemo = () => {
     window.location.assign("/");
     return Promise.resolve({ data: null, error: null });
@@ -412,10 +730,22 @@ export function createDemoClient() {
 
   return {
     __demo: true,
-    // A copy of the visitor's board for "Sign in free to keep your work"
-    // (null if they haven't changed anything). See demoCarry.js.
-    __carry: () => carrySnapshot(tables, pristine),
-    from: (table) => new DemoQuery(tables, table),
+    // Sets up the board: "class", "tutor", "explore", or "restore" (the
+    // visitor's board kept in this browser; the tour board if there isn't
+    // one). Only the first call counts. Returns the kind of board it is.
+    __start: start,
+    __kind: () => (state ? state.kind : null),
+    __restored: () => !!(state && state.restored),
+    __work: () => (state ? workSummary(state.tables, state.pristine) : { strokes: 0, texts: 0, pictures: 0, kept: 0 }),
+    // A copy of the visitor's board (null if they haven't changed anything,
+    // unless `force`). See demoCarry.js.
+    __carry: (force) => snapshotNow(!!force),
+    // Keep the board in this browser right now (rather than after the
+    // short wait that follows each change).
+    __keepNow: keepNow,
+    // Whether the board is kept in this browser at the moment.
+    __kept: () => keptOk,
+    from: (table) => new DemoQuery(tablesNow(), table),
     rpc: () => later({ data: null, error: null }),
     channel: (topic) => makeChannel(topic, classroom),
     removeChannel(channel) {
@@ -423,7 +753,7 @@ export function createDemoClient() {
       return Promise.resolve("ok");
     },
     realtime: { connect() {}, disconnect() {} },
-    storage: makeStorage(),
+    storage: makeStorage((bucket) => changed({ upload: bucket })),
     auth: {
       getSession: () => later({ data: { session: DEMO_SESSION }, error: null }),
       getUser: () => later({ data: { user: DEMO_USER }, error: null }),

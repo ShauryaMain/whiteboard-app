@@ -12,6 +12,7 @@ import ShareModal from "@/components/ShareModal";
 import FeedbackModal from "@/components/FeedbackModal";
 import WhatsNew from "@/components/WhatsNew";
 import DemoCarryOver from "@/components/DemoCarryOver";
+import { track } from "@/lib/track";
 import s from "./Home.module.css";
 import { LANDING_URL } from "@/lib/links";
 import d from "@/components/Dialog.module.css";
@@ -120,6 +121,7 @@ export default function Home() {
       alert("Couldn't create board: " + result.error.message);
       return;
     }
+    track("board_created", { background: background || "blank" });
     router.push(`/board/${result.data.id}`);
   }
 
@@ -270,10 +272,12 @@ export default function Home() {
           <MessageSquarePlus size={16} />
           <span className={s.longLabel}>Feedback</span>
         </button>
-        <Link href="/join" className={s.topBtn} aria-label="Join a class with a code" title="Join a class with a code">
+        {/* a full page load, so the teacher pages' visit counting doesn't come along */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a href="/join" className={s.topBtn} aria-label="Join a class with a code" title="Join a class with a code">
           <Users size={16} />
           <span className={s.longLabel}>Join with a class code</span>
-        </Link>
+        </a>
         <button
           type="button"
           data-home-menu="true"
@@ -360,7 +364,7 @@ export default function Home() {
 
       {/* A demo board someone asked to keep before signing in is saved to
           their account here, then opened. */}
-      <DemoCarryOver userId={user?.id} />
+      <DemoCarryOver userId={user?.id} createdAt={user?.created_at} />
 
       {feedbackOpen && (
         <FeedbackModal userEmail={user?.email} boardCount={myBoards.length} onClose={() => setFeedbackOpen(false)} />

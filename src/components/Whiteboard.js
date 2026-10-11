@@ -9,7 +9,7 @@ import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import SplitDivider from "./SplitDivider";
 import PalmSafeButton from "./PalmSafeButton";
-import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon } from "lucide-react";
+import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine } from "lucide-react";
 import ReferencePane from "./ReferencePane";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
@@ -32,11 +32,18 @@ import { createSendGate } from "@/lib/boardWatch";
 import { drawTeacherLayer, hasTeacherLayer } from "@/lib/boardRender";
 import StudentComments from "./StudentComments";
 import GridToolModal from "./GridToolModal";
+import { GraphSliderPanels, GraphReadoutBar } from "./GraphBoardBits";
+import {
+  createGraphStore, withoutTrace, cleanPlot, curvePointNear, traceAlong, pinNear, readoutValues, worldPointOf, tableObjects,
+} from "@/lib/graphPlot";
+import { sliderOf } from "@/lib/graphMath";
 import SimEmbed from "./SimEmbed";
 import SimEmbedModal from "./SimEmbedModal";
 import ShapeToolModal from "./ShapeToolModal";
 import { shapeToBoardObjects, browserTextEnv } from "@/lib/shapeBuilder";
-import { renderGrid, withDefaults as withGridDefaults, WORLD_UNITS_PER_CM } from "@/lib/gridRenderer";
+import { renderGrid } from "@/lib/gridRenderer";
+import { graphsOf, packGraphs, graphBox, graphAt, translateGraph, placeGraph, snapPoint, snapSpacing, MAX_GRAPHS } from "@/lib/graphList";
+import { gridFrame } from "@/lib/graphAxes";
 import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
 import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
@@ -71,6 +78,7 @@ import {
   translateImage, cloneObjects, chunkObjects, newId, strokeDash, writeInternalClipboard, readInternalClipboard,
   CLIPBOARD_MARKER, prepareImageFile, makeInlineImage, imageFilesFrom, writeClipboardMarker, readSystemClipboard,
 } from "@/lib/boardObjects";
+import { track } from "@/lib/track";
 import chrome from "./StudioChrome.module.css";
 import cls from "./Classroom.module.css";
 import {
@@ -205,7 +213,7 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
 //   compact  true when the board only has part of the screen (shown beside
 //            the teacher's board), so the toolbar packs itself tighter.
 export default function Whiteboard({
-  boardId, demo = false, onDemoClassStart, onDemoClassEnd,
+  boardId, demo = false, onDemoClassStart, onDemoClassEnd, initialReferenceDoc = null,
   student = null, backend = null, active = true, compact = false,
 }) {
   const { user } = useAuth();
@@ -267,14 +275,12 @@ export default function Whiteboard({
   const pendingShapeUpdate = useRef(null);
   const rafId = useRef(null);
 
-  const pendingGridUpdate = useRef(null);
-  const gridRafId = useRef(null);
-  const gridToolActiveRef = useRef(false);
-  const gridConfigRef = useRef(null);
-  const gridDragMode = useRef(null);
-  const gridDragStart = useRef(null);
-  const gridCellSizeCmRef = useRef(10);
-  const toolBeforeGridRef = useRef("pen");
+  // Every graph on the board (see graphList.js): saved and sent together
+  // as the board's graph setting.
+  const graphsRef = useRef([]);
+  const gridDragMode = useRef(null); // "trace" while a curve is being read off
+  const graphResizeRef = useRef(null); // { id, startPos, orig, last? }
+  const lastGraphTapRef = useRef(null); // { id, time }, for a double-tap to edit
 
   const panToolActiveRef = useRef(false);
   const panDragActive = useRef(false);
@@ -354,15 +360,28 @@ export default function Whiteboard({
   const [calculatorActive, setCalculatorActive] = useState(false);
   const [calculatorPos, setCalculatorPos] = useState({ x: 300, y: 200 });
   const [zoomPercent, setZoomPercent] = useState(100);
-  const [gridToolActive, setGridToolActive] = useState(false);
-  const [gridCellSizeCm, setGridCellSizeCm] = useState(10);
   const [gridModalOpen, setGridModalOpen] = useState(false);
+  // goes up whenever the graphs change (for the boards-list preview)
+  const [graphsVersion, setGraphsVersion] = useState(0);
   const [gridModalInitialConfig, setGridModalInitialConfig] = useState(null);
+  // the graph the dialog is changing (null: it's adding a new one)
+  const editingGraphIdRef = useRef(null);
   // Captured when the dialog opens (never read from a ref during render) so
   // the dialog can show/derive its "cell size" in terms of the zoom level
   // you're actually looking at right now, instead of an absolute physical
   // unit that has no relationship to what's comfortably visible.
   const [gridModalZoomScale, setGridModalZoomScale] = useState(1);
+  // The graphs, for the bits of them that sit on the board (the sliders,
+  // the read-off bar); the graphs themselves live in graphsRef. A read-off
+  // in progress is kept apart: it is shown (and sent to anyone watching)
+  // but never saved.
+  const [graphStore] = useState(createGraphStore);
+  const graphTraceRef = useRef(null); // { graphId, fnId, x, tangent?, pinId? }
+  const graphPanelRefs = useRef({}); // the slider panel beside each graph, by id
+  const graphBarRef = useRef(null);
+  const graphBroadcastTimer = useRef(null);
+  const graphSaveTimer = useRef(null);
+  const graphSavingRef = useRef({ busy: false, again: false, retries: 0 });
 
   // Embedded simulations (e.g. PhET links) placed on the board. `sims`
   // (state) only tracks WHICH boxes exist, so add/remove re-renders the
@@ -471,7 +490,8 @@ export default function Whiteboard({
   const lastThumbRef = useRef(undefined);
   const thumbTimerRef = useRef(null);
   const thumbWarnedRef = useRef(false);
-  const [referenceDoc, setReferenceDoc] = useState(null);
+  // (the demo's lesson board opens with its worksheet beside it)
+  const [referenceDoc, setReferenceDoc] = useState(initialReferenceDoc);
   const [referenceUploadStatus, setReferenceUploadStatus] = useState("");
   const referenceFileInputRef = useRef(null);
   // A student's board in a live class: notes the teacher has pinned on it.
@@ -529,8 +549,6 @@ export default function Whiteboard({
   useEffect(() => { compassActiveRef.current = compassActive; }, [compassActive]);
   useEffect(() => { compassCenterRef.current = compassCenter; }, [compassCenter]);
   useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
-  useEffect(() => { gridToolActiveRef.current = gridToolActive; }, [gridToolActive]);
-  useEffect(() => { gridCellSizeCmRef.current = gridCellSizeCm; }, [gridCellSizeCm]);
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
   useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
   useEffect(() => { referenceStrokesRef.current = referenceStrokes; }, [referenceStrokes]);
@@ -1015,29 +1033,54 @@ export default function Whiteboard({
     return null;
   }
 
-  function drawGrid(ctx, grid) {
-    if (!grid) return;
-    const { x, y, size, cols } = grid;
-    // rows is cartesian-only and defaults to cols (a square) - see
-    // gridRenderer.js. Polar grids are always radially symmetric.
-    const rows = grid.type === "polar" ? cols : grid.rows || cols;
-    const cell = size / cols;
-    const height = cell * rows;
-    const scale = scaleRef.current;
+  // ---------- the graphs ----------
 
-    // The actual grid/graph-paper drawing (lines, axes, numbers, polar
-    // rings/spokes, unit circle...) is shared with the customization
-    // dialog's live preview — see gridRenderer.js — so what you configure
-    // there is guaranteed to be exactly what lands on the board.
-    renderGrid(ctx, grid, { cellPx: cell, originXPx: x, originYPx: y, lineScale: 1 / scale });
+  // The graphs as they are drawn and sent: with the read-off in progress.
+  function graphsShown() {
+    const t = graphTraceRef.current;
+    const list = graphsRef.current;
+    if (!t) return list;
+    return list.map((g) => (g.id === t.graphId && g.plot ? { ...g, plot: { ...g.plot, trace: { fnId: t.fnId, x: t.x, tangent: !!t.tangent } } } : g));
+  }
 
-    if (gridToolActiveRef.current) {
-      ctx.save();
-      ctx.fillStyle = "#1E88E5";
-      ctx.beginPath();
-      ctx.arc(x + size, y + height, 8 / scale, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+  // What is saved and sent for the board's graphs (see graphList.js).
+  function packedGraphs() {
+    return packGraphs(graphsRef.current.map(withoutTrace));
+  }
+
+  function graphById(id) {
+    return graphsRef.current.find((g) => g.id === id) || null;
+  }
+
+  // A read-off on a graph or curve that's gone is put away. (A graph that's
+  // gone may still be listed in the selection: everything that reads the
+  // selection only finds graphs that are still there.)
+  function tidyAfterGraphChange() {
+    const t = graphTraceRef.current;
+    if (t) {
+      const g = graphById(t.graphId);
+      if (!g || !((cleanPlot(g.plot) || { fns: [] }).fns.some((f) => f.id === t.fnId))) graphTraceRef.current = null;
+    }
+    selectionBoundsCacheRef.current = null;
+  }
+
+  // Graphs that arrived from elsewhere (the server, another of the
+  // teacher's pages).
+  function setGraphsFromServer(grid) {
+    graphsRef.current = graphsOf(grid);
+    tidyAfterGraphChange();
+  }
+
+  function graphGeom(grid) {
+    return { cellPx: grid.size / grid.cols, originXPx: grid.x, originYPx: grid.y, lineScale: 1 / scaleRef.current };
+  }
+
+  // The graph-paper drawing (lines, axes, numbers, what's plotted…) is
+  // shared with the dialog's preview, students' screens and thumbnails —
+  // see gridRenderer.js — so what you set up is exactly what lands here.
+  function drawGrid(ctx, quick = false) {
+    for (const g of graphsShown()) {
+      renderGrid(ctx, g, { ...graphGeom(g), quick });
     }
   }
 
@@ -1048,11 +1091,12 @@ export default function Whiteboard({
   }
 
   function getObjectsData(sel) {
-    const s = new Set(sel.strokes), t = new Set(sel.texts), i = new Set(sel.images);
+    const s = new Set(sel.strokes || []), t = new Set(sel.texts || []), i = new Set(sel.images || []), g = new Set(sel.graphs || []);
     return {
       strokes: s.size ? strokesRef.current.filter((x) => s.has(x.id)) : [],
       texts: t.size ? textsRef.current.filter((x) => t.has(x.id)) : [],
       images: i.size ? imagesRef.current.filter((x) => i.has(x.id)) : [],
+      graphs: g.size ? graphsRef.current.filter((x) => g.has(x.id)) : [],
     };
   }
 
@@ -1061,6 +1105,7 @@ export default function Whiteboard({
       ...data.strokes.map(strokeBounds),
       ...data.texts.map((t) => textBounds(t, textHeightOf(t))),
       ...data.images.map(imageBounds),
+      ...(data.graphs || []).map(graphBox),
     ]);
   }
 
@@ -1070,7 +1115,7 @@ export default function Whiteboard({
       const b = move.origBounds;
       return { minX: b.minX + move.dx, minY: b.minY + move.dy, maxX: b.maxX + move.dx, maxY: b.maxY + move.dy };
     }
-    const key = [selectionRef.current, strokesRef.current, textsRef.current, imagesRef.current];
+    const key = [selectionRef.current, strokesRef.current, textsRef.current, imagesRef.current, graphsRef.current];
     const cache = selectionBoundsCacheRef.current;
     if (cache && cache.key.every((v, idx) => v === key[idx])) return cache.bounds;
     const bounds = boundsOfData(getObjectsData(selectionRef.current));
@@ -1121,20 +1166,22 @@ export default function Whiteboard({
     const tl = worldToScreen({ x: bounds.minX, y: bounds.minY });
     const w = (bounds.maxX - bounds.minX) * scale;
     const h = (bounds.maxY - bounds.minY) * scale;
-    const singleText = sel.texts.length === 1 && sel.strokes.length === 0 && sel.images.length === 0;
-    const singleImage = sel.images.length === 1 && sel.strokes.length === 0 && sel.texts.length === 0;
+    const count = selectionCount(sel);
+    const singleText = count === 1 && sel.texts.length === 1;
+    // one picture or one graph: its corner handle resizes it
+    const singleResizable = count === 1 && (sel.images.length === 1 || (sel.graphs || []).length === 1);
     box.style.display = singleText ? "none" : "block";
     box.style.left = tl.x - pad + "px";
     box.style.top = tl.y - pad + "px";
     box.style.width = w + pad * 2 + "px";
     box.style.height = h + pad * 2 + "px";
     const handle = box.firstChild;
-    if (handle) handle.style.display = singleImage && !groupMoveRef.current ? "block" : "none";
+    if (handle) handle.style.display = singleResizable && !groupMoveRef.current ? "block" : "none";
 
     // Action bar: above the selection if there's room, otherwise below,
     // always kept inside the board.
     const { width: paneW, height: paneH } = getPaneSize();
-    bar.style.display = groupMoveRef.current || imageResizeRef.current ? "none" : "flex";
+    bar.style.display = groupMoveRef.current || imageResizeRef.current || graphResizeRef.current ? "none" : "flex";
     const barW = bar.offsetWidth || 300;
     const barH = bar.offsetHeight || 48;
     const extraTop = singleText ? 44 : 0; // clear the text box's rotate handle
@@ -1148,6 +1195,43 @@ export default function Whiteboard({
   }
 
   // ---------- saving + broadcasting ----------
+
+  // Puts each graph's sliders beside its top right corner, and the
+  // read-off bar beside the point, wherever the board has been moved to.
+  function repositionGraphBits() {
+    const { width, height } = getPaneSize();
+    for (const g of graphsRef.current) {
+      const panel = graphPanelRefs.current[g.id];
+      if (!panel) continue;
+      const corner = worldToScreen({ x: g.x + g.size, y: g.y });
+      const w = panel.offsetWidth || 230;
+      const h = panel.offsetHeight || 80;
+      let left = corner.x + 12;
+      if (left + w > width - 8) left = Math.max(8, width - w - 8);
+      const top = Math.max(8, Math.min(height - h - 8, corner.y));
+      panel.style.left = left + "px";
+      panel.style.top = top + "px";
+    }
+    const bar = graphBarRef.current;
+    const t = graphTraceRef.current;
+    const grid = t ? graphById(t.graphId) : null;
+    if (bar && grid && t) {
+      const v = readoutValues(grid, graphGeom(grid), t.fnId, t.x);
+      if (v && Number.isFinite(v.y)) {
+        const [wx, wy] = worldPointOf(grid, graphGeom(grid), v.x, v.y);
+        const at = worldToScreen({ x: wx, y: wy });
+        const w = bar.offsetWidth || 260;
+        const h = bar.offsetHeight || 44;
+        // above the point, clear of its label on the board
+        let left = at.x - w / 2;
+        left = Math.max(8, Math.min(width - w - 8, left));
+        let top = at.y - h - 40;
+        if (top < 8) top = at.y + 40;
+        bar.style.left = left + "px";
+        bar.style.top = Math.min(height - h - 8, top) + "px";
+      }
+    }
+  }
 
   function fullRedraw() {
     const canvas = canvasRef.current;
@@ -1167,7 +1251,7 @@ export default function Whiteboard({
     ctx.globalAlpha = 1;
 
     drawTexts(ctx, textsRef.current, selectedTextIdRef.current);
-    drawGrid(ctx, gridConfigRef.current);
+    drawGrid(ctx);
 
     applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
 
@@ -1177,6 +1261,8 @@ export default function Whiteboard({
     repositionSelectionOverlay();
     repositionCommentPins();
     if (student) drawTeacherOverlay();
+    graphStore.set(graphsRef.current, graphTraceRef.current);
+    repositionGraphBits();
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
@@ -1200,7 +1286,7 @@ export default function Whiteboard({
     }
     ctx.globalAlpha = 1;
 
-    if (gridConfigRef.current) drawGrid(ctx, gridConfigRef.current);
+    if (graphsRef.current.length) drawGrid(ctx, true);
   }
 
   // Supabase errors print as "{}" in the console, so spell them out. A
@@ -1344,7 +1430,8 @@ export default function Whiteboard({
     const [contents, settings] = await Promise.all([fetchBoardContents(boardId, db), fetchBoardSettings(boardId, db)]);
     applyServerContents(contents, fetchStartedAt);
     if (settings) {
-      if ("grid_config" in settings) gridConfigRef.current = settings.grid_config || null;
+      // (not over a graph change of ours that's about to be saved)
+      if ("grid_config" in settings && !graphSaveTimer.current && !graphSavingRef.current.busy && !graphSavingRef.current.retries) setGraphsFromServer(settings.grid_config);
       if ("background" in settings) {
         backgroundRef.current = normalizeBackground(settings.background);
         setBoardBackground(backgroundRef.current);
@@ -1390,7 +1477,7 @@ export default function Whiteboard({
       }
 
       if (!boardError && boardRow) {
-        gridConfigRef.current = boardRow.grid_config || null;
+        graphsRef.current = graphsOf(boardRow.grid_config);
         setIsOwner(userId === boardRow.owner_id);
         setBoardName(boardRow.name || "");
       } else if (boardError) {
@@ -1454,13 +1541,152 @@ export default function Whiteboard({
   }, [boardId, userId]);
 
 
+  // One save at a time (so a quick run of changes can't land out of order);
+  // a change made while one is going is saved straight after it, and a
+  // failed save is tried again a little later (a few times).
+  // One save of the board's graphs, as they are now: true if it worked.
+  async function writeGrid() {
+    if (!boardId) return false;
+    try {
+      const { error } = await db
+        .from("boards")
+        .update({ grid_config: packedGraphs() })
+        .eq("id", boardId);
+      return !error;
+    } catch (err) {
+      return false;
+    }
+  }
+
   async function saveGrid() {
     if (!boardId) return;
-    const { error } = await db
-      .from("boards")
-      .update({ grid_config: gridConfigRef.current })
-      .eq("id", boardId);
-    return !error;
+    const st = graphSavingRef.current;
+    if (st.busy) {
+      st.again = true;
+      return;
+    }
+    st.busy = true;
+    let ok = false;
+    let failures = 0;
+    while (true) {
+      st.again = false;
+      ok = await writeGrid();
+      if (st.again) continue;
+      if (ok || failures >= 3) break;
+      failures += 1;
+      st.retries = failures;
+      await new Promise((resolve) => setTimeout(resolve, 3000 * failures));
+    }
+    st.busy = false;
+    st.retries = 0;
+    return ok;
+  }
+
+  // ---------- changing the graphs ----------
+
+  // Sends the graphs (as shown) to everyone watching, at most every 60ms.
+  function queueGraphBroadcast() {
+    if (graphBroadcastTimer.current) return;
+    graphBroadcastTimer.current = setTimeout(() => {
+      graphBroadcastTimer.current = null;
+      channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: packGraphs(graphsShown()) } });
+    }, 60);
+  }
+
+  function saveGridSoon() {
+    if (graphSaveTimer.current) clearTimeout(graphSaveTimer.current);
+    graphSaveTimer.current = setTimeout(() => {
+      graphSaveTimer.current = null;
+      saveGrid();
+    }, 500);
+  }
+
+  function saveGridNow() {
+    if (graphSaveTimer.current) {
+      clearTimeout(graphSaveTimer.current);
+      graphSaveTimer.current = null;
+    }
+    saveGrid();
+  }
+
+  // The one way the board's graphs change: redrawn, sent to everyone
+  // watching and saved (straight away, or `soon` for a slider being dragged).
+  function commitGraphs(next, { soon = false } = {}) {
+    graphsRef.current = next.slice(0, MAX_GRAPHS);
+    tidyAfterGraphChange();
+    fullRedraw();
+    queueGraphBroadcast();
+    if (soon) saveGridSoon();
+    else saveGridNow();
+    // (the boards-list preview catches up, as for any other change)
+    setGraphsVersion((v) => v + 1);
+  }
+
+  // A graph's settings changed (in place).
+  function replaceGraph(id, graph, opts) {
+    const list = graphsRef.current;
+    const at = list.findIndex((g) => g.id === id);
+    // (one that was deleted meanwhile comes back, e.g. on undo)
+    commitGraphs(at >= 0 ? list.map((g) => (g.id === id ? graph : g)) : [...list, graph], opts);
+  }
+
+  function setGraphPlot(id, plot, { save = true } = {}) {
+    const g = graphById(id);
+    if (!g) return;
+    graphsRef.current = graphsRef.current.map((x) => (x.id === id ? { ...x, plot } : x));
+    tidyAfterGraphChange();
+    fullRedraw();
+    queueGraphBroadcast();
+    if (save) saveGridSoon();
+  }
+
+  // A slider on the board was moved.
+  function handleGraphParam(graphId, name, value) {
+    const g = graphById(graphId);
+    if (!g || !g.plot) return;
+    const params = cleanPlot(g.plot).params;
+    setGraphPlot(graphId, { ...cleanPlot(g.plot), params: { ...params, [name]: { ...sliderOf(params[name]), value } } });
+  }
+
+  function setGraphTrace(next) {
+    graphTraceRef.current = next;
+    fullRedraw();
+    queueGraphBroadcast();
+  }
+
+  function handleGraphPin() {
+    const t = graphTraceRef.current;
+    const g = t ? graphById(t.graphId) : null;
+    if (!g || !g.plot) return;
+    const pin = { id: newId(), fnId: t.fnId, x: t.x, tangent: !!t.tangent };
+    graphTraceRef.current = null;
+    setGraphPlot(g.id, { ...cleanPlot(g.plot), pins: [...cleanPlot(g.plot).pins, pin] });
+  }
+
+  function handleGraphTangent() {
+    const t = graphTraceRef.current;
+    const g = t ? graphById(t.graphId) : null;
+    if (!g) return;
+    const next = { ...t, tangent: !t.tangent };
+    graphTraceRef.current = next;
+    if (t.pinId && g.plot) {
+      setGraphPlot(g.id, { ...cleanPlot(g.plot), pins: cleanPlot(g.plot).pins.map((p) => (p.id === t.pinId ? { ...p, tangent: next.tangent } : p)) });
+    } else {
+      fullRedraw();
+      queueGraphBroadcast();
+    }
+  }
+
+  function handleGraphUnpin() {
+    const t = graphTraceRef.current;
+    const g = t ? graphById(t.graphId) : null;
+    if (!g || !g.plot) return;
+    graphTraceRef.current = null;
+    setGraphPlot(g.id, { ...cleanPlot(g.plot), pins: cleanPlot(g.plot).pins.filter((p) => p.id !== t.pinId) });
+  }
+
+  function handleGraphCloseReadout() {
+    if (graphTraceRef.current) setGraphTrace(null);
   }
 
   async function saveSimEmbeds() {
@@ -1500,7 +1726,7 @@ export default function Whiteboard({
     selectionRef.current = sel;
     selectionBoundsCacheRef.current = null;
     setSelectionState(sel);
-    const singleText = sel.texts.length === 1 && sel.strokes.length === 0 && sel.images.length === 0;
+    const singleText = sel.texts.length === 1 && sel.strokes.length === 0 && sel.images.length === 0 && !(sel.graphs || []).length;
     setSelectedTextId(singleText ? sel.texts[0] : null);
     repositionSelectionOverlay();
   }
@@ -1566,6 +1792,8 @@ export default function Whiteboard({
     if (d.strokes.length) setStrokes((prev) => mergeById(prev, d.strokes));
     if (d.texts.length) setTexts((prev) => mergeById(prev, d.texts));
     if (d.images.length) setImages((prev) => mergeById(prev, d.images));
+    // graphs are saved and sent with the board's graph setting
+    if (!remote && data.graphs && data.graphs.length) commitGraphs(mergeById(graphsRef.current, data.graphs));
     if (!remote) {
       broadcastAdd(d);
       persistAdd(d);
@@ -1577,6 +1805,8 @@ export default function Whiteboard({
     if (s.size) setStrokes((prev) => prev.filter((x) => !s.has(x.id)));
     if (t.size) setTexts((prev) => prev.filter((x) => !t.has(x.id)));
     if (i.size) setImages((prev) => prev.filter((x) => !i.has(x.id)));
+    const g = new Set(sel.graphs || []);
+    if (!remote && g.size) commitGraphs(graphsRef.current.filter((x) => !g.has(x.id)));
     if (!remote) {
       channelRef.current?.send({ type: "broadcast", event: "objects-remove", payload: { strokes: [...s], texts: [...t], images: [...i] } });
       persistRemove({ strokes: [...s], texts: [...t], images: [...i] });
@@ -1589,6 +1819,8 @@ export default function Whiteboard({
     if (s.size) setStrokes((prev) => prev.map((x) => (s.has(x.id) ? translateStroke(x, dx, dy) : x)));
     if (t.size) setTexts((prev) => prev.map((x) => (t.has(x.id) ? translateText(x, dx, dy) : x)));
     if (i.size) setImages((prev) => prev.map((x) => (i.has(x.id) ? translateImage(x, dx, dy) : x)));
+    const g = new Set(sel.graphs || []);
+    if (!remote && g.size) commitGraphs(graphsRef.current.map((x) => (g.has(x.id) ? translateGraph(x, dx, dy) : x)));
     if (!remote) {
       channelRef.current?.send({ type: "broadcast", event: "objects-move", payload: { strokes: [...s], texts: [...t], images: [...i], dx, dy } });
       // Save the moved copies (computed from the current refs, which don't
@@ -1608,6 +1840,37 @@ export default function Whiteboard({
     setMyUndoAvailable(true);
     setMyRedoAvailable(false);
   }
+
+  // A graph's settings changed by the teacher: can be undone.
+  // Only the settings that changed are kept for undo, so undoing (say) a
+  // resize doesn't also undo a slider moved or a point pinned since.
+  function editGraph(id, after) {
+    const before = graphById(id);
+    if (!before) return;
+    const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+      (k) => k !== "id" && JSON.stringify(before[k]) !== JSON.stringify(after[k])
+    );
+    if (!keys.length) return;
+    const pick = (g) => {
+      const o = {};
+      for (const k of keys) if (k in g) o[k] = g[k];
+      return o;
+    };
+    replaceGraph(id, after);
+    pushUndo({ op: "graph-edit", id, keys, before: pick(before), after: pick(after), whole: before });
+  }
+
+  // Undo / redo of a graph-edit: those settings put on the graph as it is
+  // now (or, if it was deleted meanwhile, as it was).
+  function applyGraphFields(entry, fields) {
+    const next = { ...(graphById(entry.id) || entry.whole) };
+    for (const k of entry.keys) {
+      if (k in fields) next[k] = fields[k];
+      else delete next[k];
+    }
+    replaceGraph(entry.id, next);
+  }
+
 
   // ---------- selection actions ----------
 
@@ -1641,6 +1904,12 @@ export default function Whiteboard({
   }
 
   function addAsNewSelection(data) {
+    const room = Math.max(0, MAX_GRAPHS - graphsRef.current.length);
+    if (data.graphs && data.graphs.length > room) {
+      flashNotice(`A board can have up to ${MAX_GRAPHS} graphs.`);
+      data = { ...data, graphs: data.graphs.slice(0, room) };
+      if (selectionCount(selectionFromData(data)) === 0) return;
+    }
     applyAdd(data);
     const sel = selectionFromData(data);
     pushUndo({ op: "add", sel });
@@ -1670,7 +1939,7 @@ export default function Whiteboard({
 
   function pasteInternal(clip) {
     // A student's class board takes no pictures (see `student` above).
-    const data = { strokes: clip.strokes || [], texts: clip.texts || [], images: student ? [] : clip.images || [] };
+    const data = { strokes: clip.strokes || [], texts: clip.texts || [], images: student ? [] : clip.images || [], graphs: clip.graphs || [] };
     const bounds = clip.bounds || boundsOfData(data);
     if (!bounds) return false;
     const center = { x: (bounds.minX + bounds.maxX) / 2, y: (bounds.minY + bounds.maxY) / 2 };
@@ -1802,6 +2071,7 @@ export default function Whiteboard({
       strokes: strokesRef.current.map((s) => s.id),
       texts: textsRef.current.map((t) => t.id),
       images: imagesRef.current.map((i) => i.id),
+      graphs: graphsRef.current.map((g) => g.id),
     };
     toolRef.current = "select";
     setPanToolActive(false);
@@ -1850,7 +2120,7 @@ export default function Whiteboard({
       strokes: strokesRef.current,
       texts: textsRef.current,
       images: imagesRef.current,
-      grid: gridConfigRef.current,
+      grid: packedGraphs(),
       background: backgroundRef.current,
     });
     if (url === lastThumbRef.current) return;
@@ -1875,7 +2145,8 @@ export default function Whiteboard({
     setSaveStatus("Saving…");
     setSaveState("saving");
     saveThumbnail();
-    const gridOk = await saveGrid();
+    // (straight away, with the answer: not queued behind other saves)
+    const gridOk = await writeGrid();
     // Anything that failed to save earlier (dropped Wi-Fi) gets another go
     // now, so "Saved" is only shown when everything really is.
     await retryUnsaved(sync);
@@ -1902,6 +2173,7 @@ export default function Whiteboard({
       onDemoClassStart?.();
       return;
     }
+    track("live_class_started");
     router.push(`/board/${boardId}/live`);
   }
 
@@ -1913,6 +2185,7 @@ export default function Whiteboard({
       await liveClassChannelRef.current.send({ type: "broadcast", event: "class-ended", payload: {} });
     }
 
+    if (!demo) track("live_class_ended", { students: classRoster.length });
     forgetClass(liveClassCode);
     clearClassCode(boardId);
     setLiveClassCode(null);
@@ -1970,7 +2243,7 @@ export default function Whiteboard({
 
   function handleSendQuestion() {
     const question = questionFromBoard({
-      strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, grid: gridConfigRef.current,
+      strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, grid: packedGraphs(),
     });
     if (!question) {
       setClassDialog(null);
@@ -2030,7 +2303,6 @@ export default function Whiteboard({
         const { width, height } = getPaneSize();
         setRulerPos({ x: width / 2, y: height / 2 });
         setCompassActive(false);
-        setGridToolActive(false);
         setPanToolActive(false);
       }
       return next;
@@ -2046,49 +2318,40 @@ export default function Whiteboard({
         setCompassRadius(100);
         setCompassAngle(-Math.PI / 2);
         setRulerActive(false);
-        setGridToolActive(false);
         setPanToolActive(false);
       }
       return next;
     });
   }
 
-  function handleToggleGrid() {
-    setGridToolActive((prev) => {
-      const next = !prev;
-      if (next) {
-        toolBeforeGridRef.current = tool;
-        setRulerActive(false);
-        setCompassActive(false);
-        setPanToolActive(false);
-      }
+  // Leaving the Select tool puts away any read-off (for the class too).
+  function putAwayReadout() {
+    if (graphTraceRef.current) {
+      graphTraceRef.current = null;
+      queueGraphBroadcast();
       fullRedraw();
-      return next;
-    });
+    }
   }
 
   function handleTogglePan() {
-    setPanToolActive((prev) => {
-      const next = !prev;
-      if (next) {
-        toolBeforePanRef.current = tool;
-        setRulerActive(false);
-        setCompassActive(false);
-        setGridToolActive(false);
-      }
-      return next;
-    });
+    const next = !panToolActive;
+    if (next) {
+      toolBeforePanRef.current = tool;
+      setRulerActive(false);
+      setCompassActive(false);
+      putAwayReadout();
+    }
+    setPanToolActive(next);
   }
 
-  // Toolbar: picking a drawing/select/text tool always leaves Move mode
-  // and graph-placement mode, so the tool you tapped is the one you get.
+  // Toolbar: picking a drawing/select/text tool always leaves Move mode,
+  // so the tool you tapped is the one you get.
   function handleSelectTool(name) {
     setPanToolActive(false);
-    if (gridToolActive) {
-      setGridToolActive(false);
-      fullRedraw();
+    if (name !== "select") {
+      setSelection(emptySelection());
+      putAwayReadout();
     }
-    if (name !== "select") setSelection(emptySelection());
     setTool(name);
   }
 
@@ -2096,22 +2359,39 @@ export default function Whiteboard({
     if (!panToolActive) handleTogglePan();
   }
 
-  // Maths ▸ Graph: open the graph dialog and switch on placement mode so
-  // the graph can be dragged/resized afterwards (same flow as the old grid
-  // button). "Done placing graph" in the context bar switches it back off.
+  // Maths ▸ Graph: the dialog for a new graph. (A graph on the board is
+  // changed by double-tapping it, or Edit when it's selected.)
   function handleOpenGraph() {
-    if (!gridToolActive) handleToggleGrid();
-    handleOpenGridModal();
+    editingGraphIdRef.current = null;
+    setGridModalInitialConfig(null);
+    setGridModalZoomScale(scaleRef.current);
+    setGridModalOpen(true);
   }
 
-  function handleFinishGraphMove() {
-    if (!gridToolActive) return;
-    handleToggleGrid();
-    setTool(toolBeforeGridRef.current || "pen");
+  function handleEditGraph(id) {
+    const g = graphById(id);
+    if (!g) return;
+    editingGraphIdRef.current = id;
+    setGridModalInitialConfig(g);
+    setGridModalZoomScale(scaleRef.current);
+    setGridModalOpen(true);
   }
 
-  function getHasGrid() {
-    return !!gridConfigRef.current;
+  // The graph selected on its own, if one is (for Maths ▸ Edit graph).
+  // The graph "Edit graph" changes: the one selected, or else the only one
+  // on the board.
+  function getSelectedGraphId() {
+    const sel = selectionRef.current;
+    if (toolRef.current === "select" && selectionCount(sel) === 1 && (sel.graphs || []).length) {
+      return graphById(sel.graphs[0]) ? sel.graphs[0] : null;
+    }
+    if (graphsRef.current.length === 1) return graphsRef.current[0].id;
+    return null;
+  }
+
+  function handleEditSelectedGraph() {
+    const id = getSelectedGraphId();
+    if (id) handleEditGraph(id);
   }
 
   function handleToggleCalculator() {
@@ -2130,96 +2410,92 @@ export default function Whiteboard({
     setCalculatorActive((prev) => !prev);
   }
 
-  function handleRemoveGrid() {
-    if (!gridConfigRef.current) return;
-    gridConfigRef.current = null;
-    setGridCellSizeCm(10);
-    fullRedraw();
-    channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: null } });
-    saveGrid();
-  }
-
-  function handleSetGridCellSize(cm) {
-    if (!cm || cm <= 0) return;
-    const isNewGrid = !gridConfigRef.current;
-    const cols = gridConfigRef.current?.cols || 10;
-    const newSize = cm * WORLD_UNITS_PER_CM * cols;
-
-    let updated;
-    if (gridConfigRef.current) {
-      updated = { ...gridConfigRef.current, size: newSize };
-    } else {
-      const { width, height } = getPaneSize();
-      const centerWorld = screenToWorld({ x: width / 2, y: height / 2 });
-      updated = { x: centerWorld.x - newSize / 2, y: centerWorld.y - newSize / 2, size: newSize, cols };
-    }
-
-    gridConfigRef.current = updated;
-    setGridCellSizeCm(cm);
-    fullRedraw();
-    channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: updated } });
-    saveGrid();
-
-    if (isNewGrid) {
-      setGridToolActive(false);
-      setTool(toolBeforeGridRef.current || "pen");
-    }
-  }
-
-  function handleOpenGridModal() {
-    setGridModalInitialConfig(gridConfigRef.current);
-    setGridModalZoomScale(scaleRef.current);
-    setGridModalOpen(true);
-  }
-
   function handleCloseGridModal() {
     setGridModalOpen(false);
   }
 
-  // Applies the "ultimate grid tool" dialog's configuration. The dialog's
-  // `cellSizePx` field (a target ON-SCREEN size, not a physical unit) is
-  // the one source of truth for the grid's scale, converted to world units
-  // through the CURRENT zoom level (scaleRef.current) — that's what makes
-  // "more columns/rows/rings" REPEAT the same-size cell outward (stretching
-  // the grid, like resizing an image while keeping its resolution) instead
-  // of squeezing a fixed-size box into finer slices (which is what used to
-  // make cells shrink to invisibility whenever the division count went
-  // up), while ALSO keeping the grid's total footprint reasonable relative
-  // to whatever you're currently looking at — since the cell size is tied
-  // to zoom rather than a fixed real-world measurement, adding a lot more
-  // sections can't balloon the grid into something "massive" that no
-  // longer fits your view. An existing grid keeps its current top-left
-  // corner as the anchor it grows/shrinks from (matching the on-canvas
-  // corner-drag gesture); a brand new grid is centered in the current view.
-  function handleApplyGridConfig(config) {
+  // Applies the graph dialog. The dialog's `cellSizePx` (a size ON SCREEN
+  // at the zoom you're looking at, not a physical unit) sets the size of a
+  // square, so more squares repeat the same-size square outward rather
+  // than squeezing a fixed box. A graph being changed keeps its top left
+  // corner; a new one goes in the middle of the view, or beside the graph
+  // already there, and is selected (like anything else you add).
+  function handleApplyGridConfig(config, extra) {
     const cols = config.cols || 10;
     const rows = config.type === "polar" ? cols : config.rows || cols;
     const cellScreenPx = Math.max(4, config.cellSizePx || 48);
-    const cellWorldSize = cellScreenPx / scaleRef.current;
+    const editing = editingGraphIdRef.current ? graphById(editingGraphIdRef.current) : null;
+    // (a square left at the size the dialog showed keeps its exact size:
+    // the dialog rounds it to whole pixels)
+    const editingCell = editing ? editing.size / editing.cols : 0;
+    const cellWorldSize = editing && Math.round(editingCell * scaleRef.current) === cellScreenPx ? editingCell : cellScreenPx / scaleRef.current;
     const newSize = cellWorldSize * cols;
+    const newHeight = cellWorldSize * rows;
 
     let updated;
-    if (gridConfigRef.current) {
-      updated = { ...gridConfigRef.current, ...config, cols, rows, size: newSize };
+    if (editing) {
+      updated = { ...editing, ...config, id: editing.id, x: editing.x, y: editing.y, cols, rows, size: newSize };
+      delete updated.more;
+      // (a chart or isometric paper has nothing plotted, and no snapping)
+      if (!("plot" in config)) delete updated.plot;
+      if (!("snap" in config)) delete updated.snap;
+      editGraph(editing.id, updated);
     } else {
-      const newHeight = cellWorldSize * rows;
-      const { width, height } = getPaneSize();
-      const centerWorld = screenToWorld({ x: width / 2, y: height / 2 });
-      updated = {
-        ...config,
-        cols,
-        rows,
-        x: centerWorld.x - newSize / 2,
-        y: centerWorld.y - newHeight / 2,
-        size: newSize,
-      };
+      const at = placeGraph(graphsRef.current, newSize, newHeight, viewportCenterWorld(), 24 / scaleRef.current);
+      updated = { ...config, id: newId(), cols, rows, x: at.x, y: at.y, size: newSize };
+      delete updated.more;
+      if (graphsRef.current.length >= MAX_GRAPHS) {
+        flashNotice(`A board can have up to ${MAX_GRAPHS} graphs.`);
+        setGridModalOpen(false);
+        return;
+      }
+      addAsNewSelection({ strokes: [], texts: [], images: [], graphs: [updated] });
+      // the new one may be partly off screen: bring it into view
+      if (!isWorldPointVisible({ x: at.x + newSize / 2, y: at.y + newHeight / 2 })) {
+        const { width, height } = getPaneSize();
+        const scale = scaleRef.current;
+        panRef.current = { x: width / 2 - (at.x + newSize / 2) * scale, y: height / 2 - (at.y + newHeight / 2) * scale };
+        fullRedraw();
+      }
     }
-    gridConfigRef.current = updated;
-    setGridCellSizeCm(cellWorldSize / WORLD_UNITS_PER_CM);
-    fullRedraw();
-    channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: updated } });
-    saveGrid();
+    editingGraphIdRef.current = updated.id;
     setGridModalOpen(false);
+    // "Put the table on the board": as ordinary writing beside the graph,
+    // selected so it can be dragged somewhere else straight away.
+    if (extra && extra.table) {
+      const rows = updated.type === "polar" ? updated.cols : updated.rows || updated.cols;
+      const scale = scaleRef.current;
+      const gridH = (updated.size / updated.cols) * rows;
+      const objects = tableObjects(updated, extra.table, { at: { x: 0, y: 0 }, zoom: scale, makeId: newId, env: browserTextEnv() });
+      if (objects) {
+        // Beside the graph if there's room on screen, otherwise underneath
+        // or above it, otherwise in the middle of the screen.
+        let tw = 0, th = 0;
+        for (const st of objects.strokes) for (const p of st.points) {
+          tw = Math.max(tw, p.x);
+          th = Math.max(th, p.y);
+        }
+        const gap = 28 / scale;
+        const spots = [
+          { x: updated.x + updated.size + gap, y: updated.y + gridH / 2 - th / 2 },
+          { x: updated.x, y: updated.y + gridH + gap },
+          { x: updated.x, y: updated.y - th - gap },
+          { x: updated.x - tw - gap, y: updated.y + gridH / 2 - th / 2 },
+        ];
+        const fits = (p) => isWorldPointVisible(p) && isWorldPointVisible({ x: p.x + tw, y: p.y + th });
+        let at = spots.find(fits);
+        if (!at) {
+          const c = viewportCenterWorld();
+          at = { x: c.x - tw / 2, y: c.y - th / 2 };
+        }
+        const placedTable = {
+          strokes: objects.strokes.map((st) => translateStroke(st, at.x, at.y)),
+          texts: objects.texts.map((t) => translateText(t, at.x, at.y)),
+          images: [],
+        };
+        addAsNewSelection(placedTable);
+      }
+    }
   }
 
   function scheduleSimBroadcast() {
@@ -2537,7 +2813,7 @@ export default function Whiteboard({
     if (!channel) return;
     const send = (event, payload) => channel.send({ type: "broadcast", event, payload });
     const settings = {
-      grid: gridConfigRef.current,
+      grid: packedGraphs(),
       background: backgroundRef.current,
       referenceDoc: referenceDocRef.current,
       referenceStrokes: referenceStrokesRef.current,
@@ -2672,11 +2948,13 @@ export default function Whiteboard({
     });
 
     channel.on("broadcast", { event: "grid-set" }, ({ payload }) => {
-      gridConfigRef.current = payload.grid;
-      if (payload.grid) {
-        setGridCellSizeCm(payload.grid.size / payload.grid.cols / WORLD_UNITS_PER_CM);
-      }
+      setGraphsFromServer(payload.grid);
       fullRedraw();
+      // (a selected graph deleted elsewhere is no longer selected)
+      const sel = selectionRef.current;
+      if (sel && (sel.graphs || []).some((id) => !graphById(id))) {
+        setSelection({ ...sel, graphs: sel.graphs.filter((id) => graphById(id)) });
+      }
     });
 
     channel.on("broadcast", { event: "objects-add" }, ({ payload }) => {
@@ -2903,6 +3181,14 @@ export default function Whiteboard({
       teacherLiveTimerRef.current = null;
       supabase.removeChannel(channel);
       channelRef.current = null;
+      // a slider moved a moment ago: save it now rather than lose it
+      if (graphBroadcastTimer.current) clearTimeout(graphBroadcastTimer.current);
+      graphBroadcastTimer.current = null;
+      if (graphSaveTimer.current) {
+        clearTimeout(graphSaveTimer.current);
+        graphSaveTimer.current = null;
+        saveGrid();
+      }
       // Half-drawn strokes from others would otherwise stay stuck on screen.
       remoteStrokes.current = {};
     };
@@ -3021,18 +3307,6 @@ export default function Whiteboard({
             points,
           },
         });
-      }, BROADCAST_THROTTLE_MS);
-    }
-
-    function scheduleGridBroadcast(grid) {
-      pendingGridUpdate.current = grid;
-      if (gridRafId.current) return;
-      gridRafId.current = setTimeout(() => {
-        gridRafId.current = null;
-        if (!pendingGridUpdate.current) return;
-        const g = pendingGridUpdate.current;
-        pendingGridUpdate.current = null;
-        channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: g } });
       }, BROADCAST_THROTTLE_MS);
     }
 
@@ -3267,64 +3541,48 @@ export default function Whiteboard({
       return points;
     }
 
-    function handleGridPointerDown(pos) {
-      const grid = gridConfigRef.current;
-
-      if (!grid) {
-        const worldPos = screenToWorld(pos);
-        const cols = 10;
-        // Same zoom-relative sizing as the dialog (see handleApplyGridConfig)
-        // so a grid placed directly with the armed tool looks just as
-        // reasonable at your current zoom as one placed via the dialog.
-        const defaultWorldSize = (48 / scaleRef.current) * cols;
-        const newGrid = {
-          x: worldPos.x - defaultWorldSize / 2,
-          y: worldPos.y - defaultWorldSize / 2,
-          size: defaultWorldSize,
-          cols,
-        };
-        gridConfigRef.current = newGrid;
+    // Pressing on a curve (or a pinned point) of a graph, with the Select
+    // tool: reading it off. True if that's what the press was.
+    function startGraphReadout(pos) {
+      const w = screenToWorld(pos);
+      const reach = 18 / scaleRef.current;
+      const list = graphsRef.current;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const grid = list[i];
+        if (!grid.plot) continue;
+        const geom = graphGeom(grid);
+        const pin = pinNear(grid, geom, w.x, w.y, reach);
+        const hit = pin ? null : curvePointNear(grid, geom, w.x, w.y, reach);
+        if (!pin && !hit) continue;
+        const prev = graphTraceRef.current;
+        const keepTangent = !!(prev && !prev.pinId && prev.tangent && prev.graphId === grid.id);
+        graphTraceRef.current = pin
+          ? { graphId: grid.id, fnId: pin.fnId, x: pin.x, tangent: !!pin.tangent, pinId: pin.id }
+          : { graphId: grid.id, fnId: hit.fnId, x: hit.x, tangent: keepTangent };
+        gridDragMode.current = "trace";
         fullRedraw();
-        scheduleGridBroadcast(newGrid);
-        setGridToolActive(false);
-        setTool(toolBeforeGridRef.current || "pen");
-        return;
+        queueGraphBroadcast();
+        return true;
       }
-
-      const rows = grid.type === "polar" ? grid.cols : grid.rows || grid.cols;
-      const height = (grid.size / grid.cols) * rows;
-      const topLeftScreen = worldToScreen({ x: grid.x, y: grid.y });
-      const bottomRightScreen = worldToScreen({ x: grid.x + grid.size, y: grid.y + height });
-      const nearCorner = distance(pos, bottomRightScreen) < 24;
-      const inBounds =
-        pos.x >= topLeftScreen.x - 10 && pos.x <= bottomRightScreen.x + 10 &&
-        pos.y >= topLeftScreen.y - 10 && pos.y <= bottomRightScreen.y + 10;
-
-      if (nearCorner) {
-        gridDragMode.current = "resize";
-        gridDragStart.current = { pos, orig: { ...grid } };
-      } else if (inBounds) {
-        gridDragMode.current = "move";
-        gridDragStart.current = { pos, orig: { ...grid } };
+      if (graphTraceRef.current) {
+        graphTraceRef.current = null;
+        fullRedraw();
+        queueGraphBroadcast();
       }
+      return false;
     }
 
+    // Sliding a read-off along its curve.
     function handleGridPointerMove(pos) {
-      const { pos: startPos, orig } = gridDragStart.current;
-      const dxWorld = (pos.x - startPos.x) / scaleRef.current;
-      const dyWorld = (pos.y - startPos.y) / scaleRef.current;
-
-      let updated;
-      if (gridDragMode.current === "move") {
-        updated = { ...orig, x: orig.x + dxWorld, y: orig.y + dyWorld };
-      } else {
-        const newSize = Math.max(40 / scaleRef.current, orig.size + Math.max(dxWorld, dyWorld));
-        updated = { ...orig, size: newSize };
-        setGridCellSizeCm(newSize / updated.cols / WORLD_UNITS_PER_CM);
-      }
-      gridConfigRef.current = updated;
+      const t = graphTraceRef.current;
+      const grid = t ? graphById(t.graphId) : null;
+      if (!grid || !t) return;
+      const w = screenToWorld(pos);
+      const next = traceAlong(grid, graphGeom(grid), t.fnId, w.x, 10 / scaleRef.current);
+      if (!next) return;
+      graphTraceRef.current = { ...t, x: next.x };
       fullRedraw();
-      scheduleGridBroadcast(updated);
+      queueGraphBroadcast();
     }
 
     function openTextEditor(worldPos) {
@@ -3391,6 +3649,41 @@ export default function Whiteboard({
       pushUndo({ op: "remove", data: { strokes: session.removed, texts: [], images: [] } });
     }
 
+    // ---------- snapping to a graph's grid ----------
+    // On a graph with snapping turned on, a ruler line's ends and a short
+    // pen mark (a dot, or one line of a small ×) land exactly on the
+    // nearest grid crossing — when they're already close to one, so
+    // ordinary writing on the graph is left alone. Returns the stroke as it
+    // should be kept (the same one if nothing moved).
+    function snapStroke(stroke) {
+      if (!stroke || stroke.tool !== "pen" || !stroke.points || stroke.points.length < 2) return stroke;
+      const scale = scaleRef.current;
+      const graphs = graphsRef.current.filter((g) => g.snap && g.type !== "chart" && g.type !== "polar");
+      if (!graphs.length) return stroke;
+      const nearestCrossing = (p, reachPx) => {
+        const g = graphAt(graphs, p);
+        if (!g) return null;
+        const frame = gridFrame(g, graphGeom(g));
+        const c = snapPoint(g, frame, p);
+        if (!c) return null;
+        const reach = Math.min(0.45 * snapSpacing(g, frame), reachPx / scale);
+        return Math.hypot(c.x - p.x, c.y - p.y) <= reach ? c : null;
+      };
+      const pts = stroke.points;
+      if (pts.length === 2) {
+        // a straight line (the ruler, or Shift): each end on its own
+        const a = nearestCrossing(pts[0], 24), b = nearestCrossing(pts[1], 24);
+        if (!a && !b) return stroke;
+        return { ...stroke, points: [a ? { ...pts[0], x: a.x, y: a.y } : pts[0], b ? { ...pts[1], x: b.x, y: b.y } : pts[1]] };
+      }
+      const box = strokeBounds(stroke);
+      if (!box || Math.max(box.maxX - box.minX, box.maxY - box.minY) > 30 / scale) return stroke;
+      const centre = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+      const c = nearestCrossing(centre, 20);
+      if (!c) return stroke;
+      return translateStroke(stroke, c.x - centre.x, c.y - centre.y);
+    }
+
     // ---------- scribble to erase ----------
     function tryScratchOut(stroke) {
       if (stroke.tool !== "pen" || !getScribbleErase()) return false;
@@ -3426,6 +3719,7 @@ export default function Whiteboard({
           strokes: new Map(data.strokes.map((o) => [o.id, o])),
           texts: new Map(data.texts.map((o) => [o.id, o])),
           images: new Map(data.images.map((o) => [o.id, o])),
+          graphs: new Map(data.graphs.map((o) => [o.id, o])),
         },
         origBounds: boundsOfData(data),
       };
@@ -3442,6 +3736,11 @@ export default function Whiteboard({
       if (g.orig.strokes.size) strokesRef.current = map(strokesRef.current, g.orig.strokes, translateStroke);
       if (g.orig.texts.size) textsRef.current = map(textsRef.current, g.orig.texts, translateText);
       if (g.orig.images.size) imagesRef.current = map(imagesRef.current, g.orig.images, translateImage);
+      if (g.orig.graphs.size) {
+        graphsRef.current = map(graphsRef.current, g.orig.graphs, translateGraph);
+        // students watching see a graph move as it's dragged
+        queueGraphBroadcast();
+      }
       fullRedraw();
     }
 
@@ -3454,6 +3753,12 @@ export default function Whiteboard({
         const { orig } = imageResizeRef.current;
         imagesRef.current = imagesRef.current.map((i) => (i.id === orig.id ? orig : i));
         imageResizeRef.current = null;
+      }
+      if (graphResizeRef.current) {
+        const { orig } = graphResizeRef.current;
+        graphsRef.current = graphsRef.current.map((x) => (x.id === orig.id ? orig : x));
+        graphResizeRef.current = null;
+        queueGraphBroadcast();
       }
       marqueeRef.current = null;
       fullRedraw();
@@ -3498,12 +3803,6 @@ export default function Whiteboard({
         panDragActive.current = true;
         panDragStart.current = { pos, origPan: { ...panRef.current } };
         canvas.setPointerCapture(e.pointerId);
-        return;
-      }
-
-      if (gridToolActiveRef.current) {
-        canvas.setPointerCapture(e.pointerId);
-        handleGridPointerDown(pos);
         return;
       }
 
@@ -3567,6 +3866,20 @@ export default function Whiteboard({
           }
         }
 
+        // A single selected graph: its corner handle resizes it.
+        if (count === 1 && (sel.graphs || []).length === 1) {
+          const gr = graphById(sel.graphs[0]);
+          if (gr) {
+            const b = graphBox(gr);
+            if (distance(pos, worldToScreen({ x: b.maxX, y: b.maxY })) < 24) {
+              graphResizeRef.current = { id: gr.id, startPos: pos, orig: { ...gr } };
+              canvas.setPointerCapture(e.pointerId);
+              repositionSelectionOverlay();
+              return;
+            }
+          }
+        }
+
         const hit = hitTestText(worldPos);
 
         const now = Date.now();
@@ -3583,15 +3896,49 @@ export default function Whiteboard({
           return;
         }
 
-        // Pressing inside the current (multi-)selection drags all of it.
-        const singleText = count === 1 && sel.texts.length === 1;
+        // A second tap on a graph that was just tapped: its settings.
+        const lastGraphTap = lastGraphTapRef.current;
+        lastGraphTapRef.current = null;
+        if (!hit && lastGraphTap && now - lastGraphTap.time < 450) {
+          const tapped = graphAt(graphsRef.current, worldPos);
+          if (tapped && tapped.id === lastGraphTap.id) {
+            setSelection({ strokes: [], texts: [], images: [], graphs: [tapped.id] });
+            handleEditGraph(tapped.id);
+            return;
+          }
+        }
+
+        // Pressing inside the current (multi-)selection drags all of it
+        // (a graph selected on its own: unless the press is on one of its
+        // curves, which reads it off).
+        const singleText = count === 1 && sel.texts.length === 1 && !(sel.graphs || []).length;
+        const onlyGraph = count === 1 && (sel.graphs || []).length === 1;
+        let inSelection = false;
         if (count > 0 && !singleText) {
           const b = getSelectionBounds();
           const pad = 8 / scaleRef.current;
-          if (b && worldPos.x >= b.minX - pad && worldPos.x <= b.maxX + pad && worldPos.y >= b.minY - pad && worldPos.y <= b.maxY + pad) {
-            startGroupMove(pos, e.pointerId);
-            return;
-          }
+          inSelection = !!b && worldPos.x >= b.minX - pad && worldPos.x <= b.maxX + pad && worldPos.y >= b.minY - pad && worldPos.y <= b.maxY + pad;
+        }
+        if (inSelection && !onlyGraph) {
+          startGroupMove(pos, e.pointerId);
+          return;
+        }
+
+        // Writing, lines and pictures come before a graph under them.
+        const hitStroke = hit ? null : hitTestStrokes(strokesRef.current, worldPos, 10 / scaleRef.current);
+        const hitImage = hit || hitStroke ? null : hitTestImages(imagesRef.current, worldPos);
+
+        // Pressing on a graph's curve reads it off.
+        if (!hit && !hitStroke && !hitImage && startGraphReadout(pos)) {
+          try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+          return;
+        }
+
+        if (inSelection) {
+          // (a tap on a graph that's selected on its own counts towards a double-tap)
+          lastGraphTapRef.current = { id: sel.graphs[0], time: now };
+          startGroupMove(pos, e.pointerId);
+          return;
         }
 
         if (hit) {
@@ -3600,14 +3947,21 @@ export default function Whiteboard({
           return;
         }
 
-        const hitStroke = hitTestStrokes(strokesRef.current, worldPos, 10 / scaleRef.current);
-        const hitImage = hitStroke ? null : hitTestImages(imagesRef.current, worldPos);
         if (hitStroke || hitImage) {
           setSelection({
             strokes: hitStroke ? [hitStroke.id] : [],
             texts: [],
             images: hitImage ? [hitImage.id] : [],
           });
+          startGroupMove(pos, e.pointerId);
+          return;
+        }
+
+        // A graph: selected, to move, resize, copy or delete like anything else.
+        const hitGraph = graphAt(graphsRef.current, worldPos);
+        if (hitGraph) {
+          setSelection({ strokes: [], texts: [], images: [], graphs: [hitGraph.id] });
+          lastGraphTapRef.current = { id: hitGraph.id, time: now };
           startGroupMove(pos, e.pointerId);
           return;
         }
@@ -3786,6 +4140,24 @@ export default function Whiteboard({
         return;
       }
 
+      if (graphResizeRef.current) {
+        const pos = getPos(e);
+        const r = graphResizeRef.current;
+        const dx = (pos.x - r.startPos.x) / scaleRef.current;
+        const dy = (pos.y - r.startPos.y) / scaleRef.current;
+        const b = graphBox(r.orig);
+        const w = b.maxX - b.minX, h = b.maxY - b.minY;
+        // follow whichever way was dragged further, keeping the shape
+        const grow = Math.abs(dx) >= Math.abs(dy) ? dx : (dy * w) / h;
+        const size = Math.max(60 / scaleRef.current, r.orig.size + grow);
+        r.last = { ...r.orig, size };
+        graphsRef.current = graphsRef.current.map((x) => (x.id === r.orig.id ? r.last : x));
+        selectionBoundsCacheRef.current = null;
+        fullRedraw();
+        queueGraphBroadcast();
+        return;
+      }
+
       if (marqueeRef.current) {
         marqueeRef.current.current = screenToWorld(getPos(e));
         repositionSelectionOverlay();
@@ -3951,9 +4323,13 @@ export default function Whiteboard({
 
       if (gridDragMode.current) {
         gridDragMode.current = null;
-        gridDragStart.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        saveGrid();
+        // a pinned point that was slid along its curve stays where it was left
+        const t = graphTraceRef.current;
+        const grid = t ? graphById(t.graphId) : null;
+        if (t && t.pinId && grid && grid.plot) {
+          setGraphPlot(grid.id, { ...cleanPlot(grid.plot), pins: cleanPlot(grid.plot).pins.map((p) => (p.id === t.pinId ? { ...p, x: t.x } : p)) });
+        }
         return;
       }
 
@@ -3988,6 +4364,18 @@ export default function Whiteboard({
         return;
       }
 
+      if (graphResizeRef.current) {
+        const r = graphResizeRef.current;
+        graphResizeRef.current = null;
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        // back to how it was, then the change made once (and undoable)
+        graphsRef.current = graphsRef.current.map((x) => (x.id === r.orig.id ? r.orig : x));
+        if (r.last && r.last.size !== r.orig.size) editGraph(r.orig.id, r.last);
+        else fullRedraw();
+        repositionSelectionOverlay();
+        return;
+      }
+
       if (marqueeRef.current) {
         const m = marqueeRef.current;
         marqueeRef.current = null;
@@ -3999,6 +4387,8 @@ export default function Whiteboard({
             strokes: strokesRef.current,
             texts: textsRef.current,
             images: imagesRef.current,
+            graphs: graphsRef.current,
+            graphBox,
           }, textHeightOf));
         } else {
           repositionSelectionOverlay();
@@ -4059,10 +4449,19 @@ export default function Whiteboard({
       activeCompassParams.current = null;
       touchDrivenStrokeActive.current = false;
 
-      const finished = currentStroke.current;
+      let finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
       currentStroke.current = null;
       currentStrokeId.current = null;
+
+      // a point or ruler line that snaps to a graph's grid goes out (and is
+      // kept) where it snapped to
+      const snapped = snapStroke(finished);
+      if (snapped !== finished) {
+        finished = snapped;
+        pendingShapeUpdate.current = snapped.points;
+        fullRedraw();
+      }
 
       finalizeStroke(strokeId);
 
@@ -4114,6 +4513,9 @@ export default function Whiteboard({
     } else if (entry.op === "move") {
       applyMove(entry.sel, -entry.dx, -entry.dy);
       myRedoStack.current.push(entry);
+    } else if (entry.op === "graph-edit") {
+      applyGraphFields(entry, entry.before);
+      myRedoStack.current.push(entry);
     }
     return true;
   }
@@ -4128,6 +4530,9 @@ export default function Whiteboard({
       myStrokeStack.current.push({ op: "remove", data });
     } else if (entry.op === "move") {
       applyMove(entry.sel, entry.dx, entry.dy);
+      myStrokeStack.current.push(entry);
+    } else if (entry.op === "graph-edit") {
+      applyGraphFields(entry, entry.after);
       myStrokeStack.current.push(entry);
     }
   }
@@ -4305,7 +4710,7 @@ export default function Whiteboard({
   // and straight away when leaving the page.
   useEffect(() => {
     scheduleThumbnail();
-  }, [strokes, texts, images, boardBackground]);
+  }, [strokes, texts, images, boardBackground, graphsVersion]);
 
   useEffect(() => {
     function flush() {
@@ -4463,7 +4868,7 @@ export default function Whiteboard({
     (demo
       ? liveClassCode
         ? "Demo class · pretend students"
-        : "Demo board · nothing here is saved"
+        : "Demo board · sign in to keep it"
       : liveClassCode
         ? "Live class running"
         : "Saves automatically");
@@ -4494,7 +4899,7 @@ export default function Whiteboard({
         onToggleRuler={handleToggleRuler}
         compassActive={compassActive}
         onToggleCompass={handleToggleCompass}
-        getHasGrid={getHasGrid}
+        getSelectedGraphId={getSelectedGraphId}
         background={boardBackground}
         onSetBackground={handleSetBackground}
         onInsertImage={student ? undefined : handleInsertImageClick}
@@ -4505,10 +4910,9 @@ export default function Whiteboard({
         onPaste={handlePasteButton}
         onSelectAll={selectAll}
         hasSelection={selectionCount(selection) > 0}
-        gridToolActive={gridToolActive}
+        graphSelected={selectionCount(selection) === 1 && (selection.graphs || []).length === 1}
         onOpenGraph={handleOpenGraph}
-        onFinishGraphMove={handleFinishGraphMove}
-        onRemoveGrid={handleRemoveGrid}
+        onEditGraph={handleEditSelectedGraph}
         calculatorActive={calculatorActive}
         onToggleCalculator={handleToggleCalculator}
         canInsertReference={isOwner && canUseReferencePane}
@@ -4826,6 +5230,15 @@ export default function Whiteboard({
           <span className={chrome.selectionHandle} />
         </div>
         <div ref={selectionBarElRef} role="toolbar" aria-label="Selected items" className={chrome.selectionBar}>
+          {selectionCount(selection) === 1 && (selection.graphs || []).length === 1 && (
+            <>
+              <PalmSafeButton className={chrome.selBtn} onPress={handleEditSelectedGraph}>
+                <PenLine size={17} strokeWidth={1.9} />
+                Edit
+              </PalmSafeButton>
+              <span className={chrome.selDivider} />
+            </>
+          )}
           <PalmSafeButton className={chrome.selBtn} onPress={() => copySelection()}>
             <Copy size={17} strokeWidth={1.9} />
             Copy
@@ -4930,6 +5343,16 @@ export default function Whiteboard({
             }}
           />
         ))}
+        <GraphSliderPanels store={graphStore} panelRefs={graphPanelRefs} onParam={handleGraphParam} onPlace={repositionGraphBits} />
+        <GraphReadoutBar
+          store={graphStore}
+          barRef={graphBarRef}
+          onPin={handleGraphPin}
+          onTangent={handleGraphTangent}
+          onRemovePin={handleGraphUnpin}
+          onClose={handleGraphCloseReadout}
+          onPlace={repositionGraphBits}
+        />
         {simModalOpen && <SimEmbedModal onAdd={handleAddSimEmbed} onClose={handleCloseSimModal} />}
         {classDialog === "send" && liveClassCode && (
           <SendBoardDialog

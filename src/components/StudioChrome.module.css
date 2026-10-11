@@ -261,6 +261,12 @@
   display: none;
 }
 
+/* more tools off to the right (narrow screens): fade the edge */
+.toolRowMore {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 44px), transparent);
+}
+
 .toolBtn {
   width: 62px;
   height: 62px;

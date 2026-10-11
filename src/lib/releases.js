@@ -33,6 +33,111 @@
 
 export const RELEASES = [
   {
+    id: "2026-10-graph-boards",
+    date: "2026-10-10",
+    title: "Graphs and charts",
+    headline: "Several graphs on a board, and statistics charts",
+    intro:
+      "Put a graph beside each question: it moves, resizes, copies and undoes like anything else. Graph now draws bar charts, histograms, scatter graphs and box plots too.",
+    slides: [
+      {
+        src: "/whats-new/graph-boards/two.png",
+        alt: "A board with two graphs side by side. Question 1 is y = x² − 3 with its roots and turning point marked. Question 2 is a selected scatter of points with a line of best fit, with Edit, Copy, Cut, Duplicate and Delete buttons under it.",
+        caption: "A graph for each question, selected and moved like anything else",
+      },
+      {
+        src: "/whats-new/graph-boards/dialog.png",
+        alt: "The new graph window: a row of presets along the top (−10 to 10, First quadrant, Trig −2π to 2π, Number line, Save as a preset), a large preview of y = sin(x) from −2π to 2π, and the settings split into Axes, Plot and Style tabs.",
+        caption: "One-tap presets, a bigger preview, and settings in Axes, Plot and Style",
+      },
+      {
+        src: "/whats-new/graph-boards/charts.png",
+        alt: "Two charts side by side: a histogram of journey times with unequal class widths drawn as frequency density, and a bar chart of favourite colours.",
+        caption: "Histograms (frequency density when the widths differ) and bar charts",
+      },
+      {
+        src: "/whats-new/graph-boards/stats.png",
+        alt: "A scatter graph of plant growth against hours with a dashed line of best fit and r = 0.999, beside two box plots comparing the test scores of Class A and Class B with their five-number summaries.",
+        caption: "Scatter graphs with a line of best fit, and box plots to compare",
+      },
+    ],
+    points: [
+      "Maths, then Graph, adds another graph. Double-tap one to change it.",
+      "Save your own presets, and turn on snapping in Style so ruler lines and dots land on the grid.",
+      "Type or paste a chart's data, and the axes fit themselves.",
+    ],
+  },
+  {
+    id: "2026-10-graph-paper",
+    date: "2026-10-09",
+    title: "Graph paper",
+    headline: "Set up graphs the way you draw them",
+    intro:
+      "The graph's Axes and paper tab is new. Give each axis its own range and scale, put the origin where you want it, and add axis names, arrows and a title.",
+    slides: [
+      {
+        src: "/whats-new/graph-paper/ranges.png",
+        alt: "A first-quadrant graph titled A journey, with Time (s) along the bottom from 0 to 10 and Distance (m) up the side from 0 to 50 in 5s, faint small squares between the main lines, arrows on the axes, and a curve plotted on it.",
+        caption: "A range and a scale for each axis, names, arrows and a title",
+      },
+      {
+        src: "/whats-new/graph-paper/trig.png",
+        alt: "A graph of y = sin x with the x-axis numbered in multiples of π from −2π to 2π and the y-axis in ordinary numbers from −1.5 to 1.5, with its roots and turning points marked.",
+        caption: "π or degrees along x, ordinary numbers up y",
+      },
+      {
+        src: "/whats-new/graph-paper/numberline.png",
+        alt: "A number line from −10 to 10 with three things marked on it: x > 2 as a red bar with an open circle at 2 and an arrow to the right, −4 ≤ x < 3 as a blue bar with a filled circle at −4 and an open circle at 3, and a green dot at −7.",
+        caption: "Number lines, with points and inequalities marked on them",
+      },
+      {
+        src: "/whats-new/graph-paper/unitcircle.png",
+        alt: "A unit circle with the standard angles marked round it, from 0 to 11π/6, each with its exact (cos, sin) written beside it, such as (√3/2, 1/2).",
+        caption: "A unit circle with every standard angle and its exact values",
+      },
+    ],
+    points: [
+      "One tap for four quadrants, the first quadrant, the top half or a unit circle.",
+      "Also dotted, isometric and log paper (equations plot on log paper too).",
+      "Faint small squares, and numbers spaced so they don't crowd.",
+    ],
+  },
+  {
+    id: "2026-10-graph-plot",
+    date: "2026-10-09",
+    title: "Plotting on graphs",
+    headline: "Plot equations on the Graph tool",
+    intro:
+      "Open a graph and choose the new Plot tab. Type an equation such as y = x² − 3 with the same maths keys as the calculator, and it's drawn on the board straight away.",
+    slides: [
+      {
+        src: "/whats-new/graph-plot/dialog.png",
+        alt: "The graph dialog on its Plot tab. Two equations, y = x² − 3 in red and y = 2x + 1 in blue, are typed in maths boxes above a pad of maths keys. The picture beside them shows both curves with their roots, the turning point and where they cross marked with coordinates.",
+        caption: "Type equations, and mark roots, turning points and where curves cross",
+      },
+      {
+        src: "/whats-new/graph-plot/sliders.png",
+        alt: "A graph on the board of y = a sin(bx + c) in purple, with y = sin x in grey for comparison. A Sliders panel beside the graph has sliders for a, b and c.",
+        caption: "Letters like a, b and c get sliders on the board, to drag in the lesson",
+      },
+      {
+        src: "/whats-new/graph-plot/readoff.png",
+        alt: "A parabola on the board. A point on it is being read off: dotted lines run to both axes, a bar above it reads (1.5, −0.75) with Tangent and Pin buttons, and the tangent is drawn with gradient = 3. Another point, (−2, 1), is pinned.",
+        caption: "Tap a curve to read off a point, its tangent and gradient",
+      },
+      {
+        src: "/whats-new/graph-plot/shading.png",
+        alt: "A graph with the area under y = 4 − ½x² from −2 to 2 shaded in red and labelled Area = 13.333, and the region y < x − 3 shaded in green below a dashed line.",
+        caption: "Shade inequalities and the area under a curve",
+      },
+    ],
+    points: [
+      "Plot points from a table, join them up, or add a line of best fit.",
+      "Put a table of values next to the graph, with the y row left blank for the class to fill in.",
+      "Students in a live class see every change as you make it.",
+    ],
+  },
+  {
     id: "2026-10-class-tools",
     date: "2026-10-05",
     title: "Class tools",

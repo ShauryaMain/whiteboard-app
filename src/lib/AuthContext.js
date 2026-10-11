@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { supabase } from "./supabaseClient";
 import { isDemoPath } from "./demoBackend";
 import SignInScreen from "@/components/SignInScreen";
+import { forgetTeacher, identifyTeacher, track } from "./track";
+import { noteSignInStarted, takePendingSignIn } from "./signInNote";
 
 const AuthContext = createContext(null);
 
@@ -60,7 +62,24 @@ export function AuthProvider({ children }) {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // Funnel counting (src/lib/track.js): a signed-in teacher is known by
+  // their account id, and a sign-in that was just started (see
+  // signInNote.js) is counted once it lands.
+  useEffect(() => {
+    if (loading || isDemoPath(pathname) || pathname?.startsWith("/join")) return;
+    if (!user || !user.id) {
+      // signed out (here, in another tab, or the session ran out): stop
+      // counting this browser as the last teacher who used it
+      forgetTeacher();
+      return;
+    }
+    identifyTeacher(user.id);
+    const pending = takePendingSignIn();
+    if (pending) track("signed_in", pending);
+  }, [user, loading, pathname]);
+
   async function signInWithGoogle() {
+    noteSignInStarted("google", "signin_page");
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: window.location.origin },
@@ -68,6 +87,7 @@ export function AuthProvider({ children }) {
   }
 
   async function signOut() {
+    forgetTeacher();
     await supabase.auth.signOut();
   }
 

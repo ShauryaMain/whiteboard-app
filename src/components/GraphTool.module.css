@@ -1,0 +1,776 @@
+/* The graph dialog's Plot tab and the bits of the graph that sit on the
+   board (sliders, the read-off bar), in the notebook style. */
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
+.tab {
+  padding: 8px 16px;
+  border: 1.5px solid #CFCBC1;
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tabOn {
+  border: 2px solid var(--ink-line);
+  background: var(--accent-soft);
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.tabCount {
+  margin-left: 6px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #FFFFFF;
+  font-size: 11.5px;
+}
+
+/* on a wide screen the picture stays in view while the settings scroll */
+@media (min-width: 900px) {
+  .previewSticky {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.sectionHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.hint {
+  font-size: 12.5px;
+  color: var(--muted, #6b6b6b);
+}
+
+.empty {
+  font-size: 13px;
+  color: var(--muted, #6b6b6b);
+}
+
+.note {
+  margin-left: 34px;
+  font-size: 12.5px;
+  color: var(--ink-2, #3b3b3b);
+}
+
+.problem {
+  margin-left: 34px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #C62828;
+}
+
+.fnRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fnLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.colorDot {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 2px solid var(--ink-line);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.mathBox {
+  flex: 1;
+  min-width: 0;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 10px;
+  background: #FFFFFF;
+}
+
+.mathBox math-field {
+  display: block;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 8px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 20px;
+  --caret-color: var(--accent);
+  --selection-background-color: var(--accent-soft);
+}
+
+.mathBox:focus-within {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.mathBox math-field::part(menu-toggle),
+.mathBox math-field::part(virtual-keyboard-toggle) {
+  display: none;
+}
+
+.textBox {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 10px;
+  font-size: 16px;
+  color: var(--ink);
+  background: #FFFFFF;
+}
+
+.iconBtn {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid #CFCBC1;
+  border-radius: 9px;
+  background: #FFFFFF;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.iconBtn[aria-pressed="false"] {
+  color: var(--muted, #6b6b6b);
+}
+
+.rowBtns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.addBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: 2px solid var(--ink-line);
+  border-radius: 10px;
+  background: #FFFFFF;
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-hard-sm);
+}
+
+.addBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  box-shadow: none;
+}
+
+.linkBtn {
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.linkBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.keys {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--paper);
+}
+
+.keyRow {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.key {
+  height: 36px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 1.5px 1.5px 0 var(--ink-line);
+  touch-action: manipulation;
+}
+
+.key:active {
+  transform: translate(1px, 1px);
+  box-shadow: none;
+}
+
+.keyAction {
+  background: #EFECE4;
+}
+
+.areaLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-left: 34px;
+  font-size: 13px;
+}
+
+.areaRange {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.smallInput {
+  width: 64px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ink);
+  background: #FFFFFF;
+}
+
+.select {
+  height: 32px;
+  max-width: 220px;
+  padding: 0 8px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: #FFFFFF;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  font-size: 13.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.checkGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+}
+
+.angleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.seg {
+  height: 30px;
+  padding: 0 10px;
+  border: 1.5px solid #CFCBC1;
+  border-radius: 8px;
+  background: #FFFFFF;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.segOn {
+  border: 2px solid var(--ink-line);
+  background: var(--accent-soft);
+}
+
+.sliderRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.paramName {
+  width: 18px;
+  font-family: "Times New Roman", serif;
+  font-style: italic;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.range {
+  flex: 1 1 140px;
+  min-width: 120px;
+  accent-color: var(--accent);
+}
+
+.paramValue {
+  min-width: 44px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.miniField {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--ink-2, #3b3b3b);
+}
+
+.miniField .smallInput {
+  width: 56px;
+}
+
+.pointSet {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1.5px dashed #D6D2C8;
+}
+
+.pointsTitle {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.ptTable {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-left: 32px;
+}
+
+.ptHead,
+.ptRow {
+  display: grid;
+  grid-template-columns: 88px 88px 34px;
+  gap: 6px;
+  align-items: center;
+}
+
+.ptHead {
+  font-family: "Times New Roman", serif;
+  font-style: italic;
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.ptInput {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ink);
+  background: #FFFFFF;
+  text-align: center;
+}
+
+.quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 220px;
+}
+
+.quickInput {
+  flex: 1;
+  min-width: 140px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1.5px solid #CFCBC1;
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+
+.tableFields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.pinRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.pinText {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- on the board ---------- */
+
+.sliderPanel {
+  position: absolute;
+  z-index: 6;
+  width: 230px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 2px solid var(--ink-line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: var(--shadow-hard-sm);
+  color: var(--ink);
+  touch-action: none;
+}
+
+.panelTitle {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted, #6b6b6b);
+}
+
+.panelRow {
+  display: grid;
+  grid-template-columns: 18px 1fr 46px;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelRow input[type="range"] {
+  width: 100%;
+  height: 28px;
+  accent-color: var(--accent);
+}
+
+.readout {
+  position: absolute;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 10px;
+  border: 2px solid var(--ink-line);
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: var(--shadow-hard-sm);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.readoutText {
+  font-variant-numeric: tabular-nums;
+}
+
+.readoutBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  background: #FFFFFF;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.readoutBtnOn {
+  background: var(--accent-soft);
+}
+
+.readoutBtnPrimary {
+  background: var(--accent);
+  color: #FFFFFF;
+}
+
+/* ---------- the Axes and paper tab ---------- */
+
+.paperChoices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.axisBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.axisRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+
+.axisHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.axisTitle {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 800;
+  color: var(--ink);
+  min-width: 52px;
+}
+
+.axisLabels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.axisFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.rangeInput {
+  width: 64px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ink);
+  background: #FFFFFF;
+}
+
+.textInput {
+  flex: 1;
+  min-width: 110px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ink);
+  background: #FFFFFF;
+}
+
+/* ---------- a chart's data ---------- */
+
+.dataTable {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.dataHead,
+.dataRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 34px;
+  gap: 6px;
+  align-items: center;
+}
+
+.dataThree {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 34px;
+}
+
+.dataHead {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-2, #3b3b3b);
+}
+
+.dataText {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  background: #FFFFFF;
+  resize: vertical;
+}
+
+/* ---------- presets ---------- */
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 10px 16px;
+  border-bottom: 1.5px dashed #D6D2C8;
+  background: var(--paper);
+}
+
+.presetLabel {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--ink-2, #3b3b3b);
+  margin-right: 2px;
+}
+
+.preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 999px;
+  background: #FFFFFF;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.preset:hover {
+  background: var(--accent-soft);
+}
+
+.presetMine {
+  padding-right: 4px;
+}
+
+.presetRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted, #6b6b6b);
+  cursor: pointer;
+}
+
+.presetRemove:hover {
+  background: #EFECE4;
+}
+
+.presetSave {
+  border-style: dashed;
+  color: var(--accent);
+}
+
+.presetForm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---------- the dialog's layout ---------- */
+
+.dialogBody {
+  display: flex;
+  gap: 18px;
+  padding: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.previewCol {
+  flex: 1 1 380px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.settingsCol {
+  flex: 1 1 380px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .previewCol {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+}

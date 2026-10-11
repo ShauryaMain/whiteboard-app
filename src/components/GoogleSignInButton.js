@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { noteSignInStarted } from "@/lib/signInNote";
+import { track } from "@/lib/track";
 import p from "./Paper.module.css";
 
 // Google's own "Sign in with Google" button.
@@ -62,15 +64,21 @@ async function makeNonce() {
   return { nonce, hashed };
 }
 
-export default function GoogleSignInButton({ onUnavailable }) {
+// Optional: `client` (the Supabase client to sign in with; the demo page
+// passes the real one), `from` (where the button is, for the sign-in
+// counts), `onBefore` (called as Google hands back, before signing in) and
+// `onSignedIn` (called once signed in).
+export default function GoogleSignInButton({ onUnavailable, client = null, from = "signin_page", onBefore, onSignedIn }) {
   const holderRef = useRef(null);
   const unavailableRef = useRef(onUnavailable);
+  const hooksRef = useRef({ client, from, onBefore, onSignedIn });
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     unavailableRef.current = onUnavailable;
-  }, [onUnavailable]);
+    hooksRef.current = { client, from, onBefore, onSignedIn };
+  }, [onUnavailable, client, from, onBefore, onSignedIn]);
 
   useEffect(() => {
     let current = true;
@@ -105,7 +113,11 @@ export default function GoogleSignInButton({ onUnavailable }) {
               return;
             }
             if (current) setBusy(true);
-            const { error } = await supabase.auth.signInWithIdToken({
+            const hooks = hooksRef.current;
+            track("signin_started", { method: "google", trigger: hooks.from });
+            noteSignInStarted("google", hooks.from);
+            if (hooks.onBefore) hooks.onBefore();
+            const { error } = await (hooks.client || supabase).auth.signInWithIdToken({
               provider: "google",
               token: response.credential,
               nonce: nonce.nonce,
@@ -115,6 +127,8 @@ export default function GoogleSignInButton({ onUnavailable }) {
             if (error) {
               if (current) setBusy(false);
               giveUp(error, true);
+            } else if (hooks.onSignedIn) {
+              hooks.onSignedIn();
             }
           },
         });

@@ -59,7 +59,7 @@
 <main class="wrap policy">
   <span class="tape-label">the plain-English version</span>
   <h1>Privacy</h1>
-  <p class="updated">Last updated 3 October 2026</p>
+  <p class="updated">Last updated 11 October 2026</p>
 
   <div class="summary">
     <h2>In short</h2>
@@ -77,7 +77,7 @@
   <h2>What we collect</h2>
   <h3>Teachers and anyone who signs in</h3>
   <ul>
-    <li><b>Your Google account basics:</b> your name, email address and profile picture, which Google shares when you sign in.</li>
+    <li><b>Your sign-in details:</b> your email address. If you sign in with Google, also your name and profile picture, which Google shares when you sign in.</li>
     <li><b>Your boards:</b> everything you put on them (drawing, text, images, PDFs and pictures you open beside the board, simulations you embed), the page style, a small preview picture of each board, and the list of people you’ve shared each board with.</li>
     <li><b>Sharing suggestions:</b> when you share a board by email, Clean Slate can suggest people who already use it, showing their name and email.</li>
   </ul>
@@ -95,6 +95,7 @@
   <h3>Stored on your own device</h3>
   <ul>
     <li>Your sign-in session, and preferences such as pencil-only mode, the worksheet pane size and where you put the calculator. These stay in your browser.</li>
+    <li>If you try the demo board, a copy of it is kept in your browser, so it’s there when you come back and can be saved to your account when you sign in.</li>
   </ul>
 
   <h2>What we don’t do</h2>
@@ -108,7 +109,8 @@
   <ul>
     <li><b>Supabase</b> stores accounts, boards and images, and carries the live sync between devices.</li>
     <li><b>Vercel</b> hosts the website and app. We use its visit counts (Vercel Web Analytics) to see which pages get visited and where visitors come from. They don’t use cookies and don’t identify you.</li>
-    <li><b>Google</b> handles sign-in, and delivers feedback emails to our support inbox.</li>
+    <li><b>PostHog</b> counts the steps people take, from trying the demo board to running a first class, so we can see where Clean Slate is confusing. It uses no cookies: it keeps a random ID in your browser, and for teachers who sign in it uses the account’s ID, never your name or email. Board links and class codes are removed before anything is sent. On the demo board only, it may record the screen to show where people get stuck, with anything typed hidden. It never runs on student pages.</li>
+    <li><b>Google</b> handles Google sign-in, and delivers our emails: sign-in codes, board clean-up reminders and feedback to our support inbox.</li>
   </ul>
   <p>Images you add to a board are stored so the board can show them. Anyone who has the direct link to one of those image files can open it, so avoid adding pictures you wouldn’t want shared.</p>
 
