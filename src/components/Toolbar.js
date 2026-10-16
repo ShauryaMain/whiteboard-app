@@ -37,7 +37,7 @@ const TOOL_HINTS = {
   eraser: ["Eraser", "Precise rubs out only where you drag."],
   text: ["Text", "Tap the board where you want to type."],
 };
-const RULER_HINT = ["Ruler", "Drag it to move, drag its round handle to rotate, then draw along its edge."];
+const RULER_HINT = ["Ruler", "Draw along either edge for a straight line. Drag it to move; turn it with its round handle, two fingers or the mouse wheel."];
 const COMPASS_HINT = ["Compass", "Drag the pin to set the centre and the pencil end to set the size, then draw to trace the circle."];
 const STROKE_ERASER_HINT = ["Eraser", "Whole stroke removes any line you touch, in one go."];
 const PEN_NO_SCRIBBLE_HINT = ["Pen", "Draw freehand. For straight lines, turn on the Ruler in Maths."];

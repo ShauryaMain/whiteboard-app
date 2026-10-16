@@ -1625,3 +1625,35 @@
     transition: none;
   }
 }
+
+/* ---------- the pointer and the ruler (boardCursor.js, RulerOverlay.js) ---------- */
+
+/* the brush-size ring that follows the mouse or a hovering Pencil */
+.cursorRing {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 6;
+  will-change: transform;
+}
+
+/* how long a line drawn along the ruler is, beside the pen */
+.rulerReadout {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink-line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard-sm);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 22;
+}

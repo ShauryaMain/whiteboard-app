@@ -51,6 +51,8 @@ const SPEC = {
   shortcuts: [{}, isValidOverrides], // the shortcuts someone changed (see shortcuts.js)
   gesture2: ["undo", oneOf(GESTURE_IDS)], // a two-finger tap
   gesture3: ["redo", oneOf(GESTURE_IDS)], // a three-finger tap
+  pointerStyle: ["size", oneOf(["size", "icon", "arrow"])], // the pointer over the board (boardCursor.js)
+  rulerUnits: ["cm", oneOf(["cm", "in"])], // the ruler's marks
 };
 
 export const SETTING_NAMES = Object.keys(SPEC);

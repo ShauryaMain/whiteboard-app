@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { LANDING_URL } from "@/lib/links";
 import SettingsExplainer from "./SettingsExplainer";
 import SettingsShortcuts from "./SettingsShortcuts";
+import { POINTER_STYLES } from "@/lib/boardCursor";
 import d from "./Dialog.module.css";
 import st from "./Settings.module.css";
 
@@ -88,6 +89,8 @@ export default function SettingsPanel({ user, signOut, onClose, initialTab = "bo
   const moveReturns = useSetting("moveReturns");
   const showHints = useSetting("showHints");
   const nameTags = useSetting("nameTags");
+  const pointerStyle = useSetting("pointerStyle");
+  const rulerUnits = useSetting("rulerUnits");
   const [tab, setTab] = useState(initialTab === "shortcuts" ? "shortcuts" : "board");
   const calcAngle = useSetting("calcAngle");
   const paper = useSetting("paper");
@@ -248,6 +251,22 @@ export default function SettingsPanel({ user, signOut, onClose, initialTab = "bo
                 value={moveReturns ? "back" : "stay"}
                 options={[["back", "Back to my tool"], ["stay", "Stay on Move"]]}
                 onChange={(v) => setSetting("moveReturns", v === "back")}
+              />
+            </Row>
+            <Row label="Pointer on the board" sub="Brush size shows a ring as big as the pen, highlighter or eraser, in the ink colour. Tool icon shows a little pen or eraser instead.">
+              <Choice
+                label="Pointer on the board"
+                value={pointerStyle}
+                options={POINTER_STYLES}
+                onChange={(v) => setSetting("pointerStyle", v)}
+              />
+            </Row>
+            <Row label="Ruler marks">
+              <Choice
+                label="Ruler marks"
+                value={rulerUnits}
+                options={[["cm", "Centimetres"], ["in", "Inches"]]}
+                onChange={(v) => setSetting("rulerUnits", v)}
               />
             </Row>
             <Row label="Tool hints" sub="The line beside the tools that says what each one does (on wider screens)." info="hints" onInfo={openExplainer}>

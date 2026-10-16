@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import Toolbar from "./Toolbar";
-import RulerOverlay from "./RulerOverlay";
+import RulerOverlay, { rulerLength, rulerEdgeAt, rulerProject, rulerMeasure } from "./RulerOverlay";
 import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import SplitDivider from "./SplitDivider";
@@ -50,7 +50,8 @@ import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
 import { loadCalcPosition } from "@/lib/calcMath";
 import { detectScratchOut } from "@/lib/scratchOut";
-import { getSetting, displayNameFor, PEN_COLORS } from "@/lib/settings";
+import { getSetting, setSetting, useSetting, displayNameFor, PEN_COLORS } from "@/lib/settings";
+import { iconCursor, ringLook, isInkTool } from "@/lib/boardCursor";
 import { keyFromEvent, keysWith, actionForKey, createTapGesture, GESTURE_WORDS } from "@/lib/shortcuts";
 import { nameFor, personId, wherePayload, sameWhere, peopleFrom, facesKey, viewFor, viewBetween, createPenTags } from "@/lib/boardPeople";
 import {
@@ -124,15 +125,6 @@ function widthForTool(t, baseWidth) {
   if (t === "eraser") return baseWidth * 3;
   if (t === "highlighter") return baseWidth * 2.5;
   return baseWidth;
-}
-
-function projectOntoAngle(start, pos, angle) {
-  const dx = pos.x - start.x;
-  const dy = pos.y - start.y;
-  const dirX = Math.cos(angle);
-  const dirY = Math.sin(angle);
-  const t = dx * dirX + dy * dirY;
-  return { x: start.x + t * dirX, y: start.y + t * dirY };
 }
 
 function distance(p1, p2) {
@@ -321,6 +313,12 @@ export default function Whiteboard({
   const widthRef = useRef(4);
   const rulerActiveRef = useRef(false);
   const rulerAngleRef = useRef(0);
+  const rulerPosRef = useRef({ x: 300, y: 300 });
+  const rulerLenRef = useRef(800);
+  // a line being drawn along the ruler's edge: { offset } (null otherwise)
+  const rulerEdgeRef = useRef(null);
+  const rulerReadoutRef = useRef(null); // the length shown while drawing along it
+  const cursorRingRef = useRef(null); // the brush-size ring (boardCursor.js)
 
   const compassActiveRef = useRef(false);
   const compassCenterRef = useRef({ x: 0, y: 0 });
@@ -374,6 +372,9 @@ export default function Whiteboard({
   const [rulerActive, setRulerActive] = useState(false);
   const [rulerAngle, setRulerAngle] = useState(0);
   const [rulerPos, setRulerPos] = useState({ x: 300, y: 300 });
+  const [rulerLen, setRulerLen] = useState(800);
+  const rulerUnits = useSetting("rulerUnits");
+  const pointerStyle = useSetting("pointerStyle");
   const [compassActive, setCompassActive] = useState(false);
   const [compassCenter, setCompassCenter] = useState({ x: 300, y: 300 });
   const [compassRadius, setCompassRadius] = useState(100);
@@ -583,6 +584,8 @@ export default function Whiteboard({
   useEffect(() => { widthRef.current = strokeWidth; }, [strokeWidth]);
   useEffect(() => { rulerActiveRef.current = rulerActive; }, [rulerActive]);
   useEffect(() => { rulerAngleRef.current = rulerAngle; }, [rulerAngle]);
+  useEffect(() => { rulerPosRef.current = rulerPos; }, [rulerPos]);
+  useEffect(() => { rulerLenRef.current = rulerLen; }, [rulerLen]);
   useEffect(() => { compassActiveRef.current = compassActive; }, [compassActive]);
   useEffect(() => { compassCenterRef.current = compassCenter; }, [compassCenter]);
   useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
@@ -2514,6 +2517,7 @@ export default function Whiteboard({
       if (next) {
         const { width, height } = getPaneSize();
         setRulerPos({ x: width / 2, y: height / 2 });
+        setRulerLen(rulerLength(width));
         setCompassActive(false);
         setPanToolActive(false);
       }
@@ -3964,7 +3968,7 @@ export default function Whiteboard({
     // ---------- scribble to erase ----------
     function tryScratchOut(stroke) {
       if (stroke.tool !== "pen" || !getScribbleErase()) return false;
-      if (rulerActiveRef.current || compassActiveRef.current) return false;
+      if (rulerEdgeRef.current || compassActiveRef.current) return false;
       const hit = detectScratchOut(
         stroke,
         { strokes: strokesRef.current, texts: textsRef.current, textHeight: textHeightOf },
@@ -4042,9 +4046,59 @@ export default function Whiteboard({
       fullRedraw();
     }
 
+    // ---------- the pointer (Settings ▸ Board ▸ Pointer: boardCursor.js) ----------
+    // The brush-size ring follows a mouse, a trackpad or a hovering Pencil
+    // over the board; it's as big as what the tool will cover, at this zoom.
+    function moveCursorRing(e, pos) {
+      const ring = cursorRingRef.current;
+      if (!ring) return;
+      const t = toolRef.current;
+      const show =
+        e.pointerType !== "touch" &&
+        getSetting("pointerStyle") === "size" &&
+        isInkTool(t) &&
+        !panToolActiveRef.current &&
+        !compassActiveRef.current &&
+        !strokeEraseRef.current;
+      if (!show) {
+        if (ring.style.display !== "none") ring.style.display = "none";
+        return;
+      }
+      const look = ringLook(t, widthForTool(t, widthRef.current), scaleRef.current, colorRef.current);
+      ring.style.display = "block";
+      ring.style.width = ring.style.height = look.d + "px";
+      ring.style.border = look.border;
+      ring.style.background = look.background;
+      ring.style.boxShadow = look.shadow;
+      ring.style.transform = `translate(${pos.x - look.d / 2}px, ${pos.y - look.d / 2}px)`;
+    }
+    function hideCursorRing() {
+      const ring = cursorRingRef.current;
+      if (ring) ring.style.display = "none";
+    }
+
+    // the length of a line along the ruler, beside the pen
+    function showRulerReadout(from, to, angle, side) {
+      const el = rulerReadoutRef.current;
+      if (!el) return;
+      const px = Math.hypot(to.x - from.x, to.y - from.y);
+      el.textContent = rulerMeasure(px, scaleRef.current, getSetting("rulerUnits"));
+      el.style.display = "block";
+      // beside the pen, on the side away from the ruler
+      const away = 30 * (side || 1);
+      const cx = to.x - Math.sin(angle) * away;
+      const cy = to.y + Math.cos(angle) * away;
+      el.style.transform = `translate(calc(${Math.round(cx)}px - 50%), calc(${Math.round(cy)}px - 50%))`;
+    }
+    function hideRulerReadout() {
+      const el = rulerReadoutRef.current;
+      if (el) el.style.display = "none";
+    }
+
     function handlePointerDown(e) {
       stopViewGlide();
-      const pos = getPos(e);
+      let pos = getPos(e);
+      moveCursorRing(e, pos);
 
       if (e.pointerType === "pen") {
         notePenActivity();
@@ -4304,6 +4358,19 @@ export default function Whiteboard({
       lastRawScreenPos.current = pos;
 
       const t = toolRef.current;
+      // With the ruler out, a pen or highlighter line started by one of its
+      // edges follows that edge; anywhere else it's ordinary writing.
+      rulerEdgeRef.current = null;
+      if (rulerActiveRef.current && !compassActiveRef.current && (t === "pen" || t === "highlighter")) {
+        const ruler = { position: rulerPosRef.current, angle: rulerAngleRef.current, length: rulerLenRef.current };
+        const edge = rulerEdgeAt(pos, ruler, widthForTool(t, widthRef.current) * scaleRef.current);
+        if (edge) {
+          rulerEdgeRef.current = { ruler, offset: edge.offset };
+          pos = rulerProject(pos, ruler, edge.offset);
+          strokeScreenStart.current = pos;
+          lastRawScreenPos.current = pos;
+        }
+      }
       const strokeId =
         typeof crypto !== "undefined" && crypto.randomUUID
           ? crypto.randomUUID()
@@ -4347,7 +4414,7 @@ export default function Whiteboard({
       canvas.setPointerCapture(e.pointerId);
 
       touchDrivenStrokeActive.current =
-        isMobileRef.current && !compassActiveRef.current && !rulerActiveRef.current;
+        isMobileRef.current && !compassActiveRef.current && !rulerEdgeRef.current;
 
       channelRef.current?.send({
         type: "broadcast",
@@ -4367,6 +4434,7 @@ export default function Whiteboard({
 
     function handlePointerMove(e) {
       if (e.pointerType === "pen") notePenActivity();
+      moveCursorRing(e, getPos(e));
       if (e.pointerType === "touch" && touchPoints.current.has(e.pointerId)) {
         const p = getPos(e);
         touchPoints.current.set(e.pointerId, p);
@@ -4518,13 +4586,15 @@ export default function Whiteboard({
         return;
       }
 
-      if (rulerActiveRef.current) {
-        const projectedScreen = projectOntoAngle(strokeScreenStart.current, screenPos, rulerAngleRef.current);
+      if (rulerEdgeRef.current) {
+        const { ruler, offset } = rulerEdgeRef.current;
+        const projectedScreen = rulerProject(screenPos, ruler, offset);
         const worldStart = screenToWorld(strokeScreenStart.current);
         const worldEnd = screenToWorld(projectedScreen);
         currentStroke.current.points = [worldStart, worldEnd];
         fullRedraw();
         scheduleStraightBroadcast(worldStart, worldEnd);
+        showRulerReadout(strokeScreenStart.current, projectedScreen, ruler.angle, Math.sign(offset));
         return;
       }
 
@@ -4588,6 +4658,7 @@ export default function Whiteboard({
 
     function handlePointerUp(e) {
       if (e.pointerType === "pen") notePenActivity();
+      hideRulerReadout();
       if (e.pointerType === "touch") {
         touchPoints.current.delete(e.pointerId);
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
@@ -4768,6 +4839,7 @@ export default function Whiteboard({
     canvas.addEventListener("pointermove", handlePointerMove);
     canvas.addEventListener("pointerup", handlePointerUp);
     canvas.addEventListener("pointercancel", handlePointerUp);
+    canvas.addEventListener("pointerleave", hideCursorRing);
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     if (isMobileRef.current) {
       canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
@@ -4780,6 +4852,7 @@ export default function Whiteboard({
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);
       canvas.removeEventListener("pointercancel", handlePointerUp);
+    canvas.removeEventListener("pointerleave", hideCursorRing);
       canvas.removeEventListener("wheel", handleWheel);
       if (isMobileRef.current) {
         canvas.removeEventListener("touchmove", handleTouchMove);
@@ -5273,6 +5346,13 @@ export default function Whiteboard({
     };
   }, []);
 
+  // The pointer over the board (Settings ▸ Board ▸ Pointer).
+  let boardCursor = "default";
+  if (panToolActive) boardCursor = "grab";
+  else if (pointerStyle === "size" && isInkTool(tool) && !compassActive) boardCursor = "none";
+  else if (pointerStyle === "icon") boardCursor = iconCursor(tool, color) || "default";
+  else if (tool === "text") boardCursor = "text";
+
   const showReferencePane = canUseReferencePane && !!referenceDoc;
   const refMode = refStacked ? "stacked" : "side";
   const refFraction = refDragFraction ?? (refStacked ? savedRefFractionStacked : savedRefFractionSide);
@@ -5636,7 +5716,7 @@ export default function Whiteboard({
             userSelect: "none",
             WebkitTouchCallout: "none",
             WebkitTapHighlightColor: "transparent",
-            cursor: panToolActive ? "grab" : "default",
+            cursor: boardCursor,
           }}
         />
         {/* A student's board: what the teacher has put on it (the class
@@ -5675,6 +5755,8 @@ export default function Whiteboard({
             <span className={chrome.personOutlineLabel} />
           </div>
         )}
+        {/* the brush-size ring that follows the pointer (boardCursor.js) */}
+        <div ref={cursorRingRef} aria-hidden="true" className={chrome.cursorRing} style={{ display: "none" }} />
         <div ref={marqueeElRef} aria-hidden="true" className={chrome.marquee} />
         <div ref={selectionBoxElRef} aria-hidden="true" className={chrome.selectionBox}>
           <span className={chrome.selectionHandle} />
@@ -5750,6 +5832,19 @@ export default function Whiteboard({
             setAngle={setRulerAngle}
             position={rulerPos}
             setPosition={setRulerPos}
+            length={rulerLen}
+            scale={zoomPercent / 100}
+            units={rulerUnits}
+            onUnits={(u) => setSetting("rulerUnits", u)}
+          />
+        )}
+        {rulerActive && (
+          <div
+            ref={rulerReadoutRef}
+            aria-hidden="true"
+            data-ruler-readout="true"
+            className={chrome.rulerReadout}
+            style={{ display: "none" }}
           />
         )}
         {compassActive && (
