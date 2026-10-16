@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
@@ -99,6 +99,8 @@ export default function Toolbar(props) {
     onCopyLink, onStartLiveClass, onEndSession,
     liveClassCode, classRoster, onViewStudent, onEndLiveClass, onResetClassStatus, classTools, compact,
     onOpenSettings,
+    people,
+    onFindPerson,
     penSeen, pencilOnly, onSetPencilOnly,
     zoomPercent, onResetView,
   } = props;
@@ -141,6 +143,12 @@ export default function Toolbar(props) {
       document.removeEventListener("keydown", handleKey);
     };
   }, [menu]);
+
+  // how many faces fit in the top bar (more go in a list)
+  const narrowBar = useSyncExternalStore(subscribeNarrowBar, isNarrowBar, () => false);
+  const faceRoom = narrowBar ? 2 : 4;
+  const peopleCount = people ? people.length : 0;
+  const shownFaces = peopleCount <= faceRoom ? peopleCount : faceRoom - 1;
 
   function toggleMenu(id, e, width = 320) {
     if (menu && menu.id === id) {
@@ -190,6 +198,20 @@ export default function Toolbar(props) {
             }
             role="menu"
           >
+            {menu.id === "people" &&
+              (people || []).map((p) => (
+                <MenuItem
+                  key={p.key}
+                  icon={
+                    <span className={s.menuFace} style={{ background: p.color }}>
+                      {p.initial}
+                    </span>
+                  }
+                  title={p.name}
+                  desc="Go to where they are on the board"
+                  onPress={runAndClose(() => onFindPerson && onFindPerson(p.key))}
+                />
+              ))}
             {menu.id === "maths" && (
               <>
                 <MenuItem
@@ -435,6 +457,36 @@ export default function Toolbar(props) {
           <div className={s.status}>{statusText}</div>
         </div>
         <div className={s.spacer} />
+
+        {/* Who else has the board open: tap someone to go to where they are. */}
+        {people && people.length > 0 && (
+          <div className={s.people} role="group" aria-label="Others on this board" data-tour="people">
+            {people.slice(0, shownFaces).map((p) => (
+              <PalmSafeButton
+                key={p.key}
+                className={s.face}
+                style={{ background: p.color }}
+                aria-label={`Find ${p.name}`}
+                title={`${p.name}: tap to see where they are`}
+                data-person={p.uid}
+                onPress={() => onFindPerson && onFindPerson(p.key)}
+              >
+                {p.initial}
+              </PalmSafeButton>
+            ))}
+            {people.length > shownFaces && (
+              <PalmSafeButton
+                className={`${s.face} ${s.faceMore}`}
+                data-menu-trigger="true"
+                aria-expanded={menu?.id === "people"}
+                aria-label={`Everyone on this board (${people.length})`}
+                onPress={(e) => toggleMenu("people", e, 320)}
+              >
+                +{people.length - shownFaces}
+              </PalmSafeButton>
+            )}
+          </div>
+        )}
 
         {liveClassCode && (
           <div className={s.livePill}>
@@ -762,6 +814,21 @@ function ToolButton({ label, active, open, disabled, wide, menu, badge, tour, on
       </span>
     </PalmSafeButton>
   );
+}
+
+const NARROW_BAR = "(max-width: 560px)";
+function subscribeNarrowBar(onChange) {
+  if (typeof window === "undefined" || !window.matchMedia) return () => {};
+  const m = window.matchMedia(NARROW_BAR);
+  if (m.addEventListener) m.addEventListener("change", onChange);
+  else if (m.addListener) m.addListener(onChange);
+  return () => {
+    if (m.removeEventListener) m.removeEventListener("change", onChange);
+    else if (m.removeListener) m.removeListener(onChange);
+  };
+}
+function isNarrowBar() {
+  return typeof window !== "undefined" && !!window.matchMedia && window.matchMedia(NARROW_BAR).matches;
 }
 
 function MenuItem({ icon, title, desc, on, insert, danger, tour, onPress }) {

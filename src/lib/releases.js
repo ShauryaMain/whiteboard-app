@@ -33,6 +33,36 @@
 
 export const RELEASES = [
   {
+    id: "2026-10-find-people",
+    date: "2026-10-16",
+    title: "Find each other",
+    headline: "Find the others on your board",
+    intro:
+      "When someone else has your board open, their initial shows at the top. Tap it and your board glides to what they're looking at, so you never have to hunt for their work.",
+    slides: [
+      {
+        src: "/whats-new/people/faces.png",
+        alt: "A board's top bar with two coloured initials, A and S, ringed: the other people who have this board open.",
+        caption: "Everyone else on the board shows as a coloured initial at the top",
+      },
+      {
+        src: "/whats-new/people/found.png",
+        alt: "After tapping S: the board has moved to Sam's question 2, with a dashed outline labelled Sam's screen around what he can see.",
+        caption: "Tap one to go to what they're looking at; an outline shows their screen for a moment",
+      },
+      {
+        src: "/whats-new/people/tag.png",
+        alt: "Sam writing x = 3 by hand, with a small Sam name tag at the tip of his pen.",
+        caption: "A little name tag follows their pen while they write",
+      },
+    ],
+    points: [
+      "Tap someone's initial to go straight to their part of the board.",
+      "With lots of people on a board, the rest are in a list under +.",
+      "Their name follows their pen while they write, then fades.",
+    ],
+  },
+  {
     id: "2026-10-settings",
     date: "2026-10-12",
     title: "Settings",

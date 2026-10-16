@@ -50,7 +50,8 @@ import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
 import { loadCalcPosition } from "@/lib/calcMath";
 import { detectScratchOut } from "@/lib/scratchOut";
-import { getSetting } from "@/lib/settings";
+import { getSetting, displayNameFor } from "@/lib/settings";
+import { nameFor, personId, wherePayload, sameWhere, peopleFrom, facesKey, viewFor, viewBetween, createPenTags } from "@/lib/boardPeople";
 import {
   createSyncTracker,
   fetchBoardContents,
@@ -95,6 +96,8 @@ import {
 } from "@/lib/pencilPrefs";
 
 const MIN_SCALE = 0.1;
+// Where you are on the board goes out to the others at most this often.
+const PRESENCE_GAP_MS = 800;
 const MAX_SCALE = 8;
 // A live message can only be so big (Supabase drops anything over about
 // 256KB without saying so), so a board sent to someone joining a class
@@ -300,6 +303,7 @@ export default function Whiteboard({
 
   const channelRef = useRef(null);
   const remoteStrokes = useRef({});
+  const penTagOwners = useRef({}); // someone else's stroke -> the tab writing it (for the name tag)
   const strokesRef = useRef([]);
   const textsRef = useRef([]);
   const toolRef = useRef("pen");
@@ -367,6 +371,22 @@ export default function Whiteboard({
   const [calculatorActive, setCalculatorActive] = useState(false);
   const [calculatorPos, setCalculatorPos] = useState({ x: 300, y: 200 });
   const [zoomPercent, setZoomPercent] = useState(100);
+
+  // ---------- who else has this board open (src/lib/boardPeople.js) ----------
+  // Signed-in boards only: not the demo, not a student's board in a class.
+  const peopleOn = !student && !demo && !!user;
+  const [people, setPeople] = useState([]); // what the top bar shows
+  const peopleRef = useRef({ list: [], byKey: new Map(), faces: "" }); // everything, kept up to date
+  // channel: the board's live channel once joined; sent: what we last said
+  // about where we are; where: what everyone else last said (tab key ->
+  // { view, ink, t }); attendance: who's here (see classRoster.js)
+  const presenceRef = useRef({ channel: null, sent: null, timer: null, lastAt: 0, ink: null, where: new Map(), attendance: null, replyTimer: null });
+  const [penTags] = useState(() => createPenTags(chrome.penTag));
+  const penTagsElRef = useRef(null);
+  const outlineElRef = useRef(null);
+  const outlineRef = useRef(null); // { rect } of the screen being outlined
+  const outlineTimerRef = useRef(null);
+  const viewAnimRef = useRef(0);
   const [gridModalOpen, setGridModalOpen] = useState(false);
   // goes up whenever the graphs change (for the boards-list preview)
   const [graphsVersion, setGraphsVersion] = useState(0);
@@ -1267,6 +1287,8 @@ export default function Whiteboard({
     repositionImages();
     repositionSelectionOverlay();
     repositionCommentPins();
+    repositionPeopleBits();
+    sharePresence();
     if (student) drawTeacherOverlay();
     graphStore.set(graphsRef.current, graphTraceRef.current);
     repositionGraphBits();
@@ -1399,6 +1421,174 @@ export default function Whiteboard({
     if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
     pulseTimerRef.current = setTimeout(() => setPulsingComment(null), 1600);
   }
+
+  // ---------- who else is here ----------
+
+  // Where this person is: the part of the board on their screen, and
+  // where they last wrote.
+  function myWhere() {
+    const { width, height } = getPaneSize();
+    const scale = scaleRef.current;
+    const topLeft = screenToWorld({ x: 0, y: 0 });
+    return wherePayload({
+      view: { x: topLeft.x, y: topLeft.y, w: width / scale, h: height / scale },
+      ink: presenceRef.current.ink,
+    });
+  }
+
+  function sendWhere(payload) {
+    const pr = presenceRef.current;
+    if (!pr.channel) return;
+    pr.sent = payload;
+    pr.lastAt = Date.now();
+    pr.channel.send({ type: "broadcast", event: "person-where", payload: { key: clientId.current, ...payload } });
+  }
+
+  // Tells the others when it changes (no more than every PRESENCE_GAP_MS).
+  function sharePresence() {
+    const pr = presenceRef.current;
+    // nobody else here: nothing to tell (newcomers are answered anyway)
+    if (!peopleOn || !pr.channel || pr.timer || !peopleRef.current.list.length) return;
+    const wait = Math.max(0, PRESENCE_GAP_MS - (Date.now() - pr.lastAt));
+    pr.timer = setTimeout(() => {
+      pr.timer = null;
+      if (!pr.channel) return;
+      const next = myWhere();
+      if (!sameWhere(next, pr.sent)) sendWhere(next);
+    }, wait);
+  }
+
+  // Someone has just arrived: tell them where we are (a moment later, so
+  // several arrivals get one message).
+  function answerNewcomer() {
+    const pr = presenceRef.current;
+    if (!pr.channel || pr.replyTimer) return;
+    pr.replyTimer = setTimeout(() => {
+      pr.replyTimer = null;
+      if (pr.channel) sendWhere(myWhere());
+    }, 250 + Math.random() * 350);
+  }
+
+  function noteMyInk(pt) {
+    if (!peopleOn || !pt) return;
+    presenceRef.current.ink = { x: pt.x, y: pt.y };
+    sharePresence();
+  }
+
+  function notePeople() {
+    const pr = presenceRef.current;
+    const state = pr.attendance ? attendanceState(pr.attendance) : {};
+    // forget where people were once they've gone (a message that arrived
+    // just before their arrival was announced is kept a little while)
+    const now = Date.now();
+    for (const [key, w] of [...pr.where]) if (!state[key] && now - w.t > 10000) pr.where.delete(key);
+    const { list, byKey } = peopleFrom(state, pr.where, user ? personId(user.id) : null, clientId.current);
+    const ref = peopleRef.current;
+    ref.list = list;
+    ref.byKey = byKey;
+    const faces = facesKey(list);
+    if (faces !== ref.faces) {
+      ref.faces = faces;
+      setPeople(list.map(({ key, uid, name, short, initial, color }) => ({ key, uid, name, short, initial, color })));
+    }
+  }
+
+  function repositionPeopleBits() {
+    penTags.reposition(worldToScreen);
+    const el = outlineElRef.current;
+    const o = outlineRef.current;
+    if (!el || !o) return;
+    const a = worldToScreen({ x: o.rect.x, y: o.rect.y });
+    const scale = scaleRef.current;
+    el.style.transform = `translate(${Math.round(a.x)}px, ${Math.round(a.y)}px)`;
+    el.style.width = Math.round(o.rect.w * scale) + "px";
+    el.style.height = Math.round(o.rect.h * scale) + "px";
+  }
+
+  // A dashed outline of their screen for a few seconds after you jump to them.
+  function showOutline(person) {
+    const el = outlineElRef.current;
+    if (!el || !person.view) return;
+    outlineRef.current = { rect: person.view };
+    el.style.borderColor = person.color;
+    const label = el.firstChild;
+    if (label) {
+      label.textContent = `${person.short}'s screen`;
+      label.style.background = person.color;
+    }
+    repositionPeopleBits();
+    el.setAttribute("data-show", "true");
+    if (outlineTimerRef.current) clearTimeout(outlineTimerRef.current);
+    outlineTimerRef.current = setTimeout(() => {
+      el.setAttribute("data-show", "false");
+      outlineTimerRef.current = setTimeout(() => {
+        outlineRef.current = null;
+        outlineTimerRef.current = null;
+      }, 400);
+    }, 4000);
+  }
+
+  // The glide stops the moment you touch the board yourself (so a stroke
+  // you start lands where you put it).
+  function stopViewGlide() {
+    if (!viewAnimRef.current) return;
+    cancelAnimationFrame(viewAnimRef.current);
+    viewAnimRef.current = 0;
+    setZoomPercent(Math.round(scaleRef.current * 100));
+  }
+
+  // Tapping someone's initial: the board glides to what they're looking at.
+  function handleFindPerson(key) {
+    const ref = peopleRef.current;
+    const person = ref.list.find((p) => p.key === key) || ref.byKey.get(key);
+    if (!person) return;
+    const pane = getPaneSize();
+    const to = viewFor(person, pane, { scale: scaleRef.current }, MIN_SCALE, MAX_SCALE);
+    if (!to) {
+      flashNotice(`${person.short} hasn't got anywhere on the board yet.`, 3000);
+      return;
+    }
+    track("board_person_found", { people: ref.list.length });
+    cancelAnimationFrame(viewAnimRef.current);
+    const from = { scale: scaleRef.current, pan: { ...panRef.current } };
+    const finish = () => {
+      scaleRef.current = to.scale;
+      panRef.current = to.pan;
+      fullRedraw();
+      setZoomPercent(Math.round(to.scale * 100));
+    };
+    showOutline(person);
+    const calm = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (calm) {
+      finish();
+      return;
+    }
+    let started = null; // the first frame's time
+    const step = (now) => {
+      if (started === null) started = now;
+      const t = Math.min(1, (now - started) / 420);
+      if (t >= 1) {
+        viewAnimRef.current = 0;
+        finish();
+        return;
+      }
+      const v = viewBetween(from, to, t, pane);
+      scaleRef.current = v.scale;
+      panRef.current = v.pan;
+      fullRedraw();
+      viewAnimRef.current = requestAnimationFrame(step);
+    };
+    viewAnimRef.current = requestAnimationFrame(step);
+  }
+
+  useEffect(() => {
+    penTags.attach(penTagsElRef.current);
+    return () => {
+      penTags.attach(null);
+      cancelAnimationFrame(viewAnimRef.current);
+      if (outlineTimerRef.current) clearTimeout(outlineTimerRef.current);
+    };
+  }, [penTags]);
 
   function handleResetView() {
     panRef.current = { x: 0, y: 0 };
@@ -2772,6 +2962,7 @@ export default function Whiteboard({
 
     channelRef.current?.send({ type: "broadcast", event: "text-add", payload: { text: textObj } });
     insertText(textObj);
+    noteMyInk({ x: textObj.x, y: textObj.y });
     fullRedraw();
   }
 
@@ -2859,7 +3050,7 @@ export default function Whiteboard({
       pendingBroadcastPoints.current = [];
       send("stroke-start", {
         strokeKey, strokeId: drawing.id, tool: drawing.tool, color: drawing.color,
-        width: drawing.width, opacity: drawing.opacity, point: drawing.points[0],
+        width: drawing.width, opacity: drawing.opacity, point: drawing.points[0], by: clientId.current,
       });
       for (let i = 1; i < drawing.points.length; i += SNAPSHOT_STROKE_POINTS) {
         send("stroke-points", { strokeKey, points: drawing.points.slice(i, i + SNAPSHOT_STROKE_POINTS) });
@@ -2869,9 +3060,36 @@ export default function Whiteboard({
 
   useEffect(() => {
     if (!boardId || syncPaused) return;
+    const presence = presenceRef.current;
     const channel = supabase.channel(`board-${boardId}`, {
-      config: { broadcast: { self: false } },
+      // presence: who else has the board open, and where (keyed by this tab)
+      config: peopleOn
+        ? { broadcast: { self: false }, presence: { key: clientId.current } }
+        : { broadcast: { self: false } },
     });
+    if (peopleOn) {
+      // who's here: kept from the "joined" / "left" events (classRoster.js)
+      const attendance = createAttendance();
+      presence.attendance = attendance;
+      presence.where = new Map();
+      channel.on("presence", { event: "join" }, ({ key, newPresences, currentPresences }) => {
+        attendanceJoin(attendance, key, newPresences, currentPresences);
+        if (key !== clientId.current) answerNewcomer();
+      });
+      channel.on("presence", { event: "leave" }, ({ key, leftPresences, currentPresences }) => {
+        attendanceLeave(attendance, key, leftPresences, currentPresences);
+      });
+      channel.on("presence", { event: "sync" }, () => {
+        attendanceSync(attendance, channel.presenceState());
+        notePeople();
+      });
+      // where someone is now
+      channel.on("broadcast", { event: "person-where" }, ({ payload }) => {
+        if (!payload || !payload.key || payload.key === clientId.current) return;
+        presence.where.set(payload.key, { view: payload.view, ink: payload.ink, t: Date.now() });
+        notePeople();
+      });
+    }
     // A student's own board only sends what the student is doing while
     // somebody is watching it (see src/lib/boardWatch.js). Everything this
     // board sends goes through the gate, which lets it out or keeps it back.
@@ -2882,7 +3100,8 @@ export default function Whiteboard({
     // Someone else changing the board keeps a watching viewer "active",
     // so a student following along never gets paused.
     channel.on("broadcast", { event: "*" }, ({ event }) => {
-      if (!/-request$/.test(String(event || ""))) noteRemoteActivity();
+      // (someone else just moving around the board doesn't count)
+      if (!/-request$|^person-where$/.test(String(event || ""))) noteRemoteActivity();
     });
 
     channel.on("broadcast", { event: "stroke-start" }, ({ payload }) => {
@@ -2894,6 +3113,11 @@ export default function Whiteboard({
         opacity: payload.opacity,
         points: [payload.point],
       };
+      // a name tag at the tip of their pen while they write
+      if (peopleOn && payload.by) {
+        penTagOwners.current[payload.strokeKey] = payload.by;
+        penTags.show(payload.by, peopleRef.current.byKey.get(payload.by), payload.point, worldToScreen);
+      }
     });
 
     channel.on("broadcast", { event: "stroke-points" }, ({ payload }) => {
@@ -2902,6 +3126,8 @@ export default function Whiteboard({
       const newCount = payload.points.length;
       s.points.push(...payload.points);
       if (ctxRef.current) drawNewSegment(ctxRef.current, s, newCount);
+      const by = penTagOwners.current[payload.strokeKey];
+      if (by) penTags.move(by, s.points[s.points.length - 1], worldToScreen);
     });
 
     channel.on("broadcast", { event: "stroke-straight" }, ({ payload }) => {
@@ -2909,6 +3135,8 @@ export default function Whiteboard({
       if (!s) return;
       s.points = [payload.start, payload.end];
       fullRedraw();
+      const by = penTagOwners.current[payload.strokeKey];
+      if (by) penTags.move(by, payload.end, worldToScreen);
     });
 
     channel.on("broadcast", { event: "stroke-shape" }, ({ payload }) => {
@@ -2919,6 +3147,11 @@ export default function Whiteboard({
     });
 
     channel.on("broadcast", { event: "stroke-end" }, ({ payload }) => {
+      const by = penTagOwners.current[payload.strokeKey];
+      if (by) {
+        delete penTagOwners.current[payload.strokeKey];
+        penTags.done(by);
+      }
       const s = remoteStrokes.current[payload.strokeKey];
       if (!s) return;
       delete remoteStrokes.current[payload.strokeKey];
@@ -3153,6 +3386,13 @@ export default function Whiteboard({
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         joined = true;
+        if (peopleOn) {
+          presence.channel = channel;
+          presence.sent = null;
+          // who we are, announced once (never changed: see classRoster.js)
+          Promise.resolve(channel.track({ uid: personId(user.id), name: nameFor(displayNameFor(user), user.email) })).catch(() => {});
+          sendWhere(myWhere());
+        }
         // A student's board that has just connected says so: anyone who
         // already has it on screen (the student refreshed their page) asks
         // for it afresh. So does one that has come back after a dropped
@@ -3187,6 +3427,15 @@ export default function Whiteboard({
 
     return () => {
       clearInterval(joinWatchdog);
+      // gone from the board: nobody to find until we're back
+      if (presence.timer) clearTimeout(presence.timer);
+      if (presence.replyTimer) clearTimeout(presence.replyTimer);
+      presence.timer = null;
+      presence.replyTimer = null;
+      presence.channel = null;
+      presence.attendance = null;
+      peopleRef.current = { list: [], byKey: new Map(), faces: "" };
+      setPeople([]);
       if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
       snapshotTimerRef.current = null;
       if (teacherLiveTimerRef.current) clearInterval(teacherLiveTimerRef.current);
@@ -3203,6 +3452,8 @@ export default function Whiteboard({
       }
       // Half-drawn strokes from others would otherwise stay stuck on screen.
       remoteStrokes.current = {};
+      penTagOwners.current = {};
+      penTags.clear();
     };
   }, [boardId, syncPaused]);
 
@@ -3436,6 +3687,8 @@ export default function Whiteboard({
       setMyUndoAvailable(true);
       setMyRedoAvailable(false);
       insertStroke(finished);
+      const pts = finished.points || [];
+      noteMyInk(pts[pts.length - 1]);
     }
 
     function cancelActiveDrawing() {
@@ -3458,6 +3711,7 @@ export default function Whiteboard({
     }
 
     function beginPanZoom() {
+      stopViewGlide();
       const pts = Array.from(touchPoints.current.values());
       if (pts.length < 2) return;
       const [p1, p2] = pts;
@@ -3502,6 +3756,7 @@ export default function Whiteboard({
 
     function handleWheel(e) {
       e.preventDefault();
+      stopViewGlide();
       const screenPos = getPos(e);
       const worldPos = screenToWorld(screenPos);
 
@@ -3778,6 +4033,7 @@ export default function Whiteboard({
     }
 
     function handlePointerDown(e) {
+      stopViewGlide();
       const pos = getPos(e);
 
       if (e.pointerType === "pen") {
@@ -4091,6 +4347,7 @@ export default function Whiteboard({
           width: currentStroke.current.width,
           opacity: currentStroke.current.opacity,
           point: firstWorldPoint,
+          by: clientId.current,
         },
       });
     }
@@ -4908,6 +5165,8 @@ export default function Whiteboard({
       <Toolbar
         student={!!student}
         onOpenSettings={student ? undefined : () => setSettingsOpen(true)}
+        people={peopleOn ? people : null}
+        onFindPerson={handleFindPerson}
         boardName={boardName}
         statusText={statusText}
         saveState={saveState}
@@ -5256,6 +5515,12 @@ export default function Whiteboard({
             </span>
           ))}
         {student && <StudentComments comments={teacherComments} onShow={handleShowComment} />}
+        {peopleOn && <div ref={penTagsElRef} aria-hidden="true" className={chrome.penTags} />}
+        {peopleOn && (
+          <div ref={outlineElRef} aria-hidden="true" className={chrome.personOutline} data-person-outline="true" data-show="false">
+            <span className={chrome.personOutlineLabel} />
+          </div>
+        )}
         <div ref={marqueeElRef} aria-hidden="true" className={chrome.marquee} />
         <div ref={selectionBoxElRef} aria-hidden="true" className={chrome.selectionBox}>
           <span className={chrome.selectionHandle} />

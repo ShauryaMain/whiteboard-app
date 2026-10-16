@@ -1486,3 +1486,142 @@
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* ---------- Who else is on the board (src/lib/boardPeople.js) ---------- */
+
+.people {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 2px;
+}
+
+.face {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  margin-left: -6px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--ink-line);
+  box-shadow: 0 0 0 2px var(--surface);
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  position: relative;
+  transition: transform 0.12s ease;
+}
+
+.face:first-child {
+  margin-left: 0;
+}
+
+.face:hover {
+  transform: translateY(-1px);
+  z-index: 1;
+}
+
+.face:active {
+  transform: translateY(1px);
+}
+
+.face:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.faceMore {
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.menuFace {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-line);
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* name tags at the tips of other people's pens */
+.penTags {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.penTag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink-line);
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  will-change: transform;
+  transition: opacity 0.35s ease;
+}
+
+/* the outline of someone's screen, for a moment after you go to them */
+.personOutline {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 3px dashed var(--accent);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.personOutline[data-show="true"] {
+  opacity: 1;
+}
+
+.personOutlineLabel {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--ink-line);
+  color: #FFFFFF;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .face {
+    width: 30px;
+    height: 30px;
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .penTag,
+  .personOutline {
+    transition: none;
+  }
+}
