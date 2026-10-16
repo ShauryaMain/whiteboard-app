@@ -1456,3 +1456,33 @@
     animation: none;
   }
 }
+
+/* the gear beside the home button: opens Settings (SettingsPanel.js) */
+.settingsBtn {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  border: 2px solid var(--ink-line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s ease;
+}
+
+.settingsBtn:hover {
+  background: var(--accent-soft);
+}
+
+.settingsBtn:active {
+  transform: translate(1px, 1px);
+}
+
+.settingsBtn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}

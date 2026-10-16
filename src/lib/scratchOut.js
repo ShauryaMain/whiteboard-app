@@ -10,12 +10,24 @@
 const RESAMPLE_PX = 3;
 const TURN_WINDOW = 3; // samples (~9px) either side when measuring direction
 const TURN_COS = -0.5; // a turn sharper than 120° counts as a reversal
-const MIN_TURNS = 4; // at least ~3 full back-and-forths
-const MIN_INK_RATIO = 2.2; // path length ÷ size of the area it covers
-const MIN_STRAIGHTNESS = 0.72; // passes are mostly straight (not loopy letters)
-const MIN_REVERSAL_SHARE = 0.75; // consecutive passes mostly point opposite ways
-const COVER_SHARE = 0.6; // ≥60% of a stroke must be under the scribble
-const MIN_SPAN_SHARE = 0.5; // what's erased must stretch across most of the scribble
+
+// How readily a scribble counts, by the teacher's "Scribble sensitivity"
+// setting. "normal" is how it has always worked.
+//   turns      sharp reversals needed (4 = about three full back-and-forths)
+//   inkRatio   path length ÷ size of the area it covers
+//   straight   passes are mostly straight (not loopy letters)
+//   reversal   consecutive passes mostly point opposite ways
+//   cover      share of a stroke that must be under the scribble
+//   span       what's erased must stretch across this much of the scribble
+export const SCRIBBLE_LEVELS = {
+  gentle: { turns: 5, inkRatio: 2.6, straight: 0.78, reversal: 0.8, cover: 0.7, span: 0.55 },
+  normal: { turns: 4, inkRatio: 2.2, straight: 0.72, reversal: 0.75, cover: 0.6, span: 0.5 },
+  // (eager still wants about three back-and-forths, so a handwritten W
+  // or a zigzag is never taken for a scribble; it forgives a messier,
+  // looser scribble that only half covers what's under it)
+  eager: { turns: 4, inkRatio: 1.9, straight: 0.62, reversal: 0.65, cover: 0.5, span: 0.4 },
+};
+const levelOf = (name) => SCRIBBLE_LEVELS[name] || SCRIBBLE_LEVELS.normal;
 
 function resample(points, step) {
   if (!points.length) return [];
@@ -85,7 +97,8 @@ function findTurns(r) {
 
 // Returns null, or a description of the scribble's shape for the coverage
 // step: { hull, box, pad }.
-export function scribbleShape(stroke, scale) {
+export function scribbleShape(stroke, scale, levelName) {
+  const L = levelOf(levelName);
   if (!stroke || stroke.tool !== "pen" || !stroke.points || stroke.points.length < 10) return null;
   const screen = stroke.points.map((p) => ({ x: p.x * scale, y: p.y * scale }));
   const r = resample(screen, RESAMPLE_PX);
@@ -94,10 +107,10 @@ export function scribbleShape(stroke, scale) {
   const box = bounds(r);
   const diag = Math.hypot(box.maxX - box.minX, box.maxY - box.minY);
   if (diag < 14 || length < 70) return null;
-  if (length / diag < MIN_INK_RATIO) return null;
+  if (length / diag < L.inkRatio) return null;
 
   const turns = findTurns(r);
-  if (turns.length < MIN_TURNS) return null;
+  if (turns.length < L.turns) return null;
 
   // Passes = the pieces between turns (ignoring the run-in and run-out).
   const passes = [];
@@ -107,9 +120,9 @@ export function scribbleShape(stroke, scale) {
     const len = pathLength(piece);
     passes.push({ chord, len, straight: len > 0 ? Math.hypot(chord.x, chord.y) / len : 0 });
   }
-  if (passes.length < MIN_TURNS - 1) return null;
+  if (passes.length < L.turns - 1) return null;
   const straightness = passes.map((p) => p.straight).sort((a, b) => a - b)[Math.floor(passes.length / 2)];
-  if (straightness < MIN_STRAIGHTNESS) return null;
+  if (straightness < L.straight) return null;
   const medianLen = passes.map((p) => p.len).sort((a, b) => a - b)[Math.floor(passes.length / 2)];
   if (medianLen < 10) return null;
   let reversals = 0;
@@ -118,7 +131,7 @@ export function scribbleShape(stroke, scale) {
     const la = Math.hypot(a.x, a.y), lb = Math.hypot(b.x, b.y);
     if (la && lb && (a.x * b.x + a.y * b.y) / (la * lb) < TURN_COS) reversals++;
   }
-  if (reversals / (passes.length - 1) < MIN_REVERSAL_SHARE) return null;
+  if (reversals / (passes.length - 1) < L.reversal) return null;
 
   return { hull: convexHull(r), box, pad: 4 + ((stroke.width || 3) * scale) / 2 };
 }
@@ -172,9 +185,11 @@ function covered(shape, x, y) {
 
 // Finds what a scribble scratched out. `strokes` and `texts` are the
 // board's current objects (world units); `textHeight(t)` gives a text box's
-// height. Returns { strokeIds, textIds } or null when nothing qualifies.
-export function detectScratchOut(stroke, { strokes = [], texts = [], textHeight }, scale) {
-  const shape = scribbleShape(stroke, scale);
+// height. `levelName` is the scribble sensitivity ("gentle", "normal",
+// "eager"). Returns { strokeIds, textIds } or null when nothing qualifies.
+export function detectScratchOut(stroke, { strokes = [], texts = [], textHeight }, scale, levelName) {
+  const L = levelOf(levelName);
+  const shape = scribbleShape(stroke, scale, levelName);
   if (!shape) return null;
   const pad = shape.pad;
   const area = {
@@ -193,7 +208,7 @@ export function detectScratchOut(stroke, { strokes = [], texts = [], textHeight 
     const r = pts.length === 1 ? pts : resample(pts, RESAMPLE_PX);
     let inside = 0;
     for (const p of r) if (covered(shape, p.x, p.y)) inside++;
-    if (inside / r.length >= COVER_SHARE) {
+    if (inside / r.length >= L.cover) {
       strokeIds.push(s.id);
       hitBoxes.push(b);
     }
@@ -212,7 +227,7 @@ export function detectScratchOut(stroke, { strokes = [], texts = [], textHeight 
         if (covered(shape, x0 + (w * gx) / 4, y0 + (h * gy) / 2)) inside++;
       }
     }
-    if (inside / total >= COVER_SHARE) {
+    if (inside / total >= L.cover) {
       textIds.push(t.id);
       hitBoxes.push(b);
     }
@@ -229,6 +244,6 @@ export function detectScratchOut(stroke, { strokes = [], texts = [], textHeight 
   }));
   const spanX = (Math.min(u.maxX, area.maxX) - Math.max(u.minX, area.minX)) / (area.maxX - area.minX);
   const spanY = (Math.min(u.maxY, area.maxY) - Math.max(u.minY, area.minY)) / (area.maxY - area.minY);
-  if (Math.max(spanX, spanY) < MIN_SPAN_SHARE) return null;
+  if (Math.max(spanX, spanY) < L.span) return null;
   return { strokeIds, textIds };
 }

@@ -35,15 +35,25 @@ function dataUrlToBuffer(url) {
   return { contentType: match[1], content: Buffer.from(match[2], "base64") };
 }
 
-async function emptyFolder(admin, bucket, folder) {
+// Removes every file in a storage folder. With `strict`, a failure is
+// thrown rather than skipped (deleting an account must not leave files
+// behind without saying so).
+export async function emptyFolder(admin, bucket, folder, { strict = false } = {}) {
   let removed = 0;
   for (let round = 0; round < 20; round++) {
     const { data, error } = await admin.storage.from(bucket).list(folder, { limit: 1000 });
-    if (error || !data || !data.length) break;
+    if (error) {
+      if (strict) throw new Error(`couldn't list ${bucket}/${folder}: ${error.message || error}`);
+      break;
+    }
+    if (!data || !data.length) break;
     const paths = data.filter((f) => f && f.name).map((f) => `${folder}/${f.name}`);
     if (!paths.length) break;
     const { error: removeError } = await admin.storage.from(bucket).remove(paths);
-    if (removeError) break;
+    if (removeError) {
+      if (strict) throw new Error(`couldn't remove files in ${bucket}/${folder}: ${removeError.message || removeError}`);
+      break;
+    }
     removed += paths.length;
   }
   return removed;
@@ -84,7 +94,8 @@ async function ownerDetails(admin, ownerId) {
     if (error || !data || !data.user) return null;
     const u = data.user;
     const meta = u.user_metadata || {};
-    const full = meta.full_name || meta.name || "";
+    // the name they set in Settings first, else the one from Google
+    const full = meta.display_name || meta.full_name || meta.name || "";
     return { email: u.email, firstName: String(full).trim().split(/\s+/)[0] || "" };
   } catch (err) {
     return null;

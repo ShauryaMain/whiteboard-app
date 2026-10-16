@@ -33,6 +33,41 @@
 
 export const RELEASES = [
   {
+    id: "2026-10-settings",
+    date: "2026-10-12",
+    title: "Settings",
+    headline: "Settings: set the board up your way",
+    intro:
+      "Choose how easily a scribble erases, whether the Move tool stays on, and what new boards start with. Your settings follow your account to every device.",
+    slides: [
+      {
+        src: "/whats-new/settings/panel.png",
+        alt: "The Settings panel over the boards page: Scribble to erase switched on, how easily a scribble erases set to Normal (with Gentle and Eager), Eraser set to Precise, Pencil only, and under Tools: after moving the board, tool hints and calculator angles.",
+        caption: "Open it from the account menu on your boards page",
+      },
+      {
+        src: "/whats-new/settings/on-a-board.png",
+        alt: "A board with a ring round the new gear button, next to the home button at the top left.",
+        caption: "Or from the gear beside the home button on any board",
+      },
+      {
+        src: "/whats-new/settings/explainer.png",
+        alt: "The Scribble to erase explainer: a short clip of the board with 2x = 14 being written, and a sentence on how to scribble over a mistake to rub it out.",
+        caption: "Tap an (i) to see a short clip of what a setting does",
+      },
+      {
+        src: "/whats-new/settings/new-boards.png",
+        alt: "The New boards part of Settings: paper (blank, lined, squared, dot grid, isometric), pen colour and pen size, then the Account part with your name, sign out and delete my account.",
+        caption: "Pick the paper, pen colour and size new boards start with",
+      },
+    ],
+    points: [
+      "Scribble to erase can be Gentle, Normal or Eager.",
+      "The Move tool can go back to your last tool after one drag, or stay on.",
+      "Set your name, hide the tool hints, and choose degrees or radians for the calculator.",
+    ],
+  },
+  {
     id: "2026-10-graph-boards",
     date: "2026-10-10",
     title: "Graphs and charts",

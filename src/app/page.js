@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Users, MoreHorizontal, Pencil, Share2, Trash2, LogOut, X, MessageSquarePlus } from "lucide-react";
+import { Plus, Search, Users, MoreHorizontal, Pencil, Share2, Trash2, LogOut, X, MessageSquarePlus, Settings } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
 import { BOARD_BACKGROUNDS, backgroundCss, normalizeBackground } from "@/lib/boardBackground";
@@ -12,6 +12,8 @@ import ShareModal from "@/components/ShareModal";
 import FeedbackModal from "@/components/FeedbackModal";
 import WhatsNew from "@/components/WhatsNew";
 import DemoCarryOver from "@/components/DemoCarryOver";
+import SettingsPanel from "@/components/SettingsPanel";
+import { displayNameFor, subscribeSettings } from "@/lib/settings";
 import { track } from "@/lib/track";
 import s from "./Home.module.css";
 import { LANDING_URL } from "@/lib/links";
@@ -60,6 +62,7 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [menuFor, setMenuFor] = useState(null); // board id whose ⋯ menu is open
   const [accountOpen, setAccountOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
@@ -174,7 +177,9 @@ export default function Home() {
   const matches = (b) => !q || (b.name || "Untitled board").toLowerCase().includes(q);
   const mine = myBoards.filter(matches);
   const shared = sharedBoards.filter(matches);
-  const initial = (user?.email || "?").charAt(0);
+  // their name from Settings (or Google), else their email
+  const shownName = useSyncExternalStore(subscribeSettings, () => displayNameFor(user), () => "");
+  const initial = (shownName || user?.email || "?").charAt(0).toUpperCase();
 
   function renderThumb(b) {
     if (b.thumbnail) {
@@ -292,9 +297,20 @@ export default function Home() {
         {accountOpen && (
           <div className={s.accountMenu} role="menu" data-home-menu="true">
             <div className={s.accountEmail}>
-              <b>Signed in</b>
+              <b>{shownName || "Signed in"}</b>
               {user?.email}
             </div>
+            <button
+              type="button"
+              role="menuitem"
+              className={s.menuItem}
+              onClick={() => {
+                setAccountOpen(false);
+                setSettingsOpen(true);
+              }}
+            >
+              <Settings size={16} /> Settings
+            </button>
             <button
               type="button"
               role="menuitem"
@@ -371,6 +387,8 @@ export default function Home() {
       )}
 
       {showNew && <NewBoardModal onClose={() => setShowNew(false)} onCreate={handleCreate} />}
+
+      {settingsOpen && <SettingsPanel user={user} signOut={signOut} onClose={() => setSettingsOpen(false)} />}
 
       {shareTarget && (
         <ShareModal board={shareTarget} onClose={() => setShareTarget(null)} onShare={handleShare} onRemove={handleUnshare} />

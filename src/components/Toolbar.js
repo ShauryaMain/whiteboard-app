@@ -7,12 +7,13 @@ import {
   MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
   Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
   Check, ChevronDown, Maximize, RotateCw, NotebookText, ImagePlus, ClipboardPaste, BoxSelect, Shapes,
-  LayoutGrid, Pause, Play, Send, Download,
+  LayoutGrid, Pause, Play, Send, Download, Settings,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
 import { stashDemoBoard } from "@/lib/demoCarry";
 import { askDemoGuide, DEMO_LEAVE_EVENT, DEMO_SIGNIN_EVENT } from "@/lib/demoEvents";
+import { useSetting } from "@/lib/settings";
 import s from "./StudioChrome.module.css";
 
 const INK_COLORS = [
@@ -97,6 +98,7 @@ export default function Toolbar(props) {
     canInsertReference, hasReferenceDoc, onReferenceToolClick, onOpenSimModal, onOpenShapeModal,
     onCopyLink, onStartLiveClass, onEndSession,
     liveClassCode, classRoster, onViewStudent, onEndLiveClass, onResetClassStatus, classTools, compact,
+    onOpenSettings,
     penSeen, pencilOnly, onSetPencilOnly,
     zoomPercent, onResetView,
   } = props;
@@ -162,6 +164,8 @@ export default function Toolbar(props) {
   const classDone = (classRoster || []).filter((st) => st.done).length;
 
   const activeTool = panToolActive ? "move" : tool;
+  // the one-line explanation beside the tools (Settings can hide it)
+  const showHints = useSetting("showHints");
   const isInk = activeTool === "pen" || activeTool === "highlighter";
 
   let hint = TOOL_HINTS[activeTool] || TOOL_HINTS.pen;
@@ -421,6 +425,11 @@ export default function Toolbar(props) {
         >
           <House size={18} strokeWidth={1.8} />
         </Link>
+        {onOpenSettings && (
+          <PalmSafeButton className={s.settingsBtn} onPress={onOpenSettings} aria-label="Settings" title="Settings" data-open-settings="true">
+            <Settings size={18} strokeWidth={1.8} />
+          </PalmSafeButton>
+        )}
         <div className={s.titleBlock}>
           <div className={s.title}>{boardName || "Untitled board"}</div>
           <div className={s.status}>{statusText}</div>
@@ -695,6 +704,7 @@ export default function Toolbar(props) {
               </PalmSafeButton>
             )}
         </>
+        {showHints && (
         <div className={s.hint}>
           {/* a hand-drawn arrow pointing back at the tools, like the
               margin notes on the landing page */}
@@ -706,6 +716,7 @@ export default function Toolbar(props) {
             <b>{hint[0]}</b> — {hint[1]}
           </span>
         </div>
+        )}
       </div>
     </div>
   );

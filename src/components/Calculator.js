@@ -6,8 +6,9 @@ import "mathlive/static.css";
 import PalmSafeButton from "./PalmSafeButton";
 import {
   evaluateWithEngine, evaluateBasic, latexToText, capturePointer, loadCalcPosition, saveCalcPosition,
-  loadAngleMode, saveAngleMode, copyText, loadMathEngine,
+  copyText, loadMathEngine,
 } from "@/lib/calcMath";
+import { getSetting, setSetting } from "@/lib/settings";
 import s from "./Calculator.module.css";
 
 // Casio-style layout. Each key has what it types into the maths field
@@ -70,7 +71,8 @@ export default function Calculator({ position, setPosition, onClose, onInsertToB
 
   const [status, setStatus] = useState("loading"); // loading | full | basic
   const [engine, setEngine] = useState(null);
-  const [angle, setAngle] = useState(loadAngleMode);
+  // starts in the teacher's setting (Settings, or the last one chosen here)
+  const [angle, setAngle] = useState(() => getSetting("calcAngle"));
   const [second, setSecond] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [view, setView] = useState("keys"); // keys | history
@@ -220,7 +222,7 @@ export default function Calculator({ position, setPosition, onClose, onInsertToB
   function chooseAngle(mode) {
     if (mode === angle) return;
     setAngle(mode);
-    saveAngleMode(mode);
+    setSetting("calcAngle", mode);
     // Re-work the shown answer in the new unit.
     if (result) {
       const res = evaluateNow(result.exprLatex || "", result.exprText, mode === "deg");

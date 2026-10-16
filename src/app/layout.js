@@ -4,6 +4,7 @@ import Script from "next/script";
 import { AuthProvider } from "@/lib/AuthContext";
 import Analytics from "@/components/Analytics";
 import Tracking from "@/components/Tracking";
+import SettingsSync from "@/components/SettingsSync";
 
 // Geist, bundled with the app (no request to Google at runtime or build
 // time). One variable-weight file covers every weight the UI uses.
@@ -51,7 +52,11 @@ export default function RootLayout({ children }) {
         {/* Fills in a few browser features older iPads (iPadOS 15) lack,
             before any app code runs. No-op on modern browsers. */}
         <Script src="/legacy-polyfills.js" strategy="beforeInteractive" />
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          {children}
+          {/* the teacher's settings, kept with their account */}
+          <SettingsSync />
+        </AuthProvider>
         {/* Anonymous visit counts (Vercel Web Analytics). */}
         <Analytics />
         {/* Where people stop on the way from the demo to a first class

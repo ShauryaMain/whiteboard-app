@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
+import { getSetting } from "@/lib/settings";
 import d from "./Dialog.module.css";
 
 // "New board" dialog: a name and which paper to start on. The paper can be
 // changed any time afterwards from Page ▾ on the board.
 export default function NewBoardModal({ onClose, onCreate }) {
   const [name, setName] = useState("");
-  const [background, setBackground] = useState("blank");
+  // starts on the teacher's usual paper (Settings)
+  const [background, setBackground] = useState(() => getSetting("paper"));
 
   function handleSubmit(e) {
     e.preventDefault();

@@ -40,6 +40,7 @@ import { sliderOf } from "@/lib/graphMath";
 import SimEmbed from "./SimEmbed";
 import SimEmbedModal from "./SimEmbedModal";
 import ShapeToolModal from "./ShapeToolModal";
+import SettingsPanel from "./SettingsPanel";
 import { shapeToBoardObjects, browserTextEnv } from "@/lib/shapeBuilder";
 import { renderGrid } from "@/lib/gridRenderer";
 import { graphsOf, packGraphs, graphBox, graphAt, translateGraph, placeGraph, snapPoint, snapSpacing, MAX_GRAPHS } from "@/lib/graphList";
@@ -49,6 +50,7 @@ import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
 import { loadCalcPosition } from "@/lib/calcMath";
 import { detectScratchOut } from "@/lib/scratchOut";
+import { getSetting } from "@/lib/settings";
 import {
   createSyncTracker,
   fetchBoardContents,
@@ -69,7 +71,7 @@ import {
 import { getServerIdlePaused, isIdlePaused, noteRemoteActivity, resumeFromIdle, startIdleWatch, subscribeIdle } from "@/lib/idleWatch";
 import {
   subscribeInkPrefs, getEraserMode, getServerEraserMode, setEraserMode,
-  getScribbleErase, getServerScribbleErase, setScribbleErase,
+  getScribbleErase, getServerScribbleErase, setScribbleErase, getScribbleLevel,
 } from "@/lib/inkPrefs";
 import { renderBoardThumbnail } from "@/lib/boardThumbnail";
 import {
@@ -216,7 +218,9 @@ export default function Whiteboard({
   boardId, demo = false, onDemoClassStart, onDemoClassEnd, initialReferenceDoc = null,
   student = null, backend = null, active = true, compact = false,
 }) {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
+  // the Settings panel (the gear beside the home button)
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Loads and saves go here. Live messages always use the real connection.
   const db = backend || supabase;
   // Only who's signed in matters here — not the session object, which is
@@ -344,8 +348,10 @@ export default function Whiteboard({
   const [myUndoAvailable, setMyUndoAvailable] = useState(false);
   const [myRedoAvailable, setMyRedoAvailable] = useState(false);
   const [tool, setTool] = useState("pen");
-  const [color, setColor] = useState("#1a1a1a");
-  const [strokeWidth, setStrokeWidth] = useState(4);
+  // a new board session starts with the teacher's pen colour and size
+  // (Settings); a student's board in a live class starts plain
+  const [color, setColor] = useState(() => (student ? "#1a1a1a" : getSetting("penColor")));
+  const [strokeWidth, setStrokeWidth] = useState(() => (student ? 4 : getSetting("penSize")));
   const [saveStatus, setSaveStatus] = useState("");
   // What the "Finish & save" button shows: idle | saving | saved | error
   const [saveState, setSaveState] = useState("idle");
@@ -1290,21 +1296,26 @@ export default function Whiteboard({
   }
 
   // Supabase errors print as "{}" in the console, so spell them out. A
-  // row-level-security refusal (code 42501) when re-saving something that
-  // already exists means the table has no "update" rule yet — moving
-  // strokes is the first thing that ever updates a saved stroke — so say
-  // that once, in plain words, instead of an error every time.
+  // permission refusal (code 42501) means the database turned the change
+  // down: either this person has been signed out, or the board's rules
+  // don't let them make it. Say so once, in plain words, instead of an
+  // error every time (the details go to the console for us).
   function reportSaveError(kind, error) {
     const detail = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" — ");
     if (error.code === "42501") {
-      console.warn(`Could not save a moved ${kind} (the ${kind}s table needs an update rule in Supabase): ${detail}`);
+      console.warn(`The database refused to save a ${kind}: ${detail}`);
       if (!rlsNoticeShownRef.current) {
         rlsNoticeShownRef.current = true;
-        setBoardNotice(
-          "Moved items show for everyone now, but won't stay moved after a reload until the Supabase update rule is added (see the SQL file)."
-        );
-        if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
-        noticeTimerRef.current = setTimeout(() => setBoardNotice(""), 8000);
+        const show = (signedIn) =>
+          flashNotice(
+            signedIn
+              ? "Some changes on this board couldn't be saved, so they may be gone after a reload."
+              : "You've been signed out, so changes aren't being saved. Sign in again to keep your work.",
+            9000
+          );
+        Promise.resolve(db.auth && db.auth.getSession ? db.auth.getSession() : null)
+          .then((res) => show(!res || !!(res.data && res.data.session)))
+          .catch(() => show(true));
       }
       return;
     }
@@ -3691,7 +3702,8 @@ export default function Whiteboard({
       const hit = detectScratchOut(
         stroke,
         { strokes: strokesRef.current, texts: textsRef.current, textHeight: textHeightOf },
-        scaleRef.current
+        scaleRef.current,
+        getScribbleLevel()
       );
       if (!hit) return false;
       const data = getObjectsData({ strokes: hit.strokeIds, texts: hit.textIds, images: [] });
@@ -3791,8 +3803,11 @@ export default function Whiteboard({
         if (panDragActive.current) {
           panDragActive.current = false;
           panDragStart.current = null;
-          setPanToolActive(false);
-          setTool(toolBeforePanRef.current || "pen");
+          // (Settings: the Move tool can stay on until another tool is picked)
+          if (getSetting("moveReturns")) {
+            setPanToolActive(false);
+            setTool(toolBeforePanRef.current || "pen");
+          }
         }
         try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
         beginPanZoom();
@@ -4316,8 +4331,12 @@ export default function Whiteboard({
         panDragActive.current = false;
         panDragStart.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        setPanToolActive(false);
-        setTool(toolBeforePanRef.current || "pen");
+        // One drag, then back to the tool you had (unless Settings says the
+        // Move tool stays on).
+        if (getSetting("moveReturns")) {
+          setPanToolActive(false);
+          setTool(toolBeforePanRef.current || "pen");
+        }
         return;
       }
 
@@ -4752,6 +4771,8 @@ export default function Whiteboard({
     }
     function onKeyDown(e) {
       if (isTypingTarget(e.target) || editingTextRef.current) return;
+      // the Settings panel is open over the board: its keys aren't for the board
+      if (document.querySelector("[data-settings-panel]")) return;
       const h = shortcutHandlersRef.current;
       if (!h) return;
       const mod = e.metaKey || e.ctrlKey;
@@ -4877,6 +4898,7 @@ export default function Whiteboard({
     <div className={student ? "wb-root wb-root-embedded" : "wb-root"}>
       <Toolbar
         student={!!student}
+        onOpenSettings={student ? undefined : () => setSettingsOpen(true)}
         boardName={boardName}
         statusText={statusText}
         saveState={saveState}
@@ -5354,6 +5376,7 @@ export default function Whiteboard({
           onPlace={repositionGraphBits}
         />
         {simModalOpen && <SimEmbedModal onAdd={handleAddSimEmbed} onClose={handleCloseSimModal} />}
+        {settingsOpen && <SettingsPanel user={demo ? null : user} signOut={signOut} onClose={() => setSettingsOpen(false)} />}
         {classDialog === "send" && liveClassCode && (
           <SendBoardDialog
             studentCount={classRoster.length}

@@ -545,6 +545,28 @@ function EquationField({ value, mathStatus, label, onChange, onActive }) {
     function onFocus() {
       latest.current.onActive(mf, change);
     }
+    // Phones and tablets: the maths box keeps the phone's own keyboard
+    // hidden (it expects its own on-screen keyboard, which we don't use), so
+    // nothing could be typed. Let the normal keyboard come up instead; the
+    // maths keys below add the symbols it doesn't have.
+    let sinkTries = 0;
+    let sinkFrame = 0;
+    const allowPhoneKeyboard = () => {
+      const sink = mf.shadowRoot && mf.shadowRoot.querySelector("[part=keyboard-sink]");
+      if (sink) {
+        sink.setAttribute("inputmode", "text");
+        return;
+      }
+      if (++sinkTries < 60) sinkFrame = requestAnimationFrame(allowPhoneKeyboard);
+    };
+    allowPhoneKeyboard();
+    // A tap focuses it again from the tap itself, which is what makes iPhones
+    // and iPads actually open the keyboard.
+    const touchOnly = window.matchMedia && window.matchMedia("(hover: none)").matches;
+    function onTap() {
+      if (touchOnly) mf.focus();
+    }
+    mf.addEventListener("click", onTap);
     mf.addEventListener("input", onInput);
     mf.addEventListener("focus", onFocus);
     mf.addEventListener("focusin", onFocus);
@@ -560,6 +582,8 @@ function EquationField({ value, mathStatus, label, onChange, onActive }) {
     latest.current.onActive(mf, change);
     return () => {
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(sinkFrame);
+      mf.removeEventListener("click", onTap);
       mf.removeEventListener("input", onInput);
       mf.removeEventListener("focus", onFocus);
       mf.removeEventListener("focusin", onFocus);
