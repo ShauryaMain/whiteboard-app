@@ -63,6 +63,7 @@ import {
   retryUnsaved,
   saveRow, saveRows,
   setExistsCheck,
+  setGiveUpHandler,
   subscribeUnsaved,
   syncSince,
   touchBoard,
@@ -1296,26 +1297,26 @@ export default function Whiteboard({
   }
 
   // Supabase errors print as "{}" in the console, so spell them out. A
-  // permission refusal (code 42501) means the database turned the change
-  // down: either this person has been signed out, or the board's rules
-  // don't let them make it. Say so once, in plain words, instead of an
-  // error every time (the details go to the console for us).
+  // refusal (code 42501) is queued and tried again (see boardSync: a login
+  // that lapsed for a moment looks exactly like one), so it isn't shown
+  // here unless this person really has been signed out. A refusal that
+  // keeps happening is given up on and shown by onGiveUp below.
   function reportSaveError(kind, error) {
     const detail = [error.code, error.message, error.details, error.hint].filter(Boolean).join(" — ");
+    if (error.code === "LOGIN_LAPSED") {
+      console.warn(`Saving a ${kind} is waiting for the login to be renewed.`);
+      return;
+    }
     if (error.code === "42501") {
-      console.warn(`The database refused to save a ${kind}: ${detail}`);
+      console.warn(`The database refused to save a ${kind} (will try again): ${detail}`);
       if (!rlsNoticeShownRef.current) {
-        rlsNoticeShownRef.current = true;
-        const show = (signedIn) =>
-          flashNotice(
-            signedIn
-              ? "Some changes on this board couldn't be saved, so they may be gone after a reload."
-              : "You've been signed out, so changes aren't being saved. Sign in again to keep your work.",
-            9000
-          );
         Promise.resolve(db.auth && db.auth.getSession ? db.auth.getSession() : null)
-          .then((res) => show(!res || !!(res.data && res.data.session)))
-          .catch(() => show(true));
+          .then((res) => {
+            if (!res || (res.data && res.data.session) || res.error) return;
+            rlsNoticeShownRef.current = true;
+            flashNotice("You've been signed out, so changes aren't being saved. Sign in again to keep your work.", 9000);
+          })
+          .catch(() => {});
       }
       return;
     }
@@ -4700,6 +4701,13 @@ export default function Whiteboard({
   }, [syncPaused]);
 
   useEffect(() => {
+    // Saves the database kept refusing (the board was deleted, or it's no
+    // longer shared with this person): say so once.
+    setGiveUpHandler(sync, () => {
+      if (rlsNoticeShownRef.current) return;
+      rlsNoticeShownRef.current = true;
+      flashNotice("Some changes on this board couldn't be saved, so they may be gone after a reload.", 9000);
+    });
     setExistsCheck(
       sync,
       (id) =>
@@ -4720,6 +4728,7 @@ export default function Whiteboard({
     window.addEventListener("online", onOnline);
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => {
+      setGiveUpHandler(sync, null);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("beforeunload", onBeforeUnload);
     };

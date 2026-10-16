@@ -131,6 +131,7 @@ export function createSyncTracker(client) {
     lastIds: { strokes: new Set(), texts: new Set(), images: new Set() },
     listeners: new Set(),
     exists: null, // set by the board: (id) => is it still on screen?
+    onGiveUp: null, // set by the board: called with saves that will never go through
     retryTimer: null,
     retrying: false,
   };
@@ -197,8 +198,8 @@ export function unsavedCount(tracker) {
   return tracker.failed.size;
 }
 
-// Network drops, timeouts and expired logins are worth retrying; a
-// permission refusal or bad data isn't.
+// Network drops, timeouts and expired logins are worth retrying; bad data
+// isn't.
 export function isRetryable(error) {
   if (!error) return false;
   const code = String(error.code || "");
@@ -206,28 +207,72 @@ export function isRetryable(error) {
   return true;
 }
 
+// The database said no (row-level security, code 42501). Usually that's
+// the board's rules (the board was deleted, or it's no longer shared with
+// this person), but it is also exactly what comes back when the login
+// lapsed for a moment: an iPad waking up with an expired login and no
+// network yet sends the save as "not signed in". So a refusal is tried a
+// few more times before it's given up on.
+export function isRefusal(error) {
+  return !!error && String(error.code || "") === "42501";
+}
+const REFUSED_TRIES = 4;
+
+// Is the login stuck mid-refresh (expired, and renewing it just failed)?
+// Supabase would then send the save as "not signed in" and the database
+// would refuse it, so it's better to wait and send it once the login is
+// back.
+async function loginLapsed(client) {
+  if (!client || !client.auth || typeof client.auth.getSession !== "function") return false;
+  try {
+    const { data, error } = await client.auth.getSession();
+    return !!error && !(data && data.session);
+  } catch (err) {
+    return false;
+  }
+}
+const LOGIN_LAPSED = { code: "LOGIN_LAPSED", message: "the login couldn't be renewed just now; will retry" };
+
+// Remembers a save that didn't go through, keeping what's known about it.
+function queue(tracker, id, table, row, error) {
+  const prev = tracker.failed.get(id);
+  tracker.failed.set(id, {
+    table,
+    row,
+    attempts: prev ? prev.attempts : 0,
+    refusals: (prev && prev.refusals) || 0,
+    refused: isRefusal(error),
+  });
+}
+
+async function sendRows(tracker, table, payload) {
+  if (await loginLapsed(tracker.client)) return LOGIN_LAPSED;
+  try {
+    const result = await tracker.client.from(table).upsert(payload);
+    return result.error;
+  } catch (err) {
+    return err || new Error("save failed");
+  }
+}
+
 // Upserts one row; returns the error (or null).
 export async function saveRow(tracker, table, row) {
   const id = row.id;
   tracker.pending.set(id, (tracker.pending.get(id) || 0) + 1);
-  let error = null;
-  try {
-    const result = await tracker.client.from(table).upsert(row);
-    error = result.error;
-  } catch (err) {
-    error = err || new Error("save failed");
-  }
+  const error = await sendRows(tracker, table, row);
   const left = (tracker.pending.get(id) || 1) - 1;
   if (left > 0) tracker.pending.set(id, left);
   else tracker.pending.delete(id);
 
   if (!error) {
     if (tracker.failed.delete(id)) emit(tracker);
-  } else if (isRetryable(error)) {
-    const prev = tracker.failed.get(id);
-    tracker.failed.set(id, { table, row, attempts: prev ? prev.attempts : 0 });
+  } else if (isRetryable(error) || isRefusal(error)) {
+    queue(tracker, id, table, row, error);
     emit(tracker);
     scheduleRetry(tracker);
+  } else if (tracker.failed.delete(id)) {
+    // bad data never saves however often it's sent
+    emit(tracker);
   }
   return error;
 }
@@ -240,24 +285,17 @@ export async function saveRows(tracker, table, rows) {
   if (!rows.length) return null;
   if (rows.length === 1) return saveRow(tracker, table, rows[0]);
   for (const row of rows) tracker.pending.set(row.id, (tracker.pending.get(row.id) || 0) + 1);
-  let error = null;
-  try {
-    const result = await tracker.client.from(table).upsert(rows);
-    error = result.error;
-  } catch (err) {
-    error = err || new Error("save failed");
-  }
-  const retry = !!error && isRetryable(error);
+  const error = await sendRows(tracker, table, rows);
+  const retry = !!error && (isRetryable(error) || isRefusal(error));
   let changed = false;
   for (const row of rows) {
     const left = (tracker.pending.get(row.id) || 1) - 1;
     if (left > 0) tracker.pending.set(row.id, left);
     else tracker.pending.delete(row.id);
-    if (!error) {
+    if (!error || !retry) {
       if (tracker.failed.delete(row.id)) changed = true;
-    } else if (retry) {
-      const prev = tracker.failed.get(row.id);
-      tracker.failed.set(row.id, { table, row, attempts: prev ? prev.attempts : 0 });
+    } else {
+      queue(tracker, row.id, table, row, error);
       changed = true;
     }
   }
@@ -300,6 +338,7 @@ export async function retryUnsaved(tracker) {
   tracker.retrying = true;
   cancelRetry(tracker);
   const jobs = [...tracker.failed.entries()];
+  const gaveUp = [];
   for (const [id, job] of jobs) {
     if (exists && !exists(id)) {
       tracker.failed.delete(id);
@@ -309,13 +348,36 @@ export async function retryUnsaved(tracker) {
     if (job.attempts > MAX_ATTEMPTS) {
       console.error(`Giving up saving ${job.table} ${id} after ${MAX_ATTEMPTS} tries.`);
       tracker.failed.delete(id);
+      gaveUp.push(job);
       continue;
     }
-    await saveRow(tracker, job.table, job.row);
+    const error = await saveRow(tracker, job.table, job.row);
+    if (isRefusal(error)) {
+      const again = tracker.failed.get(id);
+      if (again) {
+        again.refusals = (again.refusals || 0) + 1;
+        if (again.refusals >= REFUSED_TRIES) {
+          console.warn(`Giving up saving ${job.table} ${id}: the database keeps refusing it (${error.message || error.code}).`);
+          tracker.failed.delete(id);
+          gaveUp.push(again);
+        }
+      }
+    }
   }
   tracker.retrying = false;
   emit(tracker);
+  if (gaveUp.length && tracker.onGiveUp) {
+    try {
+      tracker.onGiveUp(gaveUp);
+    } catch (err) {
+      // the board has gone
+    }
+  }
   scheduleRetry(tracker);
+}
+
+export function setGiveUpHandler(tracker, fn) {
+  tracker.onGiveUp = fn;
 }
 
 export function setExistsCheck(tracker, fn) {
