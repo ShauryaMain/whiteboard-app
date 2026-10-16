@@ -13,6 +13,7 @@ import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
 import { supabase } from "@/lib/supabaseClient";
 import { LANDING_URL } from "@/lib/links";
 import SettingsExplainer from "./SettingsExplainer";
+import SettingsShortcuts from "./SettingsShortcuts";
 import d from "./Dialog.module.css";
 import st from "./Settings.module.css";
 
@@ -80,12 +81,14 @@ const WHERE_TEXT = {
   device: "Saved on this device",
 };
 
-export default function SettingsPanel({ user, signOut, onClose }) {
+export default function SettingsPanel({ user, signOut, onClose, initialTab = "board" }) {
   const scribbleErase = useSetting("scribbleErase");
   const scribbleLevel = useSetting("scribbleLevel");
   const eraserMode = useSetting("eraserMode");
   const moveReturns = useSetting("moveReturns");
   const showHints = useSetting("showHints");
+  const nameTags = useSetting("nameTags");
+  const [tab, setTab] = useState(initialTab === "shortcuts" ? "shortcuts" : "board");
   const calcAngle = useSetting("calcAngle");
   const paper = useSetting("paper");
   const penColor = useSetting("penColor");
@@ -178,7 +181,38 @@ export default function SettingsPanel({ user, signOut, onClose }) {
           </button>
         </div>
 
-        <div className={st.body}>
+        <div className={st.tabs} role="tablist" aria-label="Settings">
+          {[["board", "Board"], ["shortcuts", "Shortcuts"]].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`set-tab-${id}`}
+              aria-selected={tab === id}
+              aria-controls="set-tabpanel"
+              tabIndex={tab === id ? 0 : -1}
+              className={`${st.tab} ${tab === id ? st.tabOn : ""}`}
+              onClick={() => setTab(id)}
+              onKeyDown={(e) => {
+                if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                e.preventDefault();
+                const next = tab === "board" ? "shortcuts" : "board";
+                setTab(next);
+                setTimeout(() => {
+                  const el = document.getElementById(`set-tab-${next}`);
+                  if (el) el.focus();
+                }, 0);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className={st.body} role="tabpanel" id="set-tabpanel" aria-labelledby={`set-tab-${tab}`}>
+          {tab === "shortcuts" ? (
+            <SettingsShortcuts Row={Row} Switch={Switch} Choice={Choice} />
+          ) : (
+          <>
           <section className={st.section} aria-labelledby="set-draw">
             <h3 id="set-draw" className={st.sectionTitle}>Drawing &amp; erasing</h3>
             <Row label="Scribble to erase" sub="Scribble back and forth over a mistake with the pen to rub it out." info="scribble" onInfo={openExplainer}>
@@ -218,6 +252,9 @@ export default function SettingsPanel({ user, signOut, onClose }) {
             </Row>
             <Row label="Tool hints" sub="The line beside the tools that says what each one does (on wider screens)." info="hints" onInfo={openExplainer}>
               <Switch on={showHints} onChange={(v) => setSetting("showHints", v)} label="Tool hints" />
+            </Row>
+            <Row label="Names on other people's pens" sub="When someone else is writing on your board, a little tag with their name follows their pen.">
+              <Switch on={nameTags} onChange={(v) => setSetting("nameTags", v)} label="Names on other people's pens" />
             </Row>
             <Row label="Calculator angles">
               <Choice
@@ -294,6 +331,8 @@ export default function SettingsPanel({ user, signOut, onClose }) {
             <section className={st.section}>
               <p className={st.note}>These are kept in this browser. Sign in and they&apos;re kept with your account, on every device.</p>
             </section>
+          )}
+          </>
           )}
         </div>
       </div>

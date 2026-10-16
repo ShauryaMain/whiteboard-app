@@ -14,6 +14,7 @@
 // and the saved values take over right after (no hydration mismatch).
 
 import { useSyncExternalStore } from "react";
+import { isValidOverrides, GESTURE_IDS } from "./shortcuts";
 
 export const PEN_COLORS = [
   ["Black", "#1a1a1a"],
@@ -45,6 +46,11 @@ const SPEC = {
   penColor: ["#1a1a1a", oneOf(PEN_COLORS.map(([, hex]) => hex))],
   penSize: [4, (v) => Number.isInteger(v) && v >= PEN_SIZE_MIN && v <= PEN_SIZE_MAX],
   displayName: ["", (v) => typeof v === "string" && v.length <= DISPLAY_NAME_MAX && !/[\u0000-\u001f<>]/.test(v)],
+  nameTags: [false, isBool], // other people's names at the tips of their pens
+  singleKeys: [true, isBool], // shortcuts without Ctrl/⌘ (P for pen…)
+  shortcuts: [{}, isValidOverrides], // the shortcuts someone changed (see shortcuts.js)
+  gesture2: ["undo", oneOf(GESTURE_IDS)], // a two-finger tap
+  gesture3: ["redo", oneOf(GESTURE_IDS)], // a three-finger tap
 };
 
 export const SETTING_NAMES = Object.keys(SPEC);

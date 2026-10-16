@@ -14,6 +14,7 @@ import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
 import { stashDemoBoard } from "@/lib/demoCarry";
 import { askDemoGuide, DEMO_LEAVE_EVENT, DEMO_SIGNIN_EVENT } from "@/lib/demoEvents";
 import { useSetting } from "@/lib/settings";
+import { keysWith, keyLabel, isMacLike } from "@/lib/shortcuts";
 import s from "./StudioChrome.module.css";
 
 const INK_COLORS = [
@@ -143,6 +144,16 @@ export default function Toolbar(props) {
       document.removeEventListener("keydown", handleKey);
     };
   }, [menu]);
+
+  // the shortcut shown on a tool's hover note
+  const shortcutChanges = useSetting("shortcuts");
+  const singleKeys = useSetting("singleKeys");
+  const mac = useSyncExternalStore(noSubscribe, isMacLike, () => false);
+  const keyHint = (action) => {
+    const key = keysWith(shortcutChanges)[action];
+    if (!key || (!singleKeys && !key.startsWith("mod+"))) return "";
+    return keyLabel(key, mac);
+  };
 
   // how many faces fit in the top bar (more go in a list)
   const narrowBar = useSyncExternalStore(subscribeNarrowBar, isNarrowBar, () => false);
@@ -593,25 +604,25 @@ export default function Toolbar(props) {
 
       {/* ---------- Tool row ---------- */}
       <div ref={toolRowRef} className={`${s.toolRow} ${moreTools ? s.toolRowMore : ""}`} role="toolbar" aria-label="Board tools" data-tour="tool-row">
-        <ToolButton label="Select" active={activeTool === "select"} onPress={() => onSelectTool("select")}>
+        <ToolButton label="Select" hint={keyHint("select")} active={activeTool === "select"} onPress={() => onSelectTool("select")}>
           <MousePointer2 {...ICON} />
         </ToolButton>
-        <ToolButton label="Move" active={activeTool === "move"} onPress={onSelectMove}>
+        <ToolButton label="Move" hint={keyHint("move")} active={activeTool === "move"} onPress={onSelectMove}>
           <Hand {...ICON} />
         </ToolButton>
 
         <div className={s.divider} />
 
-        <ToolButton label="Pen" active={activeTool === "pen"} onPress={() => onSelectTool("pen")}>
+        <ToolButton label="Pen" hint={keyHint("pen")} active={activeTool === "pen"} onPress={() => onSelectTool("pen")}>
           <Pencil {...ICON} />
         </ToolButton>
-        <ToolButton label="Highlight" active={activeTool === "highlighter"} onPress={() => onSelectTool("highlighter")}>
+        <ToolButton label="Highlight" hint={keyHint("highlighter")} active={activeTool === "highlighter"} onPress={() => onSelectTool("highlighter")}>
           <Highlighter {...ICON} />
         </ToolButton>
-        <ToolButton label="Eraser" active={activeTool === "eraser"} onPress={() => onSelectTool("eraser")}>
+        <ToolButton label="Eraser" hint={keyHint("eraser")} active={activeTool === "eraser"} onPress={() => onSelectTool("eraser")}>
           <Eraser {...ICON} />
         </ToolButton>
-        <ToolButton label="Text" active={activeTool === "text"} onPress={() => onSelectTool("text")}>
+        <ToolButton label="Text" hint={keyHint("text")} active={activeTool === "text"} onPress={() => onSelectTool("text")}>
           <Type {...ICON} />
         </ToolButton>
 
@@ -638,10 +649,10 @@ export default function Toolbar(props) {
 
         <div className={s.spacer} />
 
-        <ToolButton label="Undo" disabled={!canUndo} onPress={onUndo}>
+        <ToolButton label="Undo" hint={keyHint("undo")} disabled={!canUndo} onPress={onUndo}>
           <Undo2 {...ICON} />
         </ToolButton>
-        <ToolButton label="Redo" disabled={!canRedo} onPress={onRedo}>
+        <ToolButton label="Redo" hint={keyHint("redo")} disabled={!canRedo} onPress={onRedo}>
           <Redo2 {...ICON} />
         </ToolButton>
         <ToolButton label="Clear" onPress={onClear}>
@@ -789,7 +800,7 @@ function SaveLabels({ state, labels }) {
   );
 }
 
-function ToolButton({ label, active, open, disabled, wide, menu, badge, tour, onPress, children }) {
+function ToolButton({ label, active, open, disabled, wide, menu, badge, tour, hint, onPress, children }) {
   const classes = [s.toolBtn];
   if (wide) classes.push(s.toolBtnWide);
   if (active) classes.push(s.toolBtnActive);
@@ -804,6 +815,8 @@ function ToolButton({ label, active, open, disabled, wide, menu, badge, tour, on
       data-menu-trigger={menu ? "true" : undefined}
       // lets a walkthrough point at this button (see src/lib/tours.js)
       data-tour={tour}
+      // the keyboard shortcut, on hover (Settings ▸ Shortcuts)
+      title={hint ? `${label} (${hint})` : undefined}
       onPress={onPress}
     >
       <span className={s.toolIcon}>{children}</span>
@@ -816,6 +829,7 @@ function ToolButton({ label, active, open, disabled, wide, menu, badge, tour, on
   );
 }
 
+const noSubscribe = () => () => {};
 const NARROW_BAR = "(max-width: 560px)";
 function subscribeNarrowBar(onChange) {
   if (typeof window === "undefined" || !window.matchMedia) return () => {};

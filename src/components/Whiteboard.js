@@ -50,7 +50,8 @@ import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
 import { loadCalcPosition } from "@/lib/calcMath";
 import { detectScratchOut } from "@/lib/scratchOut";
-import { getSetting, displayNameFor } from "@/lib/settings";
+import { getSetting, displayNameFor, PEN_COLORS } from "@/lib/settings";
+import { keyFromEvent, keysWith, actionForKey, createTapGesture, GESTURE_WORDS } from "@/lib/shortcuts";
 import { nameFor, personId, wherePayload, sameWhere, peopleFrom, facesKey, viewFor, viewBetween, createPenTags } from "@/lib/boardPeople";
 import {
   createSyncTracker,
@@ -96,6 +97,7 @@ import {
 } from "@/lib/pencilPrefs";
 
 const MIN_SCALE = 0.1;
+const performanceNow = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
 // Where you are on the board goes out to the others at most this often.
 const PRESENCE_GAP_MS = 800;
 const MAX_SCALE = 8;
@@ -224,7 +226,7 @@ export default function Whiteboard({
 }) {
   const { user, signOut } = useAuth();
   // the Settings panel (the gear beside the home button)
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false); // false, or which tab: "board" | "shortcuts"
   // Loads and saves go here. Live messages always use the real connection.
   const db = backend || supabase;
   // Only who's signed in matters here — not the session object, which is
@@ -293,6 +295,14 @@ export default function Whiteboard({
   const panToolActiveRef = useRef(false);
   const panDragActive = useRef(false);
   const toolBeforePanRef = useRef("pen");
+  // Space held down (or whatever key Settings gives "hold to move"): the
+  // Move tool until it's let go
+  const holdMoveRef = useRef(false);
+  const toolBeforeEraserRef = useRef("pen"); // for the "pen ⇄ eraser" gesture
+  // two- and three-finger taps (src/lib/shortcuts.js); the view as it was
+  // when the fingers came down, so a tap doesn't nudge the zoom
+  const tapViewRef = useRef(null);
+  const [tapGesture] = useState(() => createTapGesture({}));
   const panDragStart = useRef(null);
 
   const clientId = useRef(
@@ -3114,7 +3124,7 @@ export default function Whiteboard({
         points: [payload.point],
       };
       // a name tag at the tip of their pen while they write
-      if (peopleOn && payload.by) {
+      if (peopleOn && payload.by && getSetting("nameTags")) {
         penTagOwners.current[payload.strokeKey] = payload.by;
         penTags.show(payload.by, peopleRef.current.byKey.get(payload.by), payload.point, worldToScreen);
       }
@@ -4050,6 +4060,9 @@ export default function Whiteboard({
 
       if (e.pointerType === "touch") {
         touchPoints.current.set(e.pointerId, pos);
+        // (a two- or three-finger tap: remember the view to put back)
+        if (!tapGesture.active()) tapViewRef.current = { pan: { ...panRef.current }, scale: scaleRef.current };
+        tapGesture.down(e.pointerId, pos.x, pos.y, e.timeStamp || performanceNow());
       }
 
       if (touchPoints.current.size >= 2) {
@@ -4061,7 +4074,7 @@ export default function Whiteboard({
           panDragActive.current = false;
           panDragStart.current = null;
           // (Settings: the Move tool can stay on until another tool is picked)
-          if (getSetting("moveReturns")) {
+          if (getSetting("moveReturns") && !holdMoveRef.current) {
             setPanToolActive(false);
             setTool(toolBeforePanRef.current || "pen");
           }
@@ -4355,7 +4368,9 @@ export default function Whiteboard({
     function handlePointerMove(e) {
       if (e.pointerType === "pen") notePenActivity();
       if (e.pointerType === "touch" && touchPoints.current.has(e.pointerId)) {
-        touchPoints.current.set(e.pointerId, getPos(e));
+        const p = getPos(e);
+        touchPoints.current.set(e.pointerId, p);
+        tapGesture.move(e.pointerId, p.x, p.y);
       }
 
       if (panZoomState.current && touchPoints.current.size >= 2) {
@@ -4576,6 +4591,8 @@ export default function Whiteboard({
       if (e.pointerType === "touch") {
         touchPoints.current.delete(e.pointerId);
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (e.type === "pointercancel") tapGesture.cancel();
+        else tapGesture.up(e.pointerId, e.timeStamp || performanceNow());
       }
 
       if (panZoomState.current) {
@@ -4591,7 +4608,7 @@ export default function Whiteboard({
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
         // One drag, then back to the tool you had (unless Settings says the
         // Move tool stays on).
-        if (getSetting("moveReturns")) {
+        if (getSetting("moveReturns") && !holdMoveRef.current) {
           setPanToolActive(false);
           setTool(toolBeforePanRef.current || "pen");
         }
@@ -5008,6 +5025,97 @@ export default function Whiteboard({
     };
   }, []);
 
+  // ---------- shortcuts and gestures (src/lib/shortcuts.js) ----------
+
+  // Does what a shortcut says. Returns false if it doesn't apply here.
+  function runAction(action) {
+    const zoomTo = (factor) => handleSetZoom(Math.round(scaleRef.current * factor * 100));
+    switch (action) {
+      case "pen":
+      case "highlighter":
+      case "eraser":
+      case "select":
+      case "text":
+        if (student && action === "select") return false;
+        handleSelectTool(action);
+        return true;
+      case "move":
+        if (!panToolActiveRef.current) handleTogglePan();
+        return true;
+      case "ruler":
+        handleToggleRuler();
+        return true;
+      case "undo":
+        handleUndo();
+        return true;
+      case "redo":
+        handleRedo();
+        return true;
+      case "zoomIn":
+        zoomTo(1.25);
+        return true;
+      case "zoomOut":
+        zoomTo(0.8);
+        return true;
+      case "zoomReset":
+        handleSetZoom(100);
+        return true;
+      case "help":
+        if (student) return false;
+        setSettingsOpen("shortcuts");
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // 1–7: the pen colours (and the pen, if a non-ink tool was on)
+  function pickColourKey(n) {
+    const c = PEN_COLORS[n - 1];
+    if (!c) return;
+    setColor(c[1]);
+    if (toolRef.current !== "pen" && toolRef.current !== "highlighter") handleSelectTool("pen");
+  }
+
+  function startHoldMove() {
+    if (holdMoveRef.current || panToolActiveRef.current) return;
+    holdMoveRef.current = true;
+    toolBeforePanRef.current = toolRef.current;
+    setPanToolActive(true);
+  }
+  function endHoldMove() {
+    if (!holdMoveRef.current) return;
+    holdMoveRef.current = false;
+    setPanToolActive(false);
+    setTool(toolBeforePanRef.current || "pen");
+  }
+
+  // A two- or three-finger tap on the board.
+  function handleTap(fingers) {
+    // a resting hand while the Pencil writes isn't a tap
+    if (msSincePenActivity() < 800) return;
+    const action = getSetting(fingers >= 3 ? "gesture3" : "gesture2");
+    if (!action || action === "none") return;
+    // put the view back as it was (the fingers may have nudged the zoom)
+    const before = tapViewRef.current;
+    if (before) {
+      panRef.current = before.pan;
+      scaleRef.current = before.scale;
+      fullRedraw();
+      setZoomPercent(Math.round(before.scale * 100));
+    }
+    if (action === "undo") handleUndo();
+    else if (action === "redo") handleRedo();
+    else if (action === "swap") {
+      if (toolRef.current === "eraser") handleSelectTool(toolBeforeEraserRef.current || "pen");
+      else {
+        toolBeforeEraserRef.current = toolRef.current === "highlighter" ? "highlighter" : "pen";
+        handleSelectTool("eraser");
+      }
+    }
+    flashNotice(GESTURE_WORDS[action] || "", 900);
+  }
+
   // Keyboard shortcuts and system copy / cut / paste. The handlers read the
   // latest versions of these functions through a ref, so the listeners are
   // attached only once.
@@ -5016,7 +5124,12 @@ export default function Whiteboard({
       copySelection, cutSelection, deleteSelection, duplicateSelection, selectAll,
       handleUndo, handleRedo, pasteFromSources,
       clearSelection: () => setSelection(emptySelection()),
+      runAction,
+      pickColourKey,
+      startHoldMove,
+      endHoldMove,
     };
+    tapGesture.setHandler(handleTap);
   });
 
   useEffect(() => {
@@ -5051,13 +5164,28 @@ export default function Whiteboard({
         if (mod && key === "a") e.preventDefault();
         return;
       }
-      if (mod && key === "z") {
+      // The changeable shortcuts (Settings ▸ Shortcuts). Ones without Ctrl/⌘
+      // can be switched off there, and never fire with Ctrl/⌘/Alt held.
+      const combo = keyFromEvent(e);
+      const keys = keysWith(getSetting("shortcuts"));
+      const action = actionForKey(combo, keys);
+      const plainKey = !!combo && !combo.startsWith("mod+") && !combo.includes("alt+");
+      const allowed = action && (!plainKey || getSetting("singleKeys"));
+      if (allowed && action === "holdMove") {
         e.preventDefault();
-        if (e.shiftKey) h.handleRedo();
-        else h.handleUndo();
+        if (!e.repeat) startHoldMoveRef();
         return;
       }
-      if (mod && key === "y") {
+      if (allowed && action !== "undo" && action !== "redo" && action !== "zoomIn" && action !== "zoomOut" && e.repeat) {
+        e.preventDefault();
+        return;
+      }
+      if (allowed && h.runAction(action)) {
+        e.preventDefault();
+        return;
+      }
+      // Ctrl/⌘+Y: redo as well (as everywhere else)
+      if (mod && key === "y" && !e.shiftKey) {
         e.preventDefault();
         h.handleRedo();
         return;
@@ -5065,6 +5193,11 @@ export default function Whiteboard({
       if (mod && key === "a") {
         e.preventDefault();
         h.selectAll();
+        return;
+      }
+      // 1–7: pen colours
+      if (!mod && !e.altKey && /^[1-7]$/.test(key) && getSetting("singleKeys")) {
+        h.pickColourKey(Number(key));
         return;
       }
       if (!hasSelection()) return;
@@ -5079,6 +5212,23 @@ export default function Whiteboard({
       } else if (key === "escape") {
         h.clearSelection();
       }
+    }
+    function startHoldMoveRef() {
+      const h = shortcutHandlersRef.current;
+      if (h) h.startHoldMove();
+    }
+    // letting go of the "hold to move" key (or leaving the window) ends it
+    function onKeyUp(e) {
+      const h = shortcutHandlersRef.current;
+      if (!h) return;
+      const combo = keyFromEvent({ key: e.key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false });
+      const keys = keysWith(getSetting("shortcuts"));
+      const held = keys.holdMove ? keys.holdMove.split("+").pop() : null;
+      if (combo && held && combo === held) h.endHoldMove();
+    }
+    function onBlur() {
+      const h = shortcutHandlersRef.current;
+      if (h) h.endHoldMove();
     }
     // Marks the system clipboard synchronously during a real copy / cut, so
     // a later paste knows our selection is the newest thing copied.
@@ -5108,11 +5258,15 @@ export default function Whiteboard({
       h.pasteFromSources({ files, text: cd.getData("text/plain") });
     }
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
     document.addEventListener("copy", onCopyOrCut);
     document.addEventListener("cut", onCopyOrCut);
     document.addEventListener("paste", onPaste);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
       document.removeEventListener("copy", onCopyOrCut);
       document.removeEventListener("cut", onCopyOrCut);
       document.removeEventListener("paste", onPaste);
@@ -5164,7 +5318,7 @@ export default function Whiteboard({
     <div className={student ? "wb-root wb-root-embedded" : "wb-root"}>
       <Toolbar
         student={!!student}
-        onOpenSettings={student ? undefined : () => setSettingsOpen(true)}
+        onOpenSettings={student ? undefined : () => setSettingsOpen("board")}
         people={peopleOn ? people : null}
         onFindPerson={handleFindPerson}
         boardName={boardName}
@@ -5650,7 +5804,14 @@ export default function Whiteboard({
           onPlace={repositionGraphBits}
         />
         {simModalOpen && <SimEmbedModal onAdd={handleAddSimEmbed} onClose={handleCloseSimModal} />}
-        {settingsOpen && <SettingsPanel user={demo ? null : user} signOut={signOut} onClose={() => setSettingsOpen(false)} />}
+        {settingsOpen && (
+          <SettingsPanel
+            user={demo ? null : user}
+            signOut={signOut}
+            initialTab={settingsOpen === "shortcuts" ? "shortcuts" : "board"}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
         {classDialog === "send" && liveClassCode && (
           <SendBoardDialog
             studentCount={classRoster.length}
