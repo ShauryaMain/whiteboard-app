@@ -10,7 +10,8 @@ import {
   LayoutGrid, Pause, Play, Send, Download, Settings,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
-import { BOARD_BACKGROUNDS, backgroundCss } from "@/lib/boardBackground";
+import { BOARD_BACKGROUNDS, PAGE_COLORS, backgroundCss, parseBackground, withPaper, withPageColor, isDarkBackground } from "@/lib/boardBackground";
+import { inkOn } from "@/lib/inkColor";
 import { stashDemoBoard } from "@/lib/demoCarry";
 import { askDemoGuide, DEMO_LEAVE_EVENT, DEMO_SIGNIN_EVENT } from "@/lib/demoEvents";
 import { useSetting } from "@/lib/settings";
@@ -183,6 +184,7 @@ export default function Toolbar(props) {
   const classDone = (classRoster || []).filter((st) => st.done).length;
 
   const activeTool = panToolActive ? "move" : tool;
+  const pageDark = isDarkBackground(background);
   // the one-line explanation beside the tools (Settings can hide it)
   const showHints = useSetting("showHints");
   const isInk = activeTool === "pen" || activeTool === "highlighter";
@@ -313,7 +315,7 @@ export default function Toolbar(props) {
                 <div className={s.menuHeading}>Page background</div>
                 <div className={s.pageGrid}>
                   {BOARD_BACKGROUNDS.map((bg) => {
-                    const on = (background || "blank") === bg.id;
+                    const on = parseBackground(background).paper === bg.id;
                     return (
                       <PalmSafeButton
                         key={bg.id}
@@ -321,9 +323,9 @@ export default function Toolbar(props) {
                         aria-checked={on}
                         aria-label={`${bg.label} — ${bg.desc}`}
                         className={`${s.pageTile} ${on ? s.pageTileOn : ""}`}
-                        onPress={runAndClose(() => onSetBackground?.(bg.id))}
+                        onPress={runAndClose(() => onSetBackground?.(withPaper(background, bg.id)))}
                       >
-                        <span className={s.pagePreview} style={backgroundCss(bg.id, 0.75, { x: 6, y: 6 })} />
+                        <span className={s.pagePreview} style={backgroundCss(withPaper(background, bg.id), 0.75, { x: 6, y: 6 })} />
                         <span className={s.pageLabel}>
                           {bg.label}
                           {on && <Check size={13} strokeWidth={2.6} />}
@@ -332,6 +334,29 @@ export default function Toolbar(props) {
                     );
                   })}
                 </div>
+                <div className={s.menuHeading}>Page colour</div>
+                <div className={s.pageColors} role="radiogroup" aria-label="Page colour">
+                  {PAGE_COLORS.map(([name, hex]) => {
+                    const on = parseBackground(background).color === hex;
+                    return (
+                      <PalmSafeButton
+                        key={hex}
+                        role="radio"
+                        aria-checked={on}
+                        aria-label={name}
+                        title={name}
+                        data-page-color={hex}
+                        className={`${s.pageColor} ${on ? s.pageColorOn : ""}`}
+                        style={{ background: hex }}
+                        onPress={() => onSetBackground?.(withPageColor(background, hex))}
+                      />
+                    );
+                  })}
+                  <label className={`${s.pageColor} ${s.pageColorCustom}`} title="Any colour" aria-label="Pick any page colour">
+                    <ColorPick value={parseBackground(background).color} onPick={(hex) => onSetBackground?.(withPageColor(background, hex))} />
+                  </label>
+                </div>
+                {pageDark && <div className={s.menuFootnote}>On a dark page, black writing shows up white.</div>}
                 <div className={s.menuFootnote}>
                   {student
                     ? "Changes the page on your board. Your drawings stay put."
@@ -669,10 +694,11 @@ export default function Toolbar(props) {
                   {INK_COLORS.map(([name, hex]) => (
                     <PalmSafeButton
                       key={hex}
-                      aria-label={name}
+                      // on a dark page, black ink is shown (and drawn) white
+                      aria-label={pageDark && inkOn(hex, true) !== hex ? "White" : name}
                       aria-pressed={color === hex}
                       className={`${s.swatch} ${color === hex ? s.swatchActive : ""}`}
-                      style={{ background: hex }}
+                      style={{ background: inkOn(hex, pageDark) }}
                       onPress={() => setColor(hex)}
                     />
                   ))}
@@ -888,4 +914,23 @@ function SizeSlider({ label, value, onChange, color, min = 1, max = 40 }) {
       <span className={s.sizeValue} aria-hidden="true">{value}</span>
     </label>
   );
+}
+
+// A colour input that only reports the colour once it's chosen (when the
+// picker closes), not every step while choosing: each change is saved and
+// sent to everyone on the board.
+function ColorPick({ value, onPick }) {
+  const ref = useRef(null);
+  const pickRef = useRef(onPick);
+  useEffect(() => {
+    pickRef.current = onPick;
+  }, [onPick]);
+  useEffect(() => {
+    const input = ref.current;
+    if (!input) return;
+    const onChange = () => pickRef.current(input.value);
+    input.addEventListener("change", onChange);
+    return () => input.removeEventListener("change", onChange);
+  }, []);
+  return <input ref={ref} type="color" defaultValue={value} />;
 }

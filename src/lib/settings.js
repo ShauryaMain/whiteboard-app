@@ -15,6 +15,7 @@
 
 import { useSyncExternalStore } from "react";
 import { isValidOverrides, GESTURE_IDS } from "./shortcuts";
+import { isFontUrl } from "./richText";
 
 export const PEN_COLORS = [
   ["Black", "#1a1a1a"],
@@ -33,6 +34,12 @@ export const DISPLAY_NAME_MAX = 40;
 
 const oneOf = (list) => (v) => list.includes(v);
 const isBool = (v) => typeof v === "boolean";
+export const FONT_NAME = /^[A-Za-z0-9 _-]{1,40}$/;
+const isFontList = (v) =>
+  Array.isArray(v) &&
+  v.length <= 12 &&
+  v.every((f) => f && typeof f === "object" && typeof f.name === "string" && FONT_NAME.test(f.name) && isFontUrl(f.url)) &&
+  new Set(v.map((f) => f.name.toLowerCase())).size === v.length;
 
 // name -> [default, is this value allowed?]
 const SPEC = {
@@ -53,6 +60,8 @@ const SPEC = {
   gesture3: ["redo", oneOf(GESTURE_IDS)], // a three-finger tap
   pointerStyle: ["size", oneOf(["size", "icon", "arrow"])], // the pointer over the board (boardCursor.js)
   rulerUnits: ["cm", oneOf(["cm", "in"])], // the ruler's marks
+  mathText: [true, isBool], // x^2, x_2 and 3/4 turn into maths as you type in a text box
+  customFonts: [[], isFontList], // fonts they uploaded: [{ name, url }] (fonts.js)
 };
 
 export const SETTING_NAMES = Object.keys(SPEC);
@@ -253,10 +262,10 @@ export function setSetting(name, value, now = Date.now()) {
   return true;
 }
 
-// Back to the defaults (not the display name).
+// Back to the defaults (not the display name, or their uploaded fonts).
 export function resetSettings(now = Date.now()) {
   const patch = {};
-  for (const name of SETTING_NAMES) if (name !== "displayName") patch[name] = DEFAULTS[name];
+  for (const name of SETTING_NAMES) if (name !== "displayName" && name !== "customFonts") patch[name] = DEFAULTS[name];
   change(patch, now);
 }
 

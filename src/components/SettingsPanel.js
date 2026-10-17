@@ -91,6 +91,8 @@ export default function SettingsPanel({ user, signOut, onClose, initialTab = "bo
   const nameTags = useSetting("nameTags");
   const pointerStyle = useSetting("pointerStyle");
   const rulerUnits = useSetting("rulerUnits");
+  const mathText = useSetting("mathText");
+  const customFonts = useSetting("customFonts");
   const [tab, setTab] = useState(initialTab === "shortcuts" ? "shortcuts" : "board");
   const calcAngle = useSetting("calcAngle");
   const paper = useSetting("paper");
@@ -283,6 +285,40 @@ export default function SettingsPanel({ user, signOut, onClose, initialTab = "bo
                 onChange={(v) => setSetting("calcAngle", v)}
               />
             </Row>
+          </section>
+
+          <section className={st.section} aria-labelledby="set-text">
+            <h3 id="set-text" className={st.sectionTitle}>Text boxes</h3>
+            <Row label="Maths as you type" sub="x^2 raises the 2, x_2 lowers it and 3/4 stacks a fraction. Press Backspace straight after to keep what you typed (for a date like 10/17).">
+              <Switch on={mathText} onChange={(v) => setSetting("mathText", v)} label="Maths as you type" />
+            </Row>
+            <div className={`${st.row} ${st.rowStack}`}>
+              <div className={st.rowText}>
+                <span className={st.rowLabel}>Your fonts</span>
+                <span className={st.rowSub}>
+                  {customFonts.length
+                    ? "Fonts you uploaded. Removing one here takes it off your font list; writing already done with it stays as it is."
+                    : "None yet. To add one, open a text box's font list and choose Upload a font."}
+                </span>
+              </div>
+              {customFonts.length > 0 && (
+                <ul className={st.fontList} aria-label="Your fonts">
+                  {customFonts.map((f) => (
+                    <li key={f.name} className={st.fontItem}>
+                      <span className={st.fontName}>{f.name}</span>
+                      <button
+                        type="button"
+                        className={st.fontRemove}
+                        aria-label={`Remove ${f.name}`}
+                        onClick={() => setSetting("customFonts", customFonts.filter((x) => x.name !== f.name))}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </section>
 
           <section className={st.section} aria-labelledby="set-new">

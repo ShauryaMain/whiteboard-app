@@ -529,3 +529,46 @@
     padding-right: 16px;
   }
 }
+
+/* Text boxes: the fonts someone uploaded */
+.fontList {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fontItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px 7px 12px;
+  border: 1.5px solid #E4E2DC;
+  border-radius: 10px;
+}
+
+.fontName {
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fontRemove {
+  flex-shrink: 0;
+  border: 1.5px solid #E4E2DC;
+  background: transparent;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #B3261E;
+  cursor: pointer;
+}
+
+.fontRemove:hover {
+  background: #FDECEA;
+}

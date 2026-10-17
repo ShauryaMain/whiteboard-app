@@ -9,7 +9,10 @@
 
 import { renderGrid } from "./gridRenderer";
 import { graphBounds, graphsOf } from "./graphList";
-import { drawBackgroundPattern } from "./boardBackground";
+import { drawBackgroundPattern, isDarkBackground } from "./boardBackground";
+import { inkOn } from "./inkColor";
+import { drawText, textBoxHeight } from "./richText";
+import "./fonts";
 import { strokeDash, strokeBounds, textBounds, imageBounds, unionBounds } from "./boardObjects";
 
 const FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
@@ -47,8 +50,9 @@ function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
   }
 }
 
-// One line of ink (or one pass of the eraser).
-export function drawInkStroke(ctx, stroke) {
+// One line of ink (or one pass of the eraser). `dark`: the page is dark
+// (black ink shows white: inkColor.js).
+export function drawInkStroke(ctx, stroke, dark = false) {
   if (!stroke || !stroke.points || stroke.points.length < 2) return;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -62,7 +66,7 @@ export function drawInkStroke(ctx, stroke) {
     ctx.globalCompositeOperation = "source-over";
   } else {
     ctx.globalAlpha = stroke.opacity ?? 1;
-    ctx.strokeStyle = stroke.color;
+    ctx.strokeStyle = inkOn(stroke.color, dark);
     ctx.lineWidth = stroke.width;
     const dash = strokeDash(stroke);
     if (dash) ctx.setLineDash(dash);
@@ -72,59 +76,16 @@ export function drawInkStroke(ctx, stroke) {
   ctx.globalAlpha = 1;
 }
 
-export function wrapTextLines(ctx, textContent, fontSize, maxWidth) {
-  ctx.font = `${fontSize}px ${FONT}`;
-  const paragraphs = String(textContent).split("\n");
-  const lines = [];
-  for (const para of paragraphs) {
-    if (para === "") {
-      lines.push("");
-      continue;
-    }
-    const words = para.split(" ");
-    let currentLine = "";
-    for (const word of words) {
-      const testLine = currentLine ? currentLine + " " + word : word;
-      const testWidth = ctx.measureText(testLine).width;
-      if (testWidth > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    lines.push(currentLine);
-  }
-  return lines;
-}
-
-export function drawTextBoxes(ctx, textsArr) {
-  for (const t of textsArr) {
-    const lines = wrapTextLines(ctx, t.text, t.fontSize, t.width || 240);
-    const lineHeight = t.fontSize * 1.3;
-    const boxHeight = lines.length * lineHeight;
-    const center = { x: t.x + (t.width || 240) / 2, y: t.y + boxHeight / 2 };
-    const rotation = t.rotation || 0;
-
-    ctx.save();
-    if (rotation) {
-      ctx.translate(center.x, center.y);
-      ctx.rotate(rotation);
-      ctx.translate(-center.x, -center.y);
-    }
-    ctx.fillStyle = t.color;
-    ctx.font = `${t.fontSize}px ${FONT}`;
-    ctx.textBaseline = "top";
-    lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + i * lineHeight));
-    ctx.restore();
-  }
+// Text boxes, styled and with maths (richText.js), as on the board.
+export function drawTextBoxes(ctx, textsArr, dark = false) {
+  for (const t of textsArr) drawText(ctx, t, { dark });
 }
 
 // The same graph renderer as the board (and the graph dialog's preview).
 // (every graph on the board: see graphList.js)
-export function drawGraph(ctx, grid, scale) {
+export function drawGraph(ctx, grid, scale, dark = false) {
   for (const g of graphsOf(grid)) {
-    renderGrid(ctx, g, { cellPx: g.size / g.cols, originXPx: g.x, originYPx: g.y, lineScale: 1 / scale });
+    renderGrid(ctx, g, { cellPx: g.size / g.cols, originXPx: g.x, originYPx: g.y, lineScale: 1 / scale, dark });
   }
 }
 
@@ -142,22 +103,22 @@ export function drawGraph(ctx, grid, scale) {
 //
 // Pictures in the question aren't drawn here: like every picture on a
 // board they are shown as elements underneath the ink.
-export function drawTeacherLayer(ctx, layer, scale) {
+export function drawTeacherLayer(ctx, layer, scale, dark = false) {
   const question = layer && layer.question;
   if (question) {
-    for (const s of question.strokes || []) drawInkStroke(ctx, s);
-    drawTextBoxes(ctx, question.texts || []);
+    for (const s of question.strokes || []) drawInkStroke(ctx, s, dark);
+    drawTextBoxes(ctx, question.texts || [], dark);
     if (question.grid) {
       try {
-        drawGraph(ctx, question.grid, scale);
+        drawGraph(ctx, question.grid, scale, dark);
       } catch (err) {
         // a graph that can't be drawn is left out rather than breaking the board
       }
     }
   }
-  for (const s of (layer && layer.ink) || []) drawInkStroke(ctx, s);
+  for (const s of (layer && layer.ink) || []) drawInkStroke(ctx, s, dark);
   const live = (layer && layer.live) || {};
-  for (const key in live) drawInkStroke(ctx, live[key]);
+  for (const key in live) drawInkStroke(ctx, live[key], dark);
 }
 
 export function hasTeacherLayer(layer) {
@@ -172,8 +133,7 @@ export function hasTeacherLayer(layer) {
 // ---------- how big is it all ----------
 
 function textHeight(ctx, t) {
-  const lines = ctx ? wrapTextLines(ctx, t.text, t.fontSize, t.width || 240).length : 1;
-  return lines * t.fontSize * 1.3;
+  return ctx ? textBoxHeight(ctx, t) : (t.fontSize || 24) * 1.3;
 }
 
 // The box around a set of board contents (null when there is nothing).
@@ -267,6 +227,7 @@ export function renderBoardPicture({ content = {}, layer = null, pictures = null
   const height = boardH + headH;
   const pan = { x: (PICTURE_PAD - b.minX) * scale, y: (PICTURE_PAD - b.minY) * scale };
 
+  const dark = isDarkBackground(content.background);
   const out = makeCanvas(width, height);
   const ctx = out.getContext("2d");
   ctx.fillStyle = "#FFFFFF";
@@ -303,11 +264,11 @@ export function renderBoardPicture({ content = {}, layer = null, pictures = null
   const ink = makeCanvas(width, boardH);
   const ictx = ink.getContext("2d");
   ictx.setTransform(scale, 0, 0, scale, pan.x, pan.y);
-  for (const s of content.strokes || []) drawInkStroke(ictx, s);
-  drawTextBoxes(ictx, content.texts || []);
+  for (const s of content.strokes || []) drawInkStroke(ictx, s, dark);
+  drawTextBoxes(ictx, content.texts || [], dark);
   if (content.grid) {
     try {
-      drawGraph(ictx, content.grid, scale);
+      drawGraph(ictx, content.grid, scale, dark);
     } catch (err) {
       // as above
     }
@@ -320,7 +281,7 @@ export function renderBoardPicture({ content = {}, layer = null, pictures = null
     const top = makeCanvas(width, boardH);
     const tctx = top.getContext("2d");
     tctx.setTransform(scale, 0, 0, scale, pan.x, pan.y);
-    drawTeacherLayer(tctx, layer, scale);
+    drawTeacherLayer(tctx, layer, scale, dark);
     pctx.drawImage(top, 0, 0);
     release(top);
   }
@@ -328,7 +289,7 @@ export function renderBoardPicture({ content = {}, layer = null, pictures = null
   release(page);
 
   if (nothing && empty) {
-    ctx.fillStyle = "#9C9B97";
+    ctx.fillStyle = dark ? "#B9C0CB" : "#9C9B97";
     ctx.font = `${Math.round(headH * 0.42)}px ${FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";

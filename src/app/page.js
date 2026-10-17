@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Users, MoreHorizontal, Pencil, Share2, Trash2, LogOut, X, MessageSquarePlus, Settings } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-import { BOARD_BACKGROUNDS, backgroundCss, normalizeBackground } from "@/lib/boardBackground";
+import { BOARD_BACKGROUNDS, backgroundCss, parseBackground } from "@/lib/boardBackground";
 import NewBoardModal from "@/components/NewBoardModal";
 import ShareModal from "@/components/ShareModal";
 import FeedbackModal from "@/components/FeedbackModal";
@@ -44,7 +44,7 @@ function formatDate(value) {
 }
 
 function pageLabel(background) {
-  const found = BOARD_BACKGROUNDS.find((b) => b.id === normalizeBackground(background));
+  const found = BOARD_BACKGROUNDS.find((b) => b.id === parseBackground(background).paper);
   return found && found.id !== "blank" ? found.label : "";
 }
 

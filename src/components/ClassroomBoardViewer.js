@@ -4,7 +4,9 @@ import { useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import ReferencePane from "./ReferencePane";
-import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
+import { applyBackground, normalizeBackground, isDarkBackground } from "@/lib/boardBackground";
+import { subscribeFonts } from "@/lib/fonts";
+import { inkOn } from "@/lib/inkColor";
 import { translateStroke, translateText, translateImage, unionBounds, newId } from "@/lib/boardObjects";
 import {
   drawInkStroke as drawStroke, drawTextBoxes as drawTexts, drawGraph, drawTeacherLayer, hasTeacherLayer, contentBoxes,
@@ -230,8 +232,9 @@ export default function ClassroomBoardViewer({
     tctx.clearRect(0, 0, canvas.width, canvas.height);
     tctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
     const layer = { question: questionRef.current, ink: teacherInkRef.current, live: teacherLiveRef.current };
-    if (hasTeacherLayer(layer)) drawTeacherLayer(tctx, layer, scale);
-    if (myStrokeRef.current) drawStroke(tctx, myStrokeRef.current.stroke);
+    const dark = isDarkBackground(backgroundRef.current);
+    if (hasTeacherLayer(layer)) drawTeacherLayer(tctx, layer, scale, dark);
+    if (myStrokeRef.current) drawStroke(tctx, myStrokeRef.current.stroke, dark);
     if (pinsRef.current.length) drawPins(tctx, pinsRef.current, scale);
   }
 
@@ -247,14 +250,18 @@ export default function ClassroomBoardViewer({
     const { width: paneW, height: paneH } = getPaneSize();
     ctx.clearRect(-pan.x / scale, -pan.y / scale, paneW / scale, paneH / scale);
 
-    for (const stroke of strokesRef.current) drawStroke(ctx, stroke);
-    for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
-    drawTexts(ctx, textsRef.current);
-    drawGraph(ctx, gridConfigRef.current, scale);
+    const dark = isDarkBackground(backgroundRef.current);
+    for (const stroke of strokesRef.current) drawStroke(ctx, stroke, dark);
+    for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key], dark);
+    drawTexts(ctx, textsRef.current, dark);
+    drawGraph(ctx, gridConfigRef.current, scale, dark);
     drawTeacherOverlay();
     applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
     repositionImages();
   }
+
+  // a font a text box uses has arrived: draw it again with it
+  useEffect(() => subscribeFonts(() => fullRedraw()), []);
 
   useEffect(() => {
     pinsRef.current = pins || [];
@@ -403,7 +410,7 @@ export default function ClassroomBoardViewer({
     if (tctx) {
       tctx.globalAlpha = 1;
       tctx.globalCompositeOperation = "source-over";
-      tctx.strokeStyle = mine.stroke.color;
+      tctx.strokeStyle = inkOn(mine.stroke.color, isDarkBackground(backgroundRef.current));
       tctx.lineWidth = mine.stroke.width;
       tctx.lineCap = "round";
       tctx.lineJoin = "round";

@@ -39,6 +39,8 @@ function dataUrlToBuffer(url) {
 // thrown rather than skipped (deleting an account must not leave files
 // behind without saying so).
 export async function emptyFolder(admin, bucket, folder, { strict = false } = {}) {
+  // never the whole bucket
+  if (!folder || !String(folder).replace(/\/+/g, "")) throw new Error("no folder to empty");
   let removed = 0;
   for (let round = 0; round < 20; round++) {
     const { data, error } = await admin.storage.from(bucket).list(folder, { limit: 1000 });
@@ -47,7 +49,11 @@ export async function emptyFolder(admin, bucket, folder, { strict = false } = {}
       break;
     }
     if (!data || !data.length) break;
-    const paths = data.filter((f) => f && f.name).map((f) => `${folder}/${f.name}`);
+    // a folder inside (a board's uploaded fonts): emptied too
+    for (const sub of data.filter((f) => f && f.name && f.id === null)) {
+      removed += await emptyFolder(admin, bucket, `${folder}/${sub.name}`, { strict });
+    }
+    const paths = data.filter((f) => f && f.name && f.id !== null).map((f) => `${folder}/${f.name}`);
     if (!paths.length) break;
     const { error: removeError } = await admin.storage.from(bucket).remove(paths);
     if (removeError) {

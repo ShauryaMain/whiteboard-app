@@ -35,6 +35,7 @@
 import { drawPlots } from "./graphPlot";
 import { gridFrame, linesOf, tickText, unitCircleAngles, exactCosSin, angleText } from "./graphAxes";
 import { drawChart, chartPaperOptions } from "./graphCharts";
+import { setGraphDark, graphText, graphAxis, graphName, graphHalo, graphLines } from "./graphInk";
 
 // Real-world physical scale used across the app (rulers, compass, and now
 // the grid tool) so "1cm" means the same thing everywhere.
@@ -96,9 +97,6 @@ function drawLine(ctx, x1, y1, x2, y2) {
 }
 
 const FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
-const AXIS_INK = "#5b6b80";
-const NAME_INK = "#3b4757";
-const TITLE_INK = "#1B1D24";
 
 // The darker version of a grid colour, for dots (the default light blue-grey
 // is too faint as dots).
@@ -127,7 +125,7 @@ function arrowHead(ctx, x, y, dx, dy, ls) {
 function haloText(ctx, text, x, y, ls) {
   ctx.lineJoin = "round";
   ctx.lineWidth = 3.5 * ls;
-  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.strokeStyle = graphHalo();
   ctx.strokeText(text, x, y);
   ctx.fillText(text, x, y);
 }
@@ -174,7 +172,7 @@ function axisNumbers(ctx, axis, lines, f, A, along) {
 function renderCartesianGrid(ctx, config, f, opts = {}) {
   const { A, box, lineScale: ls } = f;
   const { x0, y0, x1, y1 } = box;
-  const color = config.color || "#cfd8e3";
+  const color = graphLines(config.color);
   const minor = opts.minor === false ? 0 : A.minor;
   const X = opts.xLines === false ? { main: [], mainIndex: [], small: [] } : linesOf(A.x, minor);
   const Y = opts.yLines === false ? { main: [], mainIndex: [], small: [] } : linesOf(A.y, minor);
@@ -237,8 +235,8 @@ function renderCartesianGrid(ctx, config, f, opts = {}) {
   const near = (a, b) => Math.abs(a - b) < 0.5 * ls;
   if (config.showAxes) {
     ctx.save();
-    ctx.strokeStyle = AXIS_INK;
-    ctx.fillStyle = AXIS_INK;
+    ctx.strokeStyle = graphAxis();
+    ctx.fillStyle = graphAxis();
     ctx.lineWidth = 1.5 * ls;
     ctx.beginPath();
     ctx.moveTo(ax, y0);
@@ -262,7 +260,7 @@ function renderCartesianGrid(ctx, config, f, opts = {}) {
   let xNumbersBelow = false;
   if (config.showNumbers) {
     ctx.save();
-    ctx.fillStyle = AXIS_INK;
+    ctx.fillStyle = graphAxis();
     ctx.font = `${15 * ls}px ${FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -291,7 +289,7 @@ function renderCartesianGrid(ctx, config, f, opts = {}) {
   // the edge of the box, otherwise just past the end of the axis (outside
   // the box, so they never sit on top of what's plotted)
   ctx.save();
-  ctx.fillStyle = NAME_INK;
+  ctx.fillStyle = graphName();
   ctx.font = `700 ${15 * ls}px ${FONT}`;
   if (A.x.name) {
     if (near(ay, y1)) {
@@ -329,8 +327,8 @@ function renderNumberLine(ctx, config, f) {
   const X = linesOf(A.x, A.minor);
   const px = (v) => f.ox + v * f.sx;
   ctx.save();
-  ctx.strokeStyle = NAME_INK;
-  ctx.fillStyle = NAME_INK;
+  ctx.strokeStyle = graphName();
+  ctx.fillStyle = graphName();
   ctx.lineWidth = 2 * ls;
   ctx.beginPath();
   ctx.moveTo(box.x0, lineY);
@@ -375,7 +373,7 @@ function renderIsometric(ctx, config, f) {
   const s = cell; // the side of a triangle
   const h = (s * Math.sqrt(3)) / 2; // between two columns of points
   const W = x1 - x0, H = y1 - y0;
-  const color = config.color || "#cfd8e3";
+  const color = graphLines(config.color);
   ctx.save();
   ctx.beginPath();
   ctx.rect(x0, y0, W, H);
@@ -476,7 +474,7 @@ function drawUnitCircle(ctx, config, f) {
     }
     if (A.unitCircle.values && rScreen >= 90) {
       // (cos, sin), just outside
-      ctx.fillStyle = TITLE_INK;
+      ctx.fillStyle = graphText();
       for (const p of pts) {
         const [ct, st] = exactCosSin(p.d);
         ctx.textAlign = p.c > 0.1 ? "left" : p.c < -0.1 ? "right" : "center";
@@ -492,7 +490,7 @@ function drawTitle(ctx, f) {
   const { A, box, lineScale: ls } = f;
   if (!A.title) return;
   ctx.save();
-  ctx.fillStyle = TITLE_INK;
+  ctx.fillStyle = graphText();
   ctx.font = `700 ${18 * ls}px ${FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
@@ -513,7 +511,7 @@ function renderPolarGrid(ctx, config, geom, frame) {
   const spokeCount = Math.max(1, config.spokeCount || 12);
 
   ctx.save();
-  ctx.strokeStyle = config.color || "#cfd8e3";
+  ctx.strokeStyle = graphLines(config.color);
   ctx.lineWidth = 1 * lineScale;
   for (let i = 1; i <= cols; i++) {
     const r = (i / cols) * maxRadius;
@@ -529,7 +527,7 @@ function renderPolarGrid(ctx, config, geom, frame) {
 
   if (config.showAxes) {
     ctx.save();
-    ctx.strokeStyle = "#5b6b80";
+    ctx.strokeStyle = graphAxis();
     ctx.lineWidth = 1.5 * lineScale;
     drawLine(ctx, cx - maxRadius, cy, cx + maxRadius, cy);
     drawLine(ctx, cx, cy - maxRadius, cx, cy + maxRadius);
@@ -541,7 +539,7 @@ function renderPolarGrid(ctx, config, geom, frame) {
 
   if (config.showNumbers) {
     ctx.save();
-    ctx.fillStyle = "#5b6b80";
+    ctx.fillStyle = graphAxis();
     // Same constant on-screen size treatment as the cartesian labels above.
     const fontPx = 15 * lineScale;
     ctx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -572,6 +570,16 @@ function renderPolarGrid(ctx, config, geom, frame) {
 export function renderGrid(ctx, rawConfig, geom) {
   const config = withDefaults(rawConfig);
   if (!config) return;
+  // geom.dark: the page is dark (lighter labels and lines)
+  const was = setGraphDark(geom && geom.dark);
+  try {
+    renderGridInner(ctx, config, geom);
+  } finally {
+    setGraphDark(was);
+  }
+}
+
+function renderGridInner(ctx, config, geom) {
   const f = gridFrame(config, geom);
   if (f.paper === "polar") renderPolarGrid(ctx, config, geom, f);
   else if (f.paper === "numberline") renderNumberLine(ctx, config, f);

@@ -4,43 +4,17 @@
 // stop the browser from saving the preview). Saved as a small JPEG in
 // `boards.thumbnail`.
 
-import { drawBackgroundPattern } from "./boardBackground";
+import { drawBackgroundPattern, isDarkBackground } from "./boardBackground";
+import { inkOn } from "./inkColor";
+import { drawText, textBoxHeight } from "./richText";
+import "./fonts";
 import { strokeBounds, imageBounds, textBounds, unionBounds, strokeDash } from "./boardObjects";
 import { renderGrid } from "./gridRenderer";
 import { graphBounds, graphsOf } from "./graphList";
 
 export const THUMB_W = 400;
 export const THUMB_H = 250;
-const FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
-
-function wrapLines(ctx, text, fontSize, maxWidth) {
-  ctx.font = `${fontSize}px ${FONT}`;
-  const out = [];
-  for (const para of String(text).split("\n")) {
-    if (para === "") {
-      out.push("");
-      continue;
-    }
-    let line = "";
-    for (const word of para.split(" ")) {
-      const test = line ? line + " " + word : word;
-      if (ctx.measureText(test).width > maxWidth && line) {
-        out.push(line);
-        line = word;
-      } else {
-        line = test;
-      }
-    }
-    out.push(line);
-  }
-  return out;
-}
-
-function textHeight(ctx, t) {
-  return wrapLines(ctx, t.text, t.fontSize, t.width || 240).length * t.fontSize * 1.3;
-}
-
-function drawStroke(ctx, s) {
+function drawStroke(ctx, s, dark) {
   const pts = s.points;
   if (!pts || pts.length < 2) return;
   ctx.lineCap = "round";
@@ -60,7 +34,7 @@ function drawStroke(ctx, s) {
     return;
   }
   ctx.globalAlpha = s.opacity ?? 1;
-  ctx.strokeStyle = s.color || "#1a1a1a";
+  ctx.strokeStyle = inkOn(s.color || "#1a1a1a", dark);
   ctx.lineWidth = s.width || 3;
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
@@ -85,11 +59,12 @@ export function renderBoardThumbnail({ strokes = [], texts = [], images = [], gr
   const visible = strokes.filter((s) => s.tool !== "eraser" && s.points && s.points.length > 1);
   const bounds = unionBounds([
     ...visible.map(strokeBounds),
-    ...texts.map((t) => textBounds(t, textHeight(measure, t))),
+    ...texts.map((t) => textBounds(t, textBoxHeight(measure, t))),
     ...images.map(imageBounds),
     graphBounds(grid),
   ]);
   if (!bounds) return null;
+  const dark = isDarkBackground(background);
 
   const pad = 0.08;
   const bw = Math.max(40, bounds.maxX - bounds.minX);
@@ -113,26 +88,11 @@ export function renderBoardThumbnail({ strokes = [], texts = [], images = [], gr
     ictx.fillRect(img.x, img.y, img.width, img.height);
     ictx.strokeRect(img.x, img.y, img.width, img.height);
   }
-  for (const s of strokes) drawStroke(ictx, s);
-  for (const t of texts) {
-    const lines = wrapLines(ictx, t.text, t.fontSize, t.width || 240);
-    ictx.save();
-    if (t.rotation) {
-      const h = lines.length * t.fontSize * 1.3;
-      const cx = t.x + (t.width || 240) / 2;
-      const cy = t.y + h / 2;
-      ictx.translate(cx, cy);
-      ictx.rotate(t.rotation);
-      ictx.translate(-cx, -cy);
-    }
-    ictx.fillStyle = t.color || "#1a1a1a";
-    ictx.textBaseline = "top";
-    lines.forEach((line, i) => ictx.fillText(line, t.x, t.y + i * t.fontSize * 1.3));
-    ictx.restore();
-  }
+  for (const s of strokes) drawStroke(ictx, s, dark);
+  for (const t of texts) drawText(ictx, t, { dark });
   for (const g of graphsOf(grid)) {
     try {
-      renderGrid(ictx, g, { cellPx: g.size / g.cols, originXPx: g.x, originYPx: g.y, lineScale: 1 / scale });
+      renderGrid(ictx, g, { cellPx: g.size / g.cols, originXPx: g.x, originYPx: g.y, lineScale: 1 / scale, dark });
     } catch (err) {
       // a graph that can't be drawn just leaves it out of the preview
     }

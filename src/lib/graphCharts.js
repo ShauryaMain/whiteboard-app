@@ -15,6 +15,7 @@
 // teacher has set their own ranges. Pure functions apart from drawChart.
 
 import { readNumber, formatValue, bestFitLine } from "./graphMath";
+import { graphText, graphName, graphHalo, graphInk } from "./graphInk";
 
 // the most classes a histogram made from a list of values can have
 export const MAX_CLASSES = 200;
@@ -31,7 +32,6 @@ export const CHART_KINDS = [
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 const FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
-const INK = "#1B1D24";
 
 // A number typed in a box (blank → NaN).
 export function num(v) {
@@ -241,7 +241,7 @@ export function chartPaperOptions(chart) {
 
 // ---------- drawing ----------
 
-function text(ctx, t, x, y, ls, { align = "center", baseline = "top", size = 13, weight = 600, color = INK, halo = false } = {}) {
+function text(ctx, t, x, y, ls, { align = "center", baseline = "top", size = 13, weight = 600, color, halo = false } = {}) {
   ctx.save();
   ctx.font = `${weight} ${size * ls}px ${FONT}`;
   ctx.textAlign = align;
@@ -249,10 +249,10 @@ function text(ctx, t, x, y, ls, { align = "center", baseline = "top", size = 13,
   if (halo) {
     ctx.lineJoin = "round";
     ctx.lineWidth = 3.5 * ls;
-    ctx.strokeStyle = "rgba(255,255,255,0.92)";
+    ctx.strokeStyle = graphHalo();
     ctx.strokeText(t, x, y);
   }
-  ctx.fillStyle = color;
+  ctx.fillStyle = color || graphText();
   ctx.fillText(t, x, y);
   ctx.restore();
 }
@@ -271,7 +271,7 @@ export function drawChart(ctx, config, frame) {
   if (!chart) return;
   const ls = frame.lineScale;
   const { box } = frame;
-  const color = /^#[0-9a-f]{6}$/i.test(chart.color || "") ? chart.color : "#1E88E5";
+  const color = graphInk(/^#[0-9a-f]{6}$/i.test(chart.color || "") ? chart.color : "#1E88E5");
   const at = (x, y) => frame.toWorld(x, y);
   ctx.save();
   try {
@@ -298,7 +298,7 @@ export function drawChart(ctx, config, frame) {
           ctx.beginPath();
           ctx.rect(box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0);
           ctx.clip();
-          ctx.strokeStyle = INK;
+          ctx.strokeStyle = graphText();
           ctx.lineWidth = 2 * ls;
           ctx.setLineDash([10 * ls, 6 * ls]);
           ctx.beginPath();
@@ -372,7 +372,7 @@ export function drawChart(ctx, config, frame) {
           const vals = [s.whiskerLow, s.q1, s.median, s.q3, s.whiskerHigh];
           vals.forEach((v) => {
             const [vx] = at(v, mid);
-            text(ctx, formatValue(v, 2), vx, yBottom + 3 * ls, ls, { size: 11, weight: 600, color: "#3b4757", halo: true });
+            text(ctx, formatValue(v, 2), vx, yBottom + 3 * ls, ls, { size: 11, weight: 600, color: graphName(), halo: true });
           });
         }
       });
@@ -388,7 +388,7 @@ export function drawChart(ctx, config, frame) {
         ctx.fillRect(x0, Math.min(y0, yz), x1 - x0, Math.abs(yz - y0));
         ctx.strokeRect(x0, Math.min(y0, yz), x1 - x0, Math.abs(yz - y0));
         // the category under its bar
-        text(ctx, b.label, (x0 + x1) / 2, frame.axisY + 5 * ls, ls, { size: 13, weight: 600, color: "#3b4757" });
+        text(ctx, b.label, (x0 + x1) / 2, frame.axisY + 5 * ls, ls, { size: 13, weight: 600, color: graphName() });
         if (chart.showValues) text(ctx, formatValue(b.value, 2), (x0 + x1) / 2, Math.min(y0, yz) - 3 * ls, ls, { baseline: "bottom", size: 12, halo: true });
       });
     }

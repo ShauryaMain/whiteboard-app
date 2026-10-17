@@ -47,7 +47,11 @@ import { graphsOf, packGraphs, graphBox, graphAt, translateGraph, placeGraph, sn
 import { gridFrame } from "@/lib/graphAxes";
 import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
 import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
-import { applyBackground, normalizeBackground } from "@/lib/boardBackground";
+import { applyBackground, normalizeBackground, isDarkBackground } from "@/lib/boardBackground";
+import { inkOn } from "@/lib/inkColor";
+import { drawText, textBoxHeight, plainText, encodeText, decodeText } from "@/lib/richText";
+import { subscribeFonts, uploadFont } from "@/lib/fonts";
+import TextEditor from "./TextEditor";
 import { loadCalcPosition } from "@/lib/calcMath";
 import { detectScratchOut } from "@/lib/scratchOut";
 import { getSetting, setSetting, useSetting, displayNameFor, PEN_COLORS } from "@/lib/settings";
@@ -338,7 +342,7 @@ export default function Whiteboard({
   // imperative code (repositioning during pan/zoom); editingText (state)
   // just controls whether the textarea is mounted at all.
   const editingTextRef = useRef(null);
-  const textareaElRef = useRef(null);
+  const textEditorRef = useRef(null); // TextEditor.js: { place, commit }
   const movingTextRef = useRef(null);
   const resizingTextRef = useRef(null);
   const rotatingTextRef = useRef(null);
@@ -815,15 +819,16 @@ export default function Whiteboard({
     return { width: rect.width, height: rect.height };
   }
 
+  // Is the page dark? (Then black writing is shown white: inkColor.js.)
+  function pageIsDark() {
+    return isDarkBackground(backgroundRef.current);
+  }
+
   function repositionEditingTextarea() {
     const info = editingTextRef.current;
-    const el = textareaElRef.current;
-    if (!info || !el) return;
+    if (!info || !textEditorRef.current) return;
     const screenPos = worldToScreen({ x: info.x, y: info.y });
-    el.style.left = screenPos.x + "px";
-    el.style.top = screenPos.y + "px";
-    el.style.width = info.width * scaleRef.current + "px";
-    el.style.fontSize = info.fontSize * scaleRef.current + "px";
+    textEditorRef.current.place(screenPos.x, screenPos.y, scaleRef.current);
   }
 
   // Keeps every embedded-simulation box's on-screen position/size in sync
@@ -865,7 +870,7 @@ export default function Whiteboard({
     const layer = { ...teacherLayerRef.current, live: teacherLiveRef.current };
     if (hasTeacherLayer(layer)) {
       tctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
-      drawTeacherLayer(tctx, layer, scale);
+      drawTeacherLayer(tctx, layer, scale, pageIsDark());
     }
     // Pictures in the teacher's question sit under the ink, like any picture.
     const question = teacherLayerRef.current.question;
@@ -913,7 +918,8 @@ export default function Whiteboard({
       ctx.globalCompositeOperation = "source-over";
     } else {
       ctx.globalAlpha = stroke.opacity ?? 1;
-      ctx.strokeStyle = stroke.color;
+      // (on a dark page, black ink shows white: inkColor.js)
+      ctx.strokeStyle = inkOn(stroke.color, pageIsDark());
       ctx.lineWidth = stroke.width;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -925,42 +931,11 @@ export default function Whiteboard({
     }
   }
 
-  // Word-wraps text within maxWidth, respecting explicit line breaks too
-  // — shared by rendering, hit-testing, and box-height calculations so
-  // they all agree on exactly the same layout.
-  function wrapTextLines(ctx, textContent, fontSize, maxWidth) {
-    ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-    const paragraphs = String(textContent).split("\n");
-    const lines = [];
-    for (const para of paragraphs) {
-      if (para === "") {
-        lines.push("");
-        continue;
-      }
-      const words = para.split(" ");
-      let currentLine = "";
-      for (const word of words) {
-        const testLine = currentLine ? currentLine + " " + word : word;
-        const testWidth = ctx.measureText(testLine).width;
-        if (testWidth > maxWidth && currentLine) {
-          lines.push(currentLine);
-          currentLine = word;
-        } else {
-          currentLine = testLine;
-        }
-      }
-      lines.push(currentLine);
-    }
-    return lines;
-  }
 
-  function getTextLineHeight(t) {
-    return t.fontSize * 1.3;
-  }
-
+  // A text box's height, from the same layout that draws it (richText.js),
+  // so drawing, tapping and selecting all agree.
   function getTextBoxHeight(ctx, t) {
-    const lines = wrapTextLines(ctx, t.text, t.fontSize, t.width);
-    return lines.length * getTextLineHeight(t);
+    return textBoxHeight(ctx, t);
   }
 
   function getTextCenter(ctx, t) {
@@ -988,51 +963,44 @@ export default function Whiteboard({
   }
 
   function drawTexts(ctx, textsArr, selectedId) {
+    const dark = pageIsDark();
     for (const t of textsArr) {
-      const lines = wrapTextLines(ctx, t.text, t.fontSize, t.width);
-      const lineHeight = getTextLineHeight(t);
-      const boxHeight = lines.length * lineHeight;
+      // the one being edited is shown by the editor instead
+      if (editingTextRef.current && editingTextRef.current.isEditingExisting && editingTextRef.current.id === t.id) continue;
+      const lay = drawText(ctx, t, { dark });
+      if (t.id !== selectedId) continue;
+      const boxHeight = lay.height;
       const center = { x: t.x + t.width / 2, y: t.y + boxHeight / 2 };
       const rotation = t.rotation || 0;
-
       ctx.save();
       if (rotation) {
         ctx.translate(center.x, center.y);
         ctx.rotate(rotation);
         ctx.translate(-center.x, -center.y);
       }
+      const scale = scaleRef.current;
+      ctx.strokeStyle = "rgba(30,136,229,0.7)";
+      ctx.lineWidth = 1.5 / scale;
+      ctx.setLineDash([4 / scale, 3 / scale]);
+      ctx.strokeRect(t.x - 4, t.y - 4, t.width + 8, boxHeight + 8);
+      ctx.setLineDash([]);
 
-      ctx.fillStyle = t.color;
-      ctx.font = `${t.fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
-      ctx.textBaseline = "top";
-      lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + i * lineHeight));
+      const handles = getTextHandlePositions(t, boxHeight);
 
-      if (t.id === selectedId) {
-        const scale = scaleRef.current;
-        ctx.strokeStyle = "rgba(30,136,229,0.7)";
-        ctx.lineWidth = 1.5 / scale;
-        ctx.setLineDash([4 / scale, 3 / scale]);
-        ctx.strokeRect(t.x - 4, t.y - 4, t.width + 8, boxHeight + 8);
-        ctx.setLineDash([]);
+      ctx.strokeStyle = "rgba(30,136,229,0.7)";
+      ctx.lineWidth = 1.5 / scale;
+      ctx.beginPath();
+      ctx.moveTo(t.x + t.width / 2, t.y);
+      ctx.lineTo(handles.rotate.x, handles.rotate.y);
+      ctx.stroke();
 
-        const handles = getTextHandlePositions(t, boxHeight);
-
-        ctx.strokeStyle = "rgba(30,136,229,0.7)";
-        ctx.lineWidth = 1.5 / scale;
-        ctx.beginPath();
-        ctx.moveTo(t.x + t.width / 2, t.y);
-        ctx.lineTo(handles.rotate.x, handles.rotate.y);
-        ctx.stroke();
-
-        ctx.fillStyle = "#1E88E5";
-        ctx.beginPath();
-        ctx.arc(handles.resize.x, handles.resize.y, 7 / scale, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(handles.rotate.x, handles.rotate.y, 7 / scale, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
+      ctx.fillStyle = "#1E88E5";
+      ctx.beginPath();
+      ctx.arc(handles.resize.x, handles.resize.y, 7 / scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(handles.rotate.x, handles.rotate.y, 7 / scale, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
   }
@@ -1120,7 +1088,7 @@ export default function Whiteboard({
   // see gridRenderer.js — so what you set up is exactly what lands here.
   function drawGrid(ctx, quick = false) {
     for (const g of graphsShown()) {
-      renderGrid(ctx, g, { ...graphGeom(g), quick });
+      renderGrid(ctx, g, { ...graphGeom(g), quick, dark: pageIsDark() });
     }
   }
 
@@ -1321,7 +1289,7 @@ export default function Whiteboard({
       ctx.globalCompositeOperation = "source-over";
     } else {
       ctx.globalAlpha = styleStroke.opacity ?? 1;
-      ctx.strokeStyle = styleStroke.color;
+      ctx.strokeStyle = inkOn(styleStroke.color, pageIsDark());
       ctx.lineWidth = styleStroke.width;
       ctx.lineCap = "butt";
       smoothPath(ctx, pts, startIdx, endIdx);
@@ -1593,6 +1561,9 @@ export default function Whiteboard({
     };
     viewAnimRef.current = requestAnimationFrame(step);
   }
+
+  // a font a text box uses has arrived: draw it with that font
+  useEffect(() => subscribeFonts(() => fullRedraw()), []);
 
   useEffect(() => {
     penTags.attach(penTagsElRef.current);
@@ -2920,10 +2891,11 @@ export default function Whiteboard({
     } catch (err) {}
   }
 
-  function handleTextBlur(e) {
+  // The text box editor is done (TextEditor.js): rawValue is the text, ""
+  // when the box was left empty.
+  function finishTextEdit(rawValue) {
     const info = editingTextRef.current;
-    const rawValue = e.target.value;
-    const trimmedForCheck = rawValue.trim();
+    const trimmedForCheck = plainText(rawValue).trim();
     editingTextRef.current = null;
     setEditingText(null);
     if (!info) return;
@@ -2937,6 +2909,11 @@ export default function Whiteboard({
         db.from("texts").delete().eq("id", info.id).then(({ error }) => {
           if (error) console.error("Error deleting text:", error);
         });
+        return;
+      }
+      // nothing changed (also when it was only written a little differently)
+      if (rawValue === info.raw || rawValue === encodeText(decodeText(info.raw || ""))) {
+        fullRedraw();
         return;
       }
       const updated = {
@@ -2956,7 +2933,10 @@ export default function Whiteboard({
       return;
     }
 
-    if (!trimmedForCheck) return;
+    if (!trimmedForCheck) {
+      fullRedraw();
+      return;
+    }
 
     const textObj = {
       id: info.id,
@@ -2980,34 +2960,15 @@ export default function Whiteboard({
     fullRedraw();
   }
 
+  // Uploads a font for the text box editor (fonts.js).
+  function uploadTextFont(file, takenNames) {
+    return uploadFont(file, db, user && user.id, takenNames, boardId);
+  }
+
   useEffect(() => {
     if (!editingText) return;
     repositionEditingTextarea();
-
-    if (editingText.isEditingExisting) {
-      const existing = textsRef.current.find((t) => t.id === editingText.id);
-      const el = textareaElRef.current;
-      if (existing && el) {
-        el.value = existing.text;
-        el.style.height = "auto";
-        el.style.height = el.scrollHeight + "px";
-      }
-    }
-
-    // The click that created this text box is still being resolved by the
-    // browser (mousedown -> mouseup -> click) when this effect first runs.
-    // Focusing synchronously here loses the race against the browser's own
-    // default focus handling for that click, which blurs us again almost
-    // immediately. Deferring to the next tick lets that resolve first.
-    const timerId = setTimeout(() => {
-      const el = textareaElRef.current;
-      el?.focus();
-      if (editingText.isEditingExisting && el) {
-        const len = el.value.length;
-        el.setSelectionRange(len, len);
-      }
-    }, 0);
-    return () => clearTimeout(timerId);
+    fullRedraw();
   }, [editingText]);
 
   // Registers new sim boxes' DOM nodes right after they mount / re-syncs
@@ -3895,6 +3856,7 @@ export default function Whiteboard({
         width: existingText.width,
         rotation: existingText.rotation || 0,
         isEditingExisting: true,
+        raw: existingText.text,
       };
       editingTextRef.current = info;
       setEditingText(info);
@@ -4064,7 +4026,7 @@ export default function Whiteboard({
         if (ring.style.display !== "none") ring.style.display = "none";
         return;
       }
-      const look = ringLook(t, widthForTool(t, widthRef.current), scaleRef.current, colorRef.current);
+      const look = ringLook(t, widthForTool(t, widthRef.current), scaleRef.current, inkOn(colorRef.current, pageIsDark()));
       ring.style.display = "block";
       ring.style.width = ring.style.height = look.d + "px";
       ring.style.border = look.border;
@@ -4317,7 +4279,7 @@ export default function Whiteboard({
         // Tapping the board while a text box is open finishes that box
         // first (it used to jump the half-typed text to the new spot).
         if (editingTextRef.current) {
-          textareaElRef.current?.blur();
+          textEditorRef.current?.commit();
           return;
         }
         openTextEditor(screenToWorld(pos));
@@ -5350,7 +5312,7 @@ export default function Whiteboard({
   let boardCursor = "default";
   if (panToolActive) boardCursor = "grab";
   else if (pointerStyle === "size" && isInkTool(tool) && !compassActive) boardCursor = "none";
-  else if (pointerStyle === "icon") boardCursor = iconCursor(tool, color) || "default";
+  else if (pointerStyle === "icon") boardCursor = iconCursor(tool, inkOn(color, isDarkBackground(boardBackground))) || "default";
   else if (tool === "text") boardCursor = "text";
 
   const showReferencePane = canUseReferencePane && !!referenceDoc;
@@ -5798,32 +5760,15 @@ export default function Whiteboard({
           style={{ display: "none" }}
         />
         {editingText && (
-          <textarea
-            ref={textareaElRef}
-            defaultValue=""
-            onBlur={handleTextBlur}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") e.target.blur();
-            }}
-            onInput={(e) => {
-              e.target.style.height = "auto";
-              e.target.style.height = e.target.scrollHeight + "px";
-            }}
-            style={{
-              position: "fixed",
-              zIndex: 15,
-              border: "1.5px dashed #1E88E5",
-              background: "rgba(255,255,255,0.9)",
-              outline: "none",
-              resize: "none",
-              padding: 2,
-              minWidth: 60,
-              minHeight: 30,
-              fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
-              color: editingText.color,
-              lineHeight: 1.3,
-              overflow: "hidden",
-            }}
+          <TextEditor
+            key={editingText.id}
+            handleRef={textEditorRef}
+            info={editingText}
+            raw={editingText.raw || ""}
+            dark={isDarkBackground(boardBackground)}
+            canUpload={!demo && !student && !!user}
+            onUpload={uploadTextFont}
+            onDone={finishTextEdit}
           />
         )}
         {rulerActive && (

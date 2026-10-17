@@ -33,6 +33,42 @@
 
 export const RELEASES = [
   {
+    id: "2026-10-text-pages",
+    date: "2026-10-17",
+    title: "Text styles and page colours",
+    headline: "Style your text, write maths, and pick a page colour",
+    intro:
+      "Text boxes now work like a document: bold, colours, highlights, sizes and fonts, with maths that sets itself as you type. And the page can be any colour, chalkboard green included.",
+    slides: [
+      {
+        src: "/whats-new/text/text.png",
+        alt: "A text box being typed in, with a bar above it: font, size, bold, italic, underline, text colour, highlight, alignment and maths. In the box, 'both true at once?' is bold and highlighted yellow, and a red italic hint follows.",
+        caption: "Select some words and style just those, like in a document",
+      },
+      {
+        src: "/whats-new/text/maths.png",
+        alt: "A text box where x^2 + 6x + 5 = 0 shows a raised 2, and 3/4 shows as a stacked fraction.",
+        caption: "Type x^2, x_2 or 3/4 and it turns into real maths",
+      },
+      {
+        src: "/whats-new/text/fonts.png",
+        alt: "The font list open, with Your fonts showing Class Handwriting (an uploaded font) and Upload a font, then Google fonts underneath. A heading on the board is written in the uploaded handwriting font.",
+        caption: "Choose from Google fonts, or upload your own",
+      },
+      {
+        src: "/whats-new/text/dark.png",
+        alt: "A chalkboard-green squared page with a white parabola and the title y = x squared on the chalkboard, and the Page menu open showing page colours.",
+        caption: "Pick a page colour: on a dark page, black writing shows white",
+      },
+    ],
+    points: [
+      "Bold, italic, underline, colour, highlight, size, font and alignment, for any words you select (Ctrl/⌘+B, I and U work too).",
+      "x^2 raises, x_2 lowers and 3/4 stacks. Press Backspace straight after to keep what you typed.",
+      "Upload a font (.ttf, .otf or .woff) and everyone on the board sees it.",
+      "Page colours, from white to chalkboard and black, saved with the board.",
+    ],
+  },
+  {
     id: "2026-10-find-people",
     date: "2026-10-16",
     title: "Find each other",

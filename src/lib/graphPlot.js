@@ -26,11 +26,12 @@ import {
 } from "./graphMath";
 import { latexToText } from "./calcMath";
 import { gridFrame, axesOf } from "./graphAxes";
+import { graphDark, graphText, graphAxis, graphHalo, graphHole, graphCard, graphCardEdge, graphInk } from "./graphInk";
 
 export const PLOT_COLORS = ["#E53935", "#1E88E5", "#43A047", "#8E24AA", "#FB8C00", "#00897B", "#1a1a1a"];
 
 const FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
-const LABEL_INK = "#1B1D24";
+const LABEL_INK = "#1B1D24"; // (lines drawn onto the board as ink)
 
 export const EMPTY_PLOT = {
   fns: [],
@@ -248,16 +249,16 @@ function tracePieces(ctx, pieces, frame) {
   }
 }
 
-function label(ctx, text, x, y, ls, { align = "left", baseline = "bottom", color = LABEL_INK, size = 13 } = {}) {
+function label(ctx, text, x, y, ls, { align = "left", baseline = "bottom", color, size = 13 } = {}) {
   ctx.save();
   ctx.font = `600 ${size * ls}px ${FONT}`;
   ctx.textAlign = align;
   ctx.textBaseline = baseline;
   ctx.lineJoin = "round";
   ctx.lineWidth = 4 * ls;
-  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.strokeStyle = graphHalo();
   ctx.strokeText(text, x, y);
-  ctx.fillStyle = color;
+  ctx.fillStyle = color || graphText();
   ctx.fillText(text, x, y);
   ctx.restore();
 }
@@ -292,7 +293,7 @@ function dot(ctx, x, y, ls, color, r = 4.5) {
   ctx.fillStyle = color;
   ctx.fill();
   ctx.lineWidth = 1.5 * ls;
-  ctx.strokeStyle = "#ffffff";
+  ctx.strokeStyle = graphHole();
   ctx.stroke();
 }
 
@@ -455,8 +456,28 @@ function implicitMask(grid, op) {
 
 // ---------- the whole plot ----------
 
+// On a dark page, black lines and points show white (like ink).
+// (Kept per plot, so the curves worked out for it aren't worked out again
+// every frame.)
+const onDark = new WeakMap();
+function onPage(plot) {
+  if (!plot || !graphDark()) return plot;
+  const hit = onDark.get(plot);
+  if (hit) return hit;
+  const out = {
+    ...plot,
+    fns: (plot.fns || []).map((fn) => {
+      if (!fn || !fn.color || graphInk(fn.color) === fn.color) return fn;
+      return { ...fn, color: graphInk(fn.color) };
+    }),
+    points: (plot.points || []).map((set) => (set && set.color ? { ...set, color: graphInk(set.color) } : set)),
+  };
+  onDark.set(plot, out);
+  return out;
+}
+
 export function drawPlots(ctx, config, geom) {
-  const plot = plotOf(config);
+  const plot = onPage(plotOf(config));
   if (!plot) return;
   const frame = graphFrame(config, geom);
   if (frame.numberLine) {
@@ -686,14 +707,14 @@ export function drawPlots(ctx, config, geom) {
     if (want.intersections) {
       for (let i = 0; i < explicit.length; i++) {
         for (let j = i + 1; j < explicit.length; j++) {
-          for (const p of intersectionsOf(explicit[i].prep, explicit[j].prep, frame)) marks.push({ ...p, color: LABEL_INK });
+          for (const p of intersectionsOf(explicit[i].prep, explicit[j].prep, frame)) marks.push({ ...p, color: graphText() });
         }
         // with vertical lines, x = c
         for (const other of preps) {
           if (other.prep.read.kind !== "x" || other.prep.read.op !== "=") continue;
           const c = other.prep.f();
           const y = explicit[i].prep.f(c);
-          if (Number.isFinite(c) && Number.isFinite(y)) marks.push({ x: c, y, color: LABEL_INK });
+          if (Number.isFinite(c) && Number.isFinite(y)) marks.push({ x: c, y, color: graphText() });
         }
       }
     }
@@ -734,7 +755,7 @@ export function drawPlots(ctx, config, geom) {
         : res.crosses
           ? `∫ = ${formatValue(res.integral, 3)}  (area ${formatValue(res.area, 3)})`
           : `Area = ${formatValue(res.area, 3)}`;
-      label(ctx, text, wx, Math.max(box.y0 + 16 * ls, Math.min(box.y1 - 6 * ls, wy)), ls, { align: "center", baseline: "middle", color: LABEL_INK, size: 14 });
+      label(ctx, text, wx, Math.max(box.y0 + 16 * ls, Math.min(box.y1 - 6 * ls, wy)), ls, { align: "center", baseline: "middle", color: graphText(), size: 14 });
     }
 
     // 6. read-offs: the pinned ones, and one being moved along a curve now
@@ -822,7 +843,7 @@ function drawNumberLineMarks(ctx, plot, frame) {
       if (!Number.isFinite(x) || x < box.x0 || x > box.x1) return;
       ctx.beginPath();
       ctx.arc(x, y, 6.5 * ls, 0, Math.PI * 2);
-      ctx.fillStyle = closed ? color : "#ffffff";
+      ctx.fillStyle = closed ? color : graphHole();
       ctx.fill();
       ctx.lineWidth = 2.5 * ls;
       ctx.stroke();
@@ -862,7 +883,7 @@ function drawReadout(ctx, owner, r, frame, config, ls, placed) {
     const m = gradientAt(owner.prep.f, x, span);
     if (Number.isFinite(m)) {
       ctx.save();
-      ctx.strokeStyle = LABEL_INK;
+      ctx.strokeStyle = graphText();
       ctx.lineWidth = 1.8 * ls;
       ctx.beginPath();
       lineThrough(ctx, frame, m, y - m * x);
@@ -874,7 +895,7 @@ function drawReadout(ctx, owner, r, frame, config, ls, placed) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(wx, wy, (r.pinned ? 6 : 8) * ls, 0, Math.PI * 2);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = graphHole();
   ctx.fill();
   ctx.lineWidth = 3 * ls;
   ctx.strokeStyle = owner.fn.color;
@@ -925,8 +946,8 @@ function drawLegend(ctx, plot, preps, frame, ls) {
   const { size, pad, sw, gap, lineH, width, height, x, y } = legendLayout(ctx, rows, frame, ls);
   ctx.save();
   ctx.font = `600 ${size}px ${FONT}`;
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.strokeStyle = "rgba(27,29,36,0.25)";
+  ctx.fillStyle = graphCard();
+  ctx.strokeStyle = graphCardEdge();
   ctx.lineWidth = 1 * ls;
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(x, y, width, height, 6 * ls);
@@ -949,7 +970,7 @@ function drawLegend(ctx, plot, preps, frame, ls) {
       ctx.restore();
       tx += sw + gap;
     }
-    ctx.fillStyle = r.color ? LABEL_INK : "#5b6b80";
+    ctx.fillStyle = r.color ? graphText() : graphAxis();
     ctx.fillText(r.text, tx, ty);
   });
   ctx.restore();

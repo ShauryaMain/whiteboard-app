@@ -75,6 +75,8 @@ export async function deleteAccount({ admin, userId, email }) {
   const ids = await ownedBoards(admin, userId);
   await clearRows(admin, ids);
   await clearFiles(admin, ids);
+  // the fonts they uploaded (fonts.js)
+  await emptyFolder(admin, "board-images", `fonts/${userId}`);
   await deleteBoards(admin, ids);
   const unshared = await leaveSharedBoards(admin, email);
   const { error } = await admin.auth.admin.deleteUser(userId);

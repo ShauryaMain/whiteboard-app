@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import cls from "./Classroom.module.css";
+import { inkOn } from "@/lib/inkColor";
 
 // A student's own personal scratch board during a live class. Unlike the
 // teacher's board, this is intentionally NOT persisted to the database —
@@ -59,7 +60,8 @@ function drawVariableWidthPath(ctx, pts, startIdx, endIdx, fallbackWidth) {
 function drawStroke(ctx, stroke) {
   if (!stroke || !stroke.points || stroke.points.length < 2) return;
   ctx.globalAlpha = stroke.opacity ?? 1;
-  ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
+  // (white ink would vanish on this white page: shown dark, like on the board)
+  ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : inkOn(stroke.color, false);
   if (stroke.tool === "eraser") {
     drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
   } else {
