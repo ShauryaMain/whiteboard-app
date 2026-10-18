@@ -13,6 +13,18 @@
 # pictures) before ending the class, and each student's browser keeps a copy
 # for a day so a refresh doesn't lose their work. The demo board is kept in
 # the visitor's own browser and moves into their account when they sign in.
+# Documents beside the board (Oct 2026): any PDF opens a "Choose pages"
+# screen (up to 30 pages picked; more can be added later, up to 100), the
+# document and everything written on it is saved with the board, tools are
+# pen, highlighter, eraser, lasso, text, tape, laser pointer and Clip (a
+# box round part of a page goes onto the board; "Keep in view" floats it;
+# "Show in document" goes back). PDFs still need iPadOS 16.4 or newer.
+# Text boxes: bold/italic/underline, colours, highlight, sizes, Google fonts
+# or an uploaded font, and x^2, x_2, 3/4 typed as maths. Page colours
+# (chalkboard green, black...). The ruler shows cm or inches and its angle
+# (it is not a protractor) and lines snap to its edge. Keyboard shortcuts
+# (changeable) and two/three-finger taps for undo/redo. Shared boards show
+# who else is there; tap an initial to go to what they're looking at.
 #
 # Links to other pages on this site are written [[url:page-name]].
 # {fig:name:caption} drops in one of the screenshots listed in IMG.
@@ -55,6 +67,18 @@ IMG = {
                  "Class overview in a Clean Slate live class: five students' boards solving 2x + 3 = 11 side by side, with one hand up and two marked done"),
     "write": ("clean-slate-mark-student-work", [700, 1200], 1200, 750,
               "A teacher writing in red on a student's board during a Clean Slate live class, circling the mistake and writing 11 - 3 = 8"),
+    "clip": ("clean-slate-pdf-clip-to-board", [700, 1200], 1200, 750,
+             "A question clipped from a PDF worksheet onto the Clean Slate whiteboard, labelled with its page, with Show in document and Keep in view buttons"),
+    "clipbox": ("clean-slate-pdf-clip-box", [700, 1200], 1200, 750,
+                "A box drawn round a question on a PDF beside the Clean Slate whiteboard, with With my markings and Add to board buttons underneath"),
+    "picker": ("clean-slate-pdf-choose-pages", [700, 1200], 1200, 750,
+               "Choose pages window in Clean Slate for a 40-page PDF textbook, with six pages ticked to open beside the whiteboard"),
+    "pdftools": ("clean-slate-pdf-markup-tools", [700, 1200], 1200, 750,
+                 "A PDF worksheet beside the Clean Slate whiteboard with a highlighted question, a typed note and tape hiding the answer, and the document's tools along the top"),
+    "mathtext": ("clean-slate-maths-in-text-boxes", [700, 1200], 1200, 750,
+                 "A text box on the Clean Slate whiteboard where x^2 + 6x + 5 = 0 shows a raised 2 and 3/4 shows as a stacked fraction"),
+    "chalk": ("clean-slate-chalkboard-page-colour", [700, 1200], 1200, 750,
+              "A chalkboard-green squared page on the Clean Slate whiteboard with a white parabola, and the Page menu open showing page colours"),
 }
 
 # slug -> short label (used in the nav, footer and related links)
@@ -82,24 +106,31 @@ PAGES = [
             ("What a teaching whiteboard needs", """
 <p>Most online whiteboards are designed for brainstorming at work: sticky notes, templates and voting. A lesson needs different things, and Clean Slate is built around them.</p>
 <ul class="ticks">
-  <li><b>The worksheet beside the board.</b> Open a PDF or a photo in a side pane and teach from it, without switching windows.</li>
+  <li><b>The worksheet beside the board.</b> Open a PDF or a photo in a side pane and teach from it, without switching windows. Write on it, and clip any question onto the board.</li>
   <li><b>Tools that say what they do.</b> Every button has a label and a one-line hint, so a new class can use it straight away. When a new tool arrives, a short walkthrough shows you how it works.</li>
   <li><b>A pen that keeps up.</b> Drawing happens on your device first and saving runs in the background, so writing never waits on your Wi-Fi.</li>
   <li><b>A board for every student.</b> Start a live class and each student gets their own board to work on.</li>
 </ul>"""),
             ("Teach from your worksheet", """
-<p>Choose Insert, then Reference document, and pick a PDF (up to 30 pages) or an image. It opens in a pane next to the board. Drag the divider to make it a third, a half or two thirds of the screen, and write on the worksheet itself with a pen, highlighter and eraser.</p>
+<p>Choose Insert, then Reference document, and pick a PDF or an image. A long PDF, like a textbook, opens a Choose pages window: tick the pages you need (up to 30) and only those go beside the board. It opens in a pane next to the board. Drag the divider to make it a third, a half or two thirds of the screen.</p>
+<ul class="ticks">
+  <li><b>Mark it up like a notebook.</b> Pen, highlighter and eraser in any colour and size, a lasso to move what you wrote, text boxes, and tape that hides an answer until you tap it.</li>
+  <li><b>Clip a question onto the board.</b> Draw a box round it and it lands on the board, sharp, ready to work on. Keep it in view while you move around the board, or tap Show in document to jump back to it.</li>
+  <li><b>Lead the class through it.</b> A laser pointer, and Follow me, so everyone's copy scrolls to the page you're on.</li>
+  <li><b>It's all kept.</b> The document and everything written on it are saved with the board. Find words in it, jump to any page, or add blank, lined or graph pages.</li>
+</ul>
+{fig:clip:A question clipped from the worksheet onto the board.}
 <p>You teach from the question on the left and work it out on the right. Nothing to print, nothing to screenshot.</p>"""),
             ("See every student's working", """
 <p>Press Start live class and Clean Slate gives you a six-character code. Students type it on any device, add their first name, and they're in. They don't need an account or an email address.</p>
 <p>Each student sees your board and has a board of their own, with the same tools as yours. Class overview shows every student's board at once, live. Students can put a hand up when they're stuck, and you can open anyone's board to pin a comment or write on their work.</p>
 {fig:overview:Class overview: every student's board at once, with hands up and done.}"""),
             ("One board for every subject", """
-<p>Pick the paper that suits the lesson: blank, lined, squared, dot grid or isometric.</p>
+<p>Pick the paper that suits the lesson: blank, lined, squared, dot grid or isometric, on white or any page colour, chalkboard green included. Text boxes work like a document, with fonts, sizes, colours and highlights, and maths such as x² and ¾ sets itself as you type.</p>
 <ul class="ticks">
   <li><b>Maths:</b> graphs that plot the equations you type, statistics charts, exact shapes with the angles and lengths marked, a ruler, a compass and a scientific calculator with exact answers.</li>
   <li><b>Science:</b> label a diagram, or embed a PhET simulation next to your notes.</li>
-  <li><b>English and humanities:</b> paste in a passage or a source, highlight it and annotate the margins.</li>
+  <li><b>English and humanities:</b> paste in a passage or a source, or open it as a PDF, highlight it and annotate the margins.</li>
   <li><b>Languages:</b> lined paper for handwriting, and typed text boxes for vocabulary.</li>
 </ul>
 {fig:paper:Five kinds of paper, chosen from the Page menu.}"""),
@@ -127,11 +158,15 @@ PAGES = [
         "sections": [
             ("Built around a tutoring session", """
 <ul class="ticks">
-  <li><b>The question stays in view.</b> Open the worksheet or past paper as a PDF or photo beside the board, and write on it too.</li>
+  <li><b>The question stays in view.</b> Open the worksheet or past paper as a PDF or photo beside the board, and write on it too. Clip the question you're on onto the board, or keep it floating in view.</li>
   <li><b>It feels like writing.</b> Pen, highlighter and eraser are made for a stylus. Scribble over something to rub it out.</li>
   <li><b>Your student can write as well.</b> Share a board by email and you both write on it at the same time.</li>
   <li><b>Next week is one tap away.</b> Every board saves automatically and shows a preview picture, so last lesson is easy to find.</li>
 </ul>"""),
+            ("Past papers, clipped onto the board", """
+<p>Open a whole past paper or textbook and pick just the pages you need. Highlight the key words, cover the answers with tape until your student has had a go, and draw a box round a question to put it on the board beside your working.</p>
+{fig:clipbox:Draw a box round a question to put it on the board.}
+<p>Everything you write on the paper is saved with the board, so next week it's all where you left it.</p>"""),
             ("Long lessons stay quick", """
 <p>What you draw appears on your own device first, and saving happens quietly in the background. The pen doesn't wait for the internet, so writing feels the same at the end of a two-hour session as it did at the start.</p>"""),
             ("The tools a maths or science tutor reaches for", """
@@ -149,6 +184,7 @@ PAGES = [
             ("Does it work with Zoom?", "Yes. Run Clean Slate in your browser beside Zoom, Google Meet or Teams, and either share your screen or share the board with your student."),
             ("Does my student need an account?", "Not for a live class: they join with a code and their first name. To write on the same board as you, they sign in free with Google or with a code sent to their email."),
             ("Can I keep a separate board for each student?", "Yes. Make as many boards as you like and name them. Each one saves automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it."),
+            ("Can I write on a past paper?", "Yes. Open it as a PDF beside the board (pick up to 30 pages from a long one), then write, highlight, type and cover answers with tape. Clip any question onto the board. It's all saved with the board."),
             ("How much does it cost?", "Nothing. There is no paid plan and no board limit."),
         ],
         "related": ["online-whiteboard-for-math", "online-whiteboard-for-teaching", "whiteboard-for-ipad", "free-online-whiteboard-no-sign-up"],
@@ -196,7 +232,7 @@ PAGES = [
             ("Geometry tools: ruler and compass", """
 <p>Open the Maths menu and pick Ruler or Compass. Both sit on the board like the real things.</p>
 <ul class="ticks">
-  <li><b>Ruler:</b> draw perfectly straight lines at any angle and measure lengths.</li>
+  <li><b>Ruler:</b> marked in centimetres or inches, with its angle shown as you turn it (it clicks to every 15°). Write along its edge and the line comes out straight, with its length shown.</li>
   <li><b>Compass:</b> drag the pin to set the centre and the pencil to set the radius, then draw circles and arcs.</li>
 </ul>
 {fig:compass:The compass draws exact circles and arcs.}"""),
@@ -217,13 +253,16 @@ PAGES = [
 {fig:calculator:sin(30) gives ½, not 0.5.}"""),
             ("Squared, dot grid and isometric paper", """
 <p>Set the whole page to squared paper for graphs and tables, dot grid for diagrams, or isometric paper for 3D shapes. The pattern stays in place as you zoom and pan, and the eraser never rubs it out.</p>"""),
-            ("Write maths by hand", """
-<p>Maths is quicker to write than to type. Clean Slate is made for a stylus: the pen follows your hand, a scribble over a mistake rubs it out, and on an iPad your palm can rest on the screen. Typed text boxes are there when you want them.</p>"""),
+            ("Write maths by hand, or type it", """
+<p>Maths is quicker to write than to type. Clean Slate is made for a stylus: the pen follows your hand, a scribble over a mistake rubs it out, and on an iPad your palm can rest on the screen.</p>
+<p>When you'd rather type, text boxes set the maths for you: x^2 becomes x², x_2 becomes x₂ and 3/4 becomes a stacked fraction. Style any words with bold, colour, highlight, size and font.</p>
+{fig:mathtext:Type x^2 or 3/4 and it turns into real maths.}"""),
         ],
         "faq": [
             ("Can it draw accurate shapes?", "Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, and labels the measurements for you."),
             ("Can I change a shape after adding it?", "It becomes ordinary ink, so you can move it, copy it and rub parts out. To change its measurements, insert a new shape."),
-            ("Does it have a ruler and a compass?", "Yes. Both are in the Maths menu. The ruler draws straight lines and measures lengths, and the compass draws circles and arcs."),
+            ("Does it have a ruler and a compass?", "Yes. Both are in the Maths menu. The ruler is marked in centimetres or inches, shows its angle, and straightens lines drawn along its edge. The compass draws circles and arcs. There is no protractor."),
+            ("Can I type maths?", "Yes. In a text box, x^2 becomes x², x_2 becomes x₂ and 3/4 becomes a stacked fraction as you type."),
             ("Does it have graph paper?", "Yes, in two ways. The Page menu sets the whole board to squared paper, and the Graph tool places axes with the range and scale you choose for each one."),
             ("Can it plot a function for me?", "Yes. Type the equation in the Graph tool's Plot tab and it's drawn on the board. Letters like a, b and c get sliders, and you can mark roots and turning points, read off gradients, and shade inequalities or the area under a curve."),
             ("Can it draw statistics charts?", "Yes: bar charts, histograms, scatter graphs with a line of best fit, and box plots. Type or paste the data and the axes fit themselves."),
@@ -271,7 +310,9 @@ PAGES = [
 <p>A device with a browser. It can be an iPad, an Android tablet, a Chromebook or a laptop. They don't install anything, and they don't create an account or give an email address.</p>"""),
             ("What it's built for", """
 <p>Clean Slate's live class is built for a normal class of 20 to 30 students working at the same time. There is no charge and no session time limit.</p>
-<p>Students' boards have the same tools as yours, including graphs, shapes, the ruler, compass and calculator, and every paper style. Pictures, simulations and the worksheet pane are for your board only.</p>"""),
+<p>Students' boards have the same tools as yours, including graphs, shapes, the ruler, compass and calculator, and every paper style. Pictures, simulations and documents are added from your board only.</p>"""),
+            ("Teach from one worksheet together", """
+<p>Open a PDF beside your board and every student sees it too, with what you write on it. Point at a line with the laser pointer, and turn on Follow me so everyone's copy goes to the page you're on. On a phone, students switch between the board and the document.</p>"""),
         ],
         "faq": [
             ("Do students need to sign in?", "No. They join with a six-character class code and their first name."),
@@ -300,7 +341,8 @@ PAGES = [
   <li>Pen, highlighter, eraser, text boxes, and scribble to erase.</li>
   <li>Blank, lined, squared, dot grid and isometric paper.</li>
   <li>Graphs that plot equations, exact shapes, a ruler, a compass and a scientific calculator.</li>
-  <li>Pictures you paste or drop in, and a PDF or image open beside the board.</li>
+  <li>Pictures you paste or drop in, and a PDF or image beside the board to mark up and clip onto the board.</li>
+  <li>Text boxes with fonts, colours and typed maths, and any page colour.</li>
   <li>Select, move, copy, paste, undo and redo.</li>
   <li>A pretend live class, with five students to look in on.</li>
 </ul>
@@ -339,6 +381,7 @@ PAGES = [
   <li><b>Pencil-only mode turns itself on.</b> The first time you write with a stylus, your fingers go back to scrolling and zooming and only the Pencil draws. You can turn it off.</li>
   <li><b>Your palm can't press buttons.</b> Nothing you can tap sits at the bottom of the screen where your hand rests, and the toolbar ignores a brush from your palm while you write.</li>
   <li><b>Scribble to erase.</b> Scribble back and forth over a mistake and it's gone. There is also a precise eraser and a whole-stroke eraser.</li>
+  <li><b>Tap to undo.</b> Tap two fingers to undo and three to redo, like in Notability.</li>
 </ul>"""),
             ("Runs in Safari. Nothing to install.", """
 <p>Open the link and start writing. There is no app to download from the App Store and nothing to update. Your boards are there on any other device you sign in on.</p>"""),
@@ -346,7 +389,9 @@ PAGES = [
 <p>Clean Slate runs on iPadOS 15 and newer, which includes iPads going back to the iPad Air 2 and iPad mini 4. On those older models you write with a finger or a simple stylus.</p>
 <p>Opening a PDF beside the board needs iPadOS 16.4 or newer. On an older iPad, open the worksheet as an image instead.</p>"""),
             ("Worksheet on one side, board on the other", """
-<p>Open a PDF or photo beside the board and drag the divider to size it. In portrait the worksheet sits above the board, and in landscape it sits beside it. You can write on both.</p>"""),
+<p>Open a PDF or photo beside the board and drag the divider to size it. In portrait the worksheet sits above the board, and in landscape it sits beside it. You can write on both.</p>
+<p>On the worksheet your finger scrolls and pinches to zoom while the Pencil writes, and a big page handle on the edge takes you through the pages. Highlight, type, cover answers with tape, and draw a box round a question to clip it onto the board.</p>
+{fig:pdftools:Mark up the worksheet: highlight, type, and tape over the answer.}"""),
             ("Not only iPads", """
 <p>The same board works on Android tablets with a stylus, on Chromebooks, and on a laptop with a drawing tablet or a mouse.</p>"""),
         ],
@@ -376,6 +421,7 @@ PAGES = [
   <li>A pen, a highlighter and an eraser, with colours and sizes.</li>
   <li>Text boxes and pictures you can move around.</li>
   <li>A ruler for straight lines.</li>
+  <li>Keyboard shortcuts, which you can change.</li>
   <li>A board you can pan and zoom, with undo and redo.</li>
   <li>Sharing, so several people write on one board at once.</li>
 </ul>"""),
@@ -385,7 +431,7 @@ PAGES = [
   <tbody>
     <tr><th scope="row">Account</th><td>Any Google account or email address. The demo needs none.</td><td>Work or school Microsoft 365 accounts only</td></tr>
     <tr><th scope="row">Where it runs</th><td>Any browser: Windows, Mac, Linux, Chromebook, iPad, Android</td><td>Web and Teams. The standalone apps are being retired.</td></tr>
-    <tr><th scope="row">PDF beside the board</th><td>Yes, for everyone</td><td>Inserting documents needs a work or school account</td></tr>
+    <tr><th scope="row">PDF beside the board</th><td>Yes, for everyone. Pick pages from a long PDF, mark it up and clip questions onto the board.</td><td>Inserting documents needs a work or school account</td></tr>
     <tr><th scope="row">A board for each student</th><td>Yes. Students join with a code and no account.</td><td>No</td></tr>
     <tr><th scope="row">Price</th><td>Free</td><td>Included with Microsoft 365 for work or school</td></tr>
   </tbody>
@@ -422,7 +468,7 @@ PAGES = [
 <ul class="ticks">
   <li><b>A board the whole class can see.</b> Start a live class and every student sees your board on their own device.</li>
   <li><b>A space for each student.</b> In Jamboard you gave each student a frame. In Clean Slate each student gets a board of their own, and you can open any of them while they work.</li>
-  <li><b>Annotating a picture or a text.</b> Paste an image onto the board, or open a PDF beside it, and write over it.</li>
+  <li><b>Annotating a picture or a text.</b> Paste an image onto the board, or open a PDF beside it, write over it and clip parts of it onto the board.</li>
   <li><b>Quick to start.</b> Students type a six-character code and their first name. No accounts.</li>
 </ul>"""),
             ("What's different from Jamboard", """
@@ -453,9 +499,10 @@ HOME_FAQ = [
     ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> opens with no sign-up, no login and nothing to download, with a ready lesson and a pretend class to try. Your board is kept in your browser, and moves into your account when you sign in with Google or an email address.'),
     ("Do my students need accounts?", "No. Students join a live class with a six-character code and their first name."),
     ("Does it work on an iPad with Apple Pencil?", 'Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See <a href="[[url:whiteboard-for-ipad]]">the whiteboard for iPad</a>.'),
-    ("Can I open a PDF on the whiteboard?", "Yes. Open a PDF of up to 30 pages, or an image, in a pane beside the board, and write on it."),
+    ("Can I open a PDF on the whiteboard?", "Yes. Open a PDF or an image in a pane beside the board. From a long PDF, pick up to 30 pages. Write, highlight, type and cover answers with tape, clip any question onto the board, and it's all saved with the board."),
     ("Is it a replacement for Microsoft Whiteboard or Jamboard?", 'Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works in any browser, and you sign in with Google or any email address. See <a href="[[url:microsoft-whiteboard-alternative]]">the Microsoft Whiteboard alternative</a> and <a href="[[url:jamboard-alternative]]">the Jamboard alternative</a>.'),
     ("Can it plot graphs?", 'Yes. Type an equation and it is drawn on the board, with sliders for letters like a, b and c. It also draws bar charts, histograms, scatter graphs and box plots. See <a href="[[url:online-whiteboard-for-math]]">the whiteboard for math</a>.'),
+    ("Can I style text and type maths?", "Yes. Text boxes have fonts (or upload your own), sizes, bold, colours and highlights, and x^2, x_2 and 3/4 turn into real maths as you type."),
     ("Can it draw accurate shapes for maths?", 'Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, with the measurements labelled. See <a href="[[url:online-whiteboard-for-math]]">the whiteboard for math</a>.'),
     ("Does it have video or audio calls?", "No. Use it beside Zoom, Google Meet or Teams."),
     ("Are my boards saved?", "Yes. When you're signed in, boards save automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it."),

@@ -69,6 +69,7 @@
    "image": "https://whiteboard-app-landing.vercel.app/img/clean-slate-online-whiteboard.png",
    "screenshot": [
     "https://whiteboard-app-landing.vercel.app/img/clean-slate-worksheet-beside-whiteboard-1600.webp",
+    "https://whiteboard-app-landing.vercel.app/img/clean-slate-pdf-clip-to-board-1200.webp",
     "https://whiteboard-app-landing.vercel.app/img/clean-slate-graph-plot-sliders-1200.webp",
     "https://whiteboard-app-landing.vercel.app/img/clean-slate-class-overview-1200.webp",
     "https://whiteboard-app-landing.vercel.app/img/clean-slate-shapes-on-whiteboard-1600.webp",
@@ -78,17 +79,22 @@
    "featureList": [
     "Demo board with no sign-up, ready lesson boards and a pretend live class",
     "Sign in with Google or with a code sent to your email",
-    "PDF or image worksheet beside the board",
+    "PDF or image worksheet beside the board: pick pages from long PDFs, pen, highlighter, lasso, text, tape and laser pointer, saved with the board",
+    "Clip part of a PDF onto the board, keep it in view, and jump back to it",
+    "Follow me: the class sees the page of the worksheet you're on",
     "Live class: every student gets their own board and joins with a code, no accounts",
     "Class overview of every student's board, hands up, pens down, and writing on a student's board",
     "Save every student's board as a PDF or pictures",
     "Graphs that plot equations, with sliders, shading, gradients and tables of values",
     "Statistics charts: bar charts, histograms, scatter graphs with a line of best fit, and box plots",
     "Exact shapes with angles and lengths labelled: polygons, triangles, quadrilaterals, circles and 3D solids",
-    "Ruler and compass",
+    "Ruler in centimetres or inches that shows its angle and straightens lines along its edge, and a compass",
+    "Text boxes with fonts, colours and highlights, maths typed as x^2 and 3/4, and uploaded fonts",
     "Cartesian, polar, log and number-line graph paper, and a unit circle",
     "Scientific calculator with exact answers",
-    "Blank, lined, squared, dot grid and isometric paper",
+    "Blank, lined, squared, dot grid and isometric paper, in any page colour",
+    "See who else is on a shared board and go to what they're looking at",
+    "Keyboard shortcuts you can change, and two- and three-finger taps to undo and redo",
     "Apple Pencil support with palm rejection"
    ]
   },
@@ -133,7 +139,7 @@
      "name": "Can I open a PDF on the whiteboard?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "Yes. Open a PDF of up to 30 pages, or an image, in a pane beside the board, and write on it."
+      "text": "Yes. Open a PDF or an image in a pane beside the board. From a long PDF, pick up to 30 pages. Write, highlight, type and cover answers with tape, clip any question onto the board, and it's all saved with the board."
      }
     },
     {
@@ -150,6 +156,14 @@
      "acceptedAnswer": {
       "@type": "Answer",
       "text": "Yes. Type an equation and it is drawn on the board, with sliders for letters like a, b and c. It also draws bar charts, histograms, scatter graphs and box plots. See the whiteboard for math."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Can I style text and type maths?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes. Text boxes have fonts (or upload your own), sizes, bold, colours and highlights, and x^2, x_2 and 3/4 turn into real maths as you type."
      }
     },
     {
@@ -276,8 +290,8 @@
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h7v16H4zM14 4h6v16h-6"/></svg></span>
         <h3><a href="/online-whiteboard-for-teaching">The worksheet beside the board</a></h3>
-        <p>Open a PDF or photo in a side pane, size it how you like and write on it. Nothing to print and nothing to screenshot.</p>
-        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>no work or school account needed</span></div>
+        <p>Open a PDF or photo in a side pane and mark it up like a notebook. Clip any question onto the board. Nothing to print and nothing to screenshot.</p>
+        <div class="scribble"><svg width="22" height="18" viewBox="0 0 22 18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 9c6-1 11-1 17 0M14 4l5 5-5 5"/></svg><span>new: clip a question onto the board</span></div>
       </article>
       <article class="why">
         <span class="ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21zM7 13l2 2M10 10l2 2M13 7l2 2"/></svg></span>
@@ -349,7 +363,7 @@
             <text x="150" y="124" font-family="Caveat, cursive" font-size="20" fill="#2451D6">why here?</text>
           </svg>
         </div>
-        <div class="txt"><h3>English &amp; humanities</h3><p>Paste in a passage or a source, highlight it and annotate the margins.</p></div>
+        <div class="txt"><h3>English &amp; humanities</h3><p>Paste in a passage or open a source as a PDF, highlight it and annotate the margins.</p></div>
       </article>
       <article class="subject">
         <div class="mini p-lined-s">
@@ -390,7 +404,7 @@
             </svg>
           </div>
           <h3>Pen, highlighter, text</h3>
-          <p>Write, highlight and type in any colour. The eraser only removes ink, so the page stays clean.</p>
+          <p>Write and highlight in any colour. Type with any font, size or highlight, and x² or ¾ set themselves as you type.</p>
         </article>
         <article class="tcard">
           <span class="tape"></span>
@@ -406,7 +420,7 @@
             </svg>
           </div>
           <h3>Worksheet side by side</h3>
-          <p>Open a PDF or photo beside the board and drag the divider to size it. You can annotate it too.</p>
+          <p>Open a PDF or photo beside the board and pick the pages you need. Highlight, type, tape over answers, and clip a question onto the board.</p>
         </article>
         <article class="tcard">
           <span class="tape"></span>
@@ -415,7 +429,7 @@
             <div class="swatch-labels"><span>Lined</span><span>Squared</span><span>Dots</span><span>Isometric</span></div>
           </div>
           <h3>Paper to suit the task</h3>
-          <p>Blank, lined, squared, dot grid or isometric. The pattern stays put when you zoom.</p>
+          <p>Blank, lined, squared, dot grid or isometric, on white or any page colour, even chalkboard green.</p>
         </article>
         <article class="tcard">
           <span class="tape"></span>
@@ -447,7 +461,7 @@
             </svg>
           </div>
           <h3>Ruler &amp; compass</h3>
-          <p>Construction tools that sit on the board. Rule a straight line, measure a length or draw a perfect circle with your Pencil.</p>
+          <p>Construction tools that sit on the board. Write along the ruler for a straight line with its length in cm or inches, or draw a perfect circle with your Pencil.</p>
         </article>
         <article class="tcard">
           <span class="tape"></span>
@@ -504,7 +518,27 @@
     </div>
 
     <div class="tool-group">
-      <div class="group-label">new: graphs that plot</div>
+      <div class="group-label">new: your worksheet, now a notebook</div>
+      <div class="feature">
+        <div class="feature-copy">
+          <h3>Mark up the worksheet. Clip the question onto the board.</h3>
+          <p>Open any PDF beside the board. From a long one, like a textbook, tick just the pages you need. Then work on it the way you would in a notetaking app.</p>
+          <ul class="ticks">
+            <li>Pen, highlighter, eraser, lasso, text boxes, and tape that hides an answer until you tap it.</li>
+            <li>Draw a box round a question and it lands on the board, sharp. Keep it in view while you work, or jump back to it in the document.</li>
+            <li>A laser pointer, and Follow me so the class sees the page you’re on. It’s all saved with the board.</li>
+          </ul>
+          <p class="more"><a href="/online-whiteboard-for-teaching">How teaching from a worksheet works</a></p>
+        </div>
+        <figure class="feature-shot">
+          <div class="shot-frame"><img src="/img/clean-slate-pdf-clip-to-board-1200.webp" srcset="/img/clean-slate-pdf-clip-to-board-700.webp 700w, /img/clean-slate-pdf-clip-to-board-1200.webp 1200w" sizes="(min-width:1360px) 660px, (min-width:981px) 50vw, 92vw" width="1200" height="750" alt="A question clipped from a PDF worksheet onto the Clean Slate whiteboard, labelled with its page, with Show in document and Keep in view buttons" loading="lazy" decoding="async"></div>
+          <span class="tape"></span>
+        </figure>
+      </div>
+    </div>
+
+    <div class="tool-group">
+      <div class="group-label">graphs that plot</div>
       <div class="feature">
         <div class="feature-copy">
           <h3>Type the equation. Drag the sliders.</h3>
@@ -561,6 +595,10 @@
       <figure><div class="shot-frame"><img src="/img/clean-slate-unit-circle-1200.webp" srcset="/img/clean-slate-unit-circle-700.webp 700w, /img/clean-slate-unit-circle-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="750" alt="Unit circle on the Clean Slate whiteboard with every standard angle in radians and the exact coordinates of each point" loading="lazy" decoding="async"></div><figcaption>a unit circle with every exact value</figcaption></figure>
       <figure><div class="shot-frame"><img src="/img/clean-slate-class-overview-1200.webp" srcset="/img/clean-slate-class-overview-700.webp 700w, /img/clean-slate-class-overview-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="615" alt="Class overview in a Clean Slate live class: five students&#x27; boards solving 2x + 3 = 11 side by side, with one hand up and two marked done" loading="lazy" decoding="async"></div><figcaption>every student’s board at once in a live class</figcaption></figure>
       <figure><div class="shot-frame"><img src="/img/clean-slate-paper-styles-1200.webp" srcset="/img/clean-slate-paper-styles-700.webp 700w, /img/clean-slate-paper-styles-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="616" alt="Page background menu in Clean Slate with blank, lined, squared, dot grid and isometric paper" loading="lazy" decoding="async"></div><figcaption>blank, lined, squared, dot grid or isometric paper</figcaption></figure>
+      <figure><div class="shot-frame"><img src="/img/clean-slate-pdf-choose-pages-1200.webp" srcset="/img/clean-slate-pdf-choose-pages-700.webp 700w, /img/clean-slate-pdf-choose-pages-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="750" alt="Choose pages window in Clean Slate for a 40-page PDF textbook, with six pages ticked to open beside the whiteboard" loading="lazy" decoding="async"></div><figcaption>a 40-page PDF? pick just the pages you need</figcaption></figure>
+      <figure><div class="shot-frame"><img src="/img/clean-slate-pdf-clip-box-1200.webp" srcset="/img/clean-slate-pdf-clip-box-700.webp 700w, /img/clean-slate-pdf-clip-box-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="750" alt="A box drawn round a question on a PDF beside the Clean Slate whiteboard, with With my markings and Add to board buttons underneath" loading="lazy" decoding="async"></div><figcaption>box a question to clip it onto the board</figcaption></figure>
+      <figure><div class="shot-frame"><img src="/img/clean-slate-maths-in-text-boxes-1200.webp" srcset="/img/clean-slate-maths-in-text-boxes-700.webp 700w, /img/clean-slate-maths-in-text-boxes-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="750" alt="A text box on the Clean Slate whiteboard where x^2 + 6x + 5 = 0 shows a raised 2 and 3/4 shows as a stacked fraction" loading="lazy" decoding="async"></div><figcaption>type x^2 or 3/4 and it turns into real maths</figcaption></figure>
+      <figure><div class="shot-frame"><img src="/img/clean-slate-chalkboard-page-colour-1200.webp" srcset="/img/clean-slate-chalkboard-page-colour-700.webp 700w, /img/clean-slate-chalkboard-page-colour-1200.webp 1200w" sizes="(min-width:1360px) 600px, (min-width:761px) 44vw, 92vw" width="1200" height="750" alt="A chalkboard-green squared page on the Clean Slate whiteboard with a white parabola, and the Page menu open showing page colours" loading="lazy" decoding="async"></div><figcaption>any page colour, chalkboard green included</figcaption></figure>
     </div>
   </div>
 </section>
@@ -577,7 +615,7 @@
           <li><span class="num">1</span><span class="t"><b>Go live.</b> <span>Your board becomes the master board everyone sees.</span></span></li>
           <li><span class="num">2</span><span class="t"><b>Students join with the code.</b> <span>Each one gets their own board, with the full toolbar.</span></span></li>
           <li><span class="num">3</span><span class="t"><b>See the whole class.</b> <span>Every board at once, live. Hands up go to the top of your list.</span></span></li>
-          <li><span class="num">4</span><span class="t"><b>Step in.</b> <span>Pin a comment or write on their work, show one board to the class, or call pens down.</span></span></li>
+          <li><span class="num">4</span><span class="t"><b>Step in.</b> <span>Pin a comment or write on their work, show one board to the class, call pens down, or have everyone follow your worksheet.</span></span></li>
         </ol>
         <p class="more"><a href="/online-whiteboard-for-classroom">How the classroom whiteboard works</a></p>
       </div>
@@ -627,7 +665,7 @@
       <h2>Feels like paper under your Pencil.</h2>
       <div class="points">
         <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg><div><h3>Palm-safe by design</h3><p>Nothing to tap at the bottom where your hand rests, and the toolbar ignores brushes from your palm mid-stroke.</p></div></div>
-        <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg><div><h3>Pencil-only switches on by itself</h3><p>The first time you write with a stylus, fingers go back to scrolling and zooming. You can always turn it off.</p></div></div>
+        <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg><div><h3>Pencil-only switches on by itself</h3><p>The first time you write with a stylus, fingers go back to scrolling and zooming, on the board and on the worksheet. Tap two fingers to undo, three to redo.</p></div></div>
         <div class="point"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></svg><div><h3>Runs on the tablet you already own</h3><p>Works on iPads going back to 2014, on Samsung and other Android tablets, and on laptops. Nothing to install.</p></div></div>
       </div>
       <p class="more"><a href="/whiteboard-for-ipad">More about the whiteboard on iPad</a></p>
@@ -678,6 +716,10 @@
     <div class="sticky b"><h3>Share with an email</h3><p>Add a student or co-teacher and you can all write on the same board at once, live.</p></div>
     <div class="sticky p"><h3>Easy to find last week’s lesson</h3><p>Every board gets a preview picture, so the lesson you need is one glance away.</p></div>
     <div class="sticky g"><h3>New tools, shown to you</h3><p>When something new arrives, a pop-up shows what changed, and “Show me” walks you through it step by step on a real board.</p></div>
+    <div class="sticky b"><h3>See who’s on the board</h3><p>Everyone else on a shared board shows as an initial. Tap one and your board goes to what they’re looking at.</p></div>
+    <div class="sticky y"><h3>Shortcuts your way</h3><p>P for pen, E for eraser and more, and you can change any of them. On a tablet, tap two fingers to undo.</p></div>
+    <div class="sticky g"><h3>Settings that follow you</h3><p>How easily a scribble erases, what the pointer shows, what new boards start with: set once, on every device.</p></div>
+    <div class="sticky p"><h3>Your own fonts</h3><p>Pick a Google font, or upload your school’s handwriting font, and everyone on the board sees it.</p></div>
   </div>
 </section>
 
@@ -713,9 +755,10 @@
       <div class="faq-item"><h3>Can I try it without signing up?</h3><p>Yes. The <a href="https://whiteboard-app-beta.vercel.app/demo">demo board</a> opens with no sign-up, no login and nothing to download, with a ready lesson and a pretend class to try. Your board is kept in your browser, and moves into your account when you sign in with Google or an email address.</p></div>
       <div class="faq-item"><h3>Do my students need accounts?</h3><p>No. Students join a live class with a six-character code and their first name.</p></div>
       <div class="faq-item"><h3>Does it work on an iPad with Apple Pencil?</h3><p>Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See <a href="/whiteboard-for-ipad">the whiteboard for iPad</a>.</p></div>
-      <div class="faq-item"><h3>Can I open a PDF on the whiteboard?</h3><p>Yes. Open a PDF of up to 30 pages, or an image, in a pane beside the board, and write on it.</p></div>
+      <div class="faq-item"><h3>Can I open a PDF on the whiteboard?</h3><p>Yes. Open a PDF or an image in a pane beside the board. From a long PDF, pick up to 30 pages. Write, highlight, type and cover answers with tape, clip any question onto the board, and it's all saved with the board.</p></div>
       <div class="faq-item"><h3>Is it a replacement for Microsoft Whiteboard or Jamboard?</h3><p>Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works in any browser, and you sign in with Google or any email address. See <a href="/microsoft-whiteboard-alternative">the Microsoft Whiteboard alternative</a> and <a href="/jamboard-alternative">the Jamboard alternative</a>.</p></div>
       <div class="faq-item"><h3>Can it plot graphs?</h3><p>Yes. Type an equation and it is drawn on the board, with sliders for letters like a, b and c. It also draws bar charts, histograms, scatter graphs and box plots. See <a href="/online-whiteboard-for-math">the whiteboard for math</a>.</p></div>
+      <div class="faq-item"><h3>Can I style text and type maths?</h3><p>Yes. Text boxes have fonts (or upload your own), sizes, bold, colours and highlights, and x^2, x_2 and 3/4 turn into real maths as you type.</p></div>
       <div class="faq-item"><h3>Can it draw accurate shapes for maths?</h3><p>Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, with the measurements labelled. See <a href="/online-whiteboard-for-math">the whiteboard for math</a>.</p></div>
       <div class="faq-item"><h3>Does it have video or audio calls?</h3><p>No. Use it beside Zoom, Google Meet or Teams.</p></div>
       <div class="faq-item"><h3>Are my boards saved?</h3><p>Yes. When you're signed in, boards save automatically. A board that nobody opens for 30 days is deleted, and you get an email first with a button to keep it.</p></div>
