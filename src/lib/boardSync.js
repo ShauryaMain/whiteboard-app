@@ -71,8 +71,15 @@ const PARTS = {
   strokes: { columns: "id, data", map: (r) => ({ ...r.data, id: r.id }), label: "strokes" },
   texts: { columns: "id, x, y, text, color, font_size, width, rotation", map: rowToText, label: "texts" },
   images: {
-    columns: "id, x, y, width, height, src",
-    map: (r) => ({ id: r.id, x: r.x, y: r.y, width: r.width, height: r.height, src: r.src }),
+    columns: "id, x, y, width, height, src, source",
+    // (a database without the newer "source" column: clips from a reference
+    // document, see supabase/2026-10-19-reference-docs.sql)
+    fallbackColumns: "id, x, y, width, height, src",
+    map: (r) => {
+      const img = { id: r.id, x: r.x, y: r.y, width: r.width, height: r.height, src: r.src };
+      if (r.source) img.source = r.source;
+      return img;
+    },
     label: "images",
   },
 };
@@ -85,9 +92,14 @@ const PARTS = {
 // the student's tab instead (see src/lib/localBoard.js).
 export async function fetchBoardPart(boardId, kind, client = supabase) {
   const part = PARTS[kind];
-  const { rows, error } = await fetchAllRows((withCount) =>
-    ordered(client.from(kind).select(part.columns, withCount ? { count: "exact" } : undefined).eq("board_id", boardId))
-  );
+  const load = (columns) =>
+    fetchAllRows((withCount) =>
+      ordered(client.from(kind).select(columns, withCount ? { count: "exact" } : undefined).eq("board_id", boardId))
+    );
+  let { rows, error } = await load(part.columns);
+  if (error && part.fallbackColumns && /source|column|schema cache/i.test(String(error.message || "") + String(error.code || ""))) {
+    ({ rows, error } = await load(part.fallbackColumns));
+  }
   if (error) {
     if (kind === "images") console.warn("Could not load images (has the images table been created yet?):", error);
     else console.error(`Error loading ${part.label}:`, error);
@@ -350,7 +362,7 @@ export function createSyncTracker(client) {
     failed: new Map(), // id -> { table, row, attempts }
     seenAt: new Map(), // id -> when it first appeared on this screen
     removedAt: new Map(), // id -> when it last left this screen
-    lastIds: { strokes: new Set(), texts: new Set(), images: new Set() },
+    lastIds: { strokes: new Set(), texts: new Set(), images: new Set(), refMarks: new Set() },
     listeners: new Set(),
     exists: null, // set by the board: (id) => is it still on screen?
     onGiveUp: null, // set by the board: called with saves that will never go through

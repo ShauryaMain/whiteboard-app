@@ -9,8 +9,11 @@ import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import SplitDivider from "./SplitDivider";
 import PalmSafeButton from "./PalmSafeButton";
-import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine } from "lucide-react";
+import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine, LocateFixed, PictureInPicture2, LayoutDashboard } from "lucide-react";
 import ReferencePane from "./ReferencePane";
+import RefPagePicker from "./RefPagePicker";
+import ClipWindows from "./ClipWindows";
+import refStyles from "./RefPane.module.css";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
@@ -45,7 +48,13 @@ import { shapeToBoardObjects, browserTextEnv } from "@/lib/shapeBuilder";
 import { renderGrid } from "@/lib/gridRenderer";
 import { graphsOf, packGraphs, graphBox, graphAt, translateGraph, placeGraph, snapPoint, snapSpacing, MAX_GRAPHS } from "@/lib/graphList";
 import { gridFrame } from "@/lib/graphAxes";
-import { browserCanOpenPdfs, loadPdfjs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
+import { browserCanOpenPdfs, PDF_UNSUPPORTED_MESSAGE } from "@/lib/loadPdfjs";
+import {
+  normalizeDoc, normalizeMark, normalizeMarks, applyMarksChange, chunkList, createBus, docFilePaths, newRefId,
+  REF_EVENTS, REF_MAX_PICK, REF_MAX_PAGES, REF_MAX_UPLOAD_BYTES, REF_MAX_READ_BYTES,
+} from "@/lib/refDoc";
+import { loadReference, saveReferenceDoc, markRow, deleteMarkRows, deleteAllMarks, isMissing as isMissingTable, MARKS_TABLE } from "@/lib/refStore";
+import { buildPdf } from "@/lib/refPdf";
 import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
 import { applyBackground, normalizeBackground, isDarkBackground } from "@/lib/boardBackground";
 import { inkOn } from "@/lib/inkColor";
@@ -128,6 +137,34 @@ const INTERP_MAX_STEP = 6;
 // there's no reliable way to know a screen's true DPI from a browser, so
 // this is the most accurate basis available (the same one print-to-PDF
 // and other browser-native "physical size" features use).
+
+// Clips kept in view over the board (per board, on this screen only).
+const CLIP_WINDOWS_KEY = "cleanslate_clip_windows_";
+function readClipWindows(boardId) {
+  if (!boardId || typeof window === "undefined") return [];
+  let raw = null;
+  try {
+    raw = window.localStorage.getItem(CLIP_WINDOWS_KEY + boardId);
+  } catch (err) {
+    raw = null;
+  }
+  let list = [];
+  try {
+    list = JSON.parse(raw || "[]");
+  } catch (err) {
+    list = [];
+  }
+  return Array.isArray(list) ? list.filter((w) => w && w.id && Number.isFinite(w.x) && Number.isFinite(w.y) && Number.isFinite(w.w)).slice(-3) : [];
+}
+function writeClipWindows(boardId, list) {
+  if (!boardId) return;
+  try {
+    if (list.length) window.localStorage.setItem(CLIP_WINDOWS_KEY + boardId, JSON.stringify(list));
+    else window.localStorage.removeItem(CLIP_WINDOWS_KEY + boardId);
+  } catch (err) {
+    // private browsing: kept for this visit only
+  }
+}
 
 function opacityForTool(t) {
   return t === "highlighter" ? 0.35 : 1;
@@ -365,8 +402,18 @@ export default function Whiteboard({
   // runs once on mount) can always read the current value when responding
   // to a late-joiner's "is anything loaded?" request.
   const referenceDocRef = useRef(null);
-  const referenceStrokesRef = useRef([]);
-  const myReferenceStrokeStack = useRef([]);
+  const referenceMarksRef = useRef([]);
+  // Whether the database can keep the document and its markings (see
+  // src/lib/refStore.js), and which document it last said the board had.
+  // (null: not known yet, so saves are tried; false: the database can't keep them)
+  const refSavedRef = useRef({ docSaved: null, marksSaved: null, serverKey: null });
+  // markings rubbed out here whose removal hasn't reached the database yet
+  const refDeletingRef = useRef(new Set());
+  const refReceiveRef = useRef(null);
+  const refRefreshRef = useRef(null);
+  const refPaneHandleRef = useRef(null);
+  const refAddingRef = useRef(false);
+  const imageSourceMissingRef = useRef(false);
 
   const [strokes, setStrokes] = useState([]);
   const [texts, setTexts] = useState([]);
@@ -474,10 +521,17 @@ export default function Whiteboard({
   const penSeen = useSyncExternalStore(subscribePencilPrefs, getPenSeen, getServerPrefSnapshot);
   const eraserMode = useSyncExternalStore(subscribeInkPrefs, getEraserMode, getServerEraserMode);
   const scribbleErase = useSyncExternalStore(subscribeInkPrefs, getScribbleErase, getServerScribbleErase);
-  const [referenceStrokes, setReferenceStrokes] = useState([]);
-  const [referenceTool, setReferenceTool] = useState("pen");
-  const [referenceColor, setReferenceColor] = useState("#E53935");
-  const [myReferenceUndoAvailable, setMyReferenceUndoAvailable] = useState(false);
+  // The markings on the reference document (src/lib/refDoc.js).
+  const [referenceMarks, setReferenceMarks] = useState([]);
+  // "Choose pages" for a PDF that's being added: { file, url, fileName, size, adding, max }
+  const [refPicker, setRefPicker] = useState(null);
+  // live pointers and "follow me" for the document pane
+  const [refBus] = useState(createBus);
+  // Phones: the board or the document, full screen.
+  const [phoneView, setPhoneView] = useState("board");
+  // Clips kept in view over the board, on this screen: [{ id, x, y, w }]
+  const [clipWindows, setClipWindows] = useState(() => readClipWindows(boardId));
+  const [myRefId] = useState(newRefId);
   const [editingText, setEditingText] = useState(null);
   const [selectedTextId, setSelectedTextId] = useState(null);
   // Phase 5: images on the board + multi-object selection.
@@ -548,7 +602,7 @@ export default function Whiteboard({
   const thumbTimerRef = useRef(null);
   const thumbWarnedRef = useRef(false);
   // (the demo's lesson board opens with its worksheet beside it)
-  const [referenceDoc, setReferenceDoc] = useState(initialReferenceDoc);
+  const [referenceDoc, setReferenceDoc] = useState(() => normalizeDoc(initialReferenceDoc));
   const [referenceUploadStatus, setReferenceUploadStatus] = useState("");
   const referenceFileInputRef = useRef(null);
   // A student's board in a live class: notes the teacher has pinned on it.
@@ -610,7 +664,11 @@ export default function Whiteboard({
   useEffect(() => { compassRadiusRef.current = compassRadius; }, [compassRadius]);
   useEffect(() => { panToolActiveRef.current = panToolActive; }, [panToolActive]);
   useEffect(() => { referenceDocRef.current = referenceDoc; }, [referenceDoc]);
-  useEffect(() => { referenceStrokesRef.current = referenceStrokes; }, [referenceStrokes]);
+  useEffect(() => {
+    referenceMarksRef.current = referenceMarks;
+    noteList(sync, "refMarks", referenceMarks);
+  }, [referenceMarks, sync]);
+  useEffect(() => { writeClipWindows(boardId, clipWindows); }, [boardId, clipWindows]);
   useEffect(() => {
     activeRef.current = active;
     // The board has just been taken off screen (the student switched tab,
@@ -1680,6 +1738,7 @@ export default function Whiteboard({
       }
       if (result.now) syncCursorRef.current = result.now;
       applyBoardSettings(result.settings);
+      if (!q && refRefreshRef.current) refRefreshRef.current(false);
       retryUnsaved(sync);
       if (!q) setCatchingUp(false);
       fullRedraw();
@@ -1811,6 +1870,10 @@ export default function Whiteboard({
       boardLoadedRef.current = true;
       fullRedraw();
       if (!opened) touchBoard(boardId, db);
+      // the document beside the board, and what's written on it
+      // (open_board brings the document with it, once the database has it)
+      const knownDoc = opened && opened.found && "reference_doc" in opened ? { doc: opened.reference_doc } : null;
+      if (refRefreshRef.current) refRefreshRef.current(true, knownDoc);
       // A student's class board that came back from an earlier visit (a
       // refresh, or joining again after closing the tab): say so, once.
       if (student && backend && backend.__restored > 0 && !restoredNoticeShownRef.current) {
@@ -2022,15 +2085,16 @@ export default function Whiteboard({
 
   async function insertImage(img) {
     if (!boardId || !img?.id) return;
-    const error = await saveRow(sync, "images", {
-      id: img.id,
-      board_id: boardId,
-      x: img.x,
-      y: img.y,
-      width: img.width,
-      height: img.height,
-      src: img.src,
-    });
+    const row = { id: img.id, board_id: boardId, x: img.x, y: img.y, width: img.width, height: img.height, src: img.src };
+    // a clip from the reference document remembers where it came from
+    // (once the database has the column: supabase/2026-10-19-reference-docs.sql)
+    if (img.source && !imageSourceMissingRef.current) row.source = img.source;
+    let error = await saveRow(sync, "images", row);
+    if (error && row.source && /source|PGRST204|schema cache/i.test(`${error.code || ""} ${error.message || ""}`)) {
+      imageSourceMissingRef.current = true;
+      delete row.source;
+      error = await saveRow(sync, "images", row);
+    }
     if (error) warnImagesTable(error);
   }
 
@@ -2912,9 +2976,157 @@ export default function Whiteboard({
     saveSimEmbeds();
   }
 
+  // ---------- the reference document (a PDF or picture beside the board) ----------
+  //
+  // Kept with the board (src/lib/refStore.js), sent live to everyone on it,
+  // and shown by ReferencePane.js.
+
+  function sendRef(event, payload) {
+    channelRef.current?.send({ type: "broadcast", event, payload });
+  }
+
+  function refDocKey(doc) {
+    if (!doc) return null;
+    return (doc.pdf && doc.pdf.path) || doc.path || doc.url || "";
+  }
+
+  // big changes go in pieces (one live message has a size limit)
+  function sendMarkChange(change) {
+    for (const piece of chunkList(change.add || [])) sendRef("ref-marks", { add: piece });
+    for (const piece of chunkList(change.update || [])) sendRef("ref-marks", { update: piece });
+    const remove = change.remove || [];
+    for (let i = 0; i < remove.length; i += 2000) sendRef("ref-marks", { remove: remove.slice(i, i + 2000) });
+  }
+
+  // Keeps trying (while the board is open) until the removal is saved; a
+  // check with the server meanwhile doesn't bring them back.
+  async function deleteRefMarks(ids) {
+    for (const id of ids) refDeletingRef.current.add(id);
+    for (let tries = 0; tries < 1000; tries++) {
+      const error = await deleteMarkRows(db, ids);
+      if (!error || isMissingTable(error)) break;
+      const wait = Math.min(60000, 3000 * (tries + 1));
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    for (const id of ids) refDeletingRef.current.delete(id);
+  }
+
+  function saveMarkChange(change) {
+    if (student || !boardId || refSavedRef.current.marksSaved === false) return;
+    const rows = [...(change.add || []), ...(change.update || [])].map((m) => markRow(boardId, m));
+    for (let i = 0; i < rows.length; i += 50) {
+      const batch = rows.slice(i, i + 50);
+      saveRows(sync, MARKS_TABLE, batch).then((error) => {
+        if (!error) return;
+        if (isMissingTable(error)) {
+          // (the database isn't set up for this yet: kept live only)
+          refSavedRef.current.marksSaved = false;
+          forgetUnsaved(sync, batch.map((r) => r.id));
+          return;
+        }
+        reportSaveError("marking on the document", error);
+      });
+    }
+    const remove = change.remove || [];
+    if (remove.length) {
+      forgetUnsaved(sync, remove);
+      deleteRefMarks(remove);
+    }
+  }
+
+  // A change to the markings made here: shown, sent to everyone, saved.
+  function handleRefMarks(change) {
+    if (!change) return;
+    setReferenceMarks((prev) => applyMarksChange(prev, change));
+    sendMarkChange(change);
+    saveMarkChange(change);
+  }
+
+  async function storeRefDoc(doc) {
+    if (student || !isOwner || !boardId || refSavedRef.current.docSaved === false) return;
+    const result = await saveReferenceDoc(db, boardId, doc);
+    if (result === "saved") refSavedRef.current.serverKey = refDocKey(doc);
+    else if (result === "missing") refSavedRef.current.docSaved = false;
+    else flashNotice("The document couldn't be saved with the board just now. It's still here for everyone on the board.", 6000);
+  }
+
+  // The pages changed (turned, added, taken out): only the owner does this.
+  function handleRefPagesChange(pages, markChange) {
+    const doc = referenceDocRef.current;
+    if (!doc || !isOwner) return;
+    const next = { ...doc, pages, pageCount: pages.length };
+    referenceDocRef.current = next;
+    setReferenceDoc(next);
+    sendRef("reference-update", { doc: next });
+    storeRefDoc(next);
+    if (markChange) handleRefMarks(markChange);
+  }
+
+  function safeFileName(name) {
+    return String(name || "document").replace(/[^\w.\- ]+/g, "_").slice(-80) || "document";
+  }
+
+  async function uploadRefFile(blob, name, type) {
+    const path = `${boardId}/${Date.now()}-${safeFileName(name)}`;
+    let result;
+    try {
+      result = await db.storage.from("reference-docs").upload(path, blob, { contentType: type, upsert: false });
+    } catch (err) {
+      result = { error: err };
+    }
+    if (!result || result.error) {
+      const error = (result && result.error) || {};
+      console.error("Error uploading reference doc:", error);
+      alert("Upload failed: " + (error.message || "please try again."));
+      return null;
+    }
+    const { data } = db.storage.from("reference-docs").getPublicUrl(path);
+    return { url: data.publicUrl, path };
+  }
+
+  // A brand-new document beside the board.
+  function showNewRefDoc(doc) {
+    referenceDocRef.current = doc;
+    setReferenceDoc(doc);
+    setReferenceMarks([]);
+    setRefCollapsed(false);
+    setPhoneView("pdf");
+    sendRef("reference-set", { doc });
+    storeRefDoc(doc);
+    track("reference_opened", { pages: doc.pages.length, kind: doc.pdf ? "pdf" : "image" });
+  }
+
+  async function openRefImage(file) {
+    setReferenceUploadStatus("Uploading…");
+    const up = await uploadRefFile(file, file.name, file.type);
+    setReferenceUploadStatus("");
+    if (!up) return;
+    showNewRefDoc({
+      v: 2, fileName: file.name, fileType: file.type, url: up.url, path: up.path, pageCount: 1, pdf: null,
+      pages: [{ id: newRefId(), kind: "image", url: up.url, path: up.path, rotate: 0 }],
+    });
+  }
+
+  async function addRefImagePage(file) {
+    if (!referenceDocRef.current) return;
+    if (referenceDocRef.current.pages.length >= REF_MAX_PAGES) {
+      alert(`The document already has ${REF_MAX_PAGES} pages, the most it can hold.`);
+      return;
+    }
+    setReferenceUploadStatus("Uploading…");
+    const up = await uploadRefFile(file, file.name, file.type);
+    setReferenceUploadStatus("");
+    const doc = referenceDocRef.current;
+    if (!up || !doc) return;
+    handleRefPagesChange([...doc.pages, { id: newRefId(), kind: "image", url: up.url, path: up.path, rotate: 0 }], null);
+    flashNotice("Picture added as a page.");
+  }
+
   async function handleReferenceFileSelected(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
+    const adding = refAddingRef.current && !!referenceDocRef.current;
+    refAddingRef.current = false;
     if (!file || !isOwner) return;
 
     const allowedTypes = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
@@ -2922,81 +3134,169 @@ export default function Whiteboard({
       alert("Please choose a PDF, PNG, JPG, or WEBP file.");
       return;
     }
-    const MAX_BYTES = 25 * 1024 * 1024;
-    if (file.size > MAX_BYTES) {
-      alert("That file is too large — please choose one under 25MB.");
+    if (file.type !== "application/pdf") {
+      if (file.size > REF_MAX_UPLOAD_BYTES) {
+        alert("That picture is too large — please choose one under 25MB.");
+        return;
+      }
+      if (adding) addRefImagePage(file);
+      else openRefImage(file);
       return;
     }
-
-    setReferenceUploadStatus("Checking file…");
-
-    let pageCount = 1;
-    if (file.type === "application/pdf") {
-      if (!browserCanOpenPdfs()) {
-        setReferenceUploadStatus("");
-        alert(PDF_UNSUPPORTED_MESSAGE);
-        return;
-      }
-      try {
-        const pdfjsLib = await loadPdfjs();
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        pageCount = pdfDoc.numPages;
-      } catch (err) {
-        console.error("Error reading PDF:", err);
-        setReferenceUploadStatus("");
-        alert("Couldn't read that PDF — it may be corrupted or password-protected.");
-        return;
-      }
-      if (pageCount > 30) {
-        setReferenceUploadStatus("");
-        alert(`That PDF has ${pageCount} pages — please choose one with 30 pages or fewer.`);
-        return;
-      }
+    if (!browserCanOpenPdfs()) {
+      alert(PDF_UNSUPPORTED_MESSAGE);
+      return;
     }
+    if (file.size > REF_MAX_READ_BYTES) {
+      alert("That PDF is too large to open here (over 200MB). Try saving just the chapter you need as its own PDF.");
+      return;
+    }
+    const room = adding ? Math.min(REF_MAX_PICK, REF_MAX_PAGES - referenceDocRef.current.pages.length) : REF_MAX_PICK;
+    if (room <= 0) {
+      alert(`The document already has ${REF_MAX_PAGES} pages, the most it can hold.`);
+      return;
+    }
+    // (the picker reads the file as it needs it, so a big textbook is
+    // never held in memory more than once)
+    setRefPicker({ file, url: URL.createObjectURL(file), fileName: file.name, size: file.size, adding, max: room });
+  }
 
-    setReferenceUploadStatus("Uploading…");
+  function closeRefPicker() {
+    if (refPicker && refPicker.url) URL.revokeObjectURL(refPicker.url);
+    setRefPicker(null);
+  }
 
-    const path = `${boardId}/${Date.now()}-${file.name}`;
-    const { error: uploadError } = await db.storage
-      .from("reference-docs")
-      .upload(path, file, { contentType: file.type, upsert: false });
+  async function readFileBytes(file) {
+    try {
+      return await file.arrayBuffer();
+    } catch (err) {
+      return null;
+    }
+  }
 
-    if (uploadError) {
-      console.error("Error uploading reference doc:", uploadError);
+  async function fetchBytes(url) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return await res.arrayBuffer();
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function megabytes(n) {
+    return (n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0);
+  }
+
+  // The picked pages as one PDF: { blob, size, adding, oldCount } or null.
+  async function makeRefPdf(pick, picked, total) {
+    const doc = referenceDocRef.current;
+    const adding = pick.adding && !!doc;
+    const sources = [];
+    let oldCount = 0;
+    if (adding && doc.pdf) {
+      const old = await fetchBytes(doc.pdf.url);
+      if (!old) {
+        alert("Couldn't fetch the document to add to it — please try again.");
+        return null;
+      }
+      oldCount = doc.pdf.pageCount || 0;
+      sources.push({ bytes: old, pages: Array.from({ length: oldCount }, (_, i) => i + 1) });
+    }
+    const wholeFile = !adding && picked.length === total;
+    let bytes = null;
+    if (wholeFile && pick.size <= REF_MAX_UPLOAD_BYTES) {
+      // every page: the file as it is
+      return { blob: pick.file, size: pick.size, adding, oldCount };
+    } else {
+      const picked0 = await readFileBytes(pick.file);
+      if (!picked0) {
+        alert("Couldn't read that file — please try again.");
+        return null;
+      }
+      sources.push({ bytes: picked0, pages: picked });
+      const built = await buildPdf(sources).catch((err) => err || new Error("failed"));
+      if (built instanceof Error) {
+        console.error("Couldn't make the smaller PDF:", built);
+        alert(
+          built.message === "encrypted"
+            ? "That PDF is locked, so pages can't be taken out of it. Open it on your computer, print it to a new PDF, and add that instead."
+            : "Couldn't take those pages out of the PDF — it may be damaged."
+        );
+        return null;
+      }
+      bytes = built;
+    }
+    if (bytes.byteLength > REF_MAX_UPLOAD_BYTES) {
+      alert(`Those pages come to ${megabytes(bytes.byteLength)}MB, and the most is 25MB. Please pick fewer pages.`);
+      return null;
+    }
+    return { blob: new Blob([bytes], { type: "application/pdf" }), size: bytes.byteLength, adding, oldCount };
+  }
+
+  async function handleRefPagesPicked(picked, total) {
+    const pick = refPicker;
+    setRefPicker(null);
+    if (!pick || !picked.length) return;
+    // (revoked once the pages have been taken from it)
+    const revoke = () => URL.revokeObjectURL(pick.url);
+    setReferenceUploadStatus("Preparing pages…");
+    const made = await makeRefPdf(pick, picked, total);
+    revoke();
+    if (!made) {
       setReferenceUploadStatus("");
-      alert("Upload failed: " + uploadError.message);
       return;
     }
-
-    const { data: urlData } = db.storage.from("reference-docs").getPublicUrl(path);
-
-    const doc = {
-      url: urlData.publicUrl,
-      path,
-      pageCount,
-      fileType: file.type,
-      fileName: file.name,
-    };
-    setReferenceDoc(doc);
+    setReferenceUploadStatus("Uploading…");
+    const baseName = String(pick.fileName || "document").replace(/\.pdf$/i, "");
+    const up = await uploadRefFile(made.blob, `${baseName}.pdf`, "application/pdf");
     setReferenceUploadStatus("");
-    setReferenceStrokes([]);
-    myReferenceStrokeStack.current = [];
-    setMyReferenceUndoAvailable(false);
-    channelRef.current?.send({ type: "broadcast", event: "reference-set", payload: { doc } });
+    if (!up) return;
+    const fresh = picked.map((_, i) => ({ id: newRefId(), kind: "pdf", src: made.oldCount + i + 1, rotate: 0 }));
+    const doc = referenceDocRef.current;
+    if (made.adding && doc) {
+      const oldPath = doc.pdf ? doc.pdf.path : null;
+      const pages = [...doc.pages, ...fresh];
+      const next = {
+        ...doc, url: up.url, path: up.path, fileType: "application/pdf", pageCount: pages.length,
+        pdf: { url: up.url, path: up.path, pageCount: made.oldCount + picked.length }, pages,
+      };
+      referenceDocRef.current = next;
+      setReferenceDoc(next);
+      sendRef("reference-update", { doc: next });
+      await storeRefDoc(next);
+      if (oldPath && oldPath !== up.path && !String(oldPath).startsWith("demo/")) {
+        db.storage.from("reference-docs").remove([oldPath]).then(({ error }) => {
+          if (error) console.error("Error removing the old copy of the document:", error);
+        });
+      }
+      flashNotice(`Added ${picked.length} page${picked.length === 1 ? "" : "s"} to the end of the document.`);
+      return;
+    }
+    showNewRefDoc({
+      v: 2, fileName: pick.fileName, fileType: "application/pdf", url: up.url, path: up.path, pageCount: picked.length,
+      pdf: { url: up.url, path: up.path, pageCount: picked.length }, pages: fresh,
+    });
   }
 
   async function handleRemoveReferenceDoc() {
-    if (!referenceDoc) return;
-    if (!window.confirm("Remove this document? Any annotations on it will be lost.")) return;
-    const path = referenceDoc.path;
+    const doc = referenceDocRef.current;
+    if (!doc) return;
+    if (!window.confirm("Remove this document? Everything written on it goes too (clips already on the board stay).")) return;
+    referenceDocRef.current = null;
     setReferenceDoc(null);
-    setReferenceStrokes([]);
-    myReferenceStrokeStack.current = [];
-    setMyReferenceUndoAvailable(false);
-    channelRef.current?.send({ type: "broadcast", event: "reference-remove", payload: {} });
-    const { error } = await db.storage.from("reference-docs").remove([path]);
-    if (error) console.error("Error removing reference doc:", error);
+    setReferenceMarks([]);
+    setPhoneView("board");
+    sendRef("reference-remove", {});
+    if (student || !isOwner) return;
+    await storeRefDoc(null);
+    if (refSavedRef.current.marksSaved !== false) deleteAllMarks(db, boardId);
+    const paths = docFilePaths(doc).filter((path) => !String(path).startsWith("demo/"));
+    if (paths.length) {
+      db.storage.from("reference-docs").remove(paths).then(({ error }) => {
+        if (error) console.error("Error removing reference doc:", error);
+      });
+    }
   }
 
   function handleReferenceToolClick() {
@@ -3004,28 +3304,166 @@ export default function Whiteboard({
     if (referenceDoc) {
       handleRemoveReferenceDoc();
     } else {
+      refAddingRef.current = false;
       referenceFileInputRef.current?.click();
     }
   }
 
-  function handleReferenceStrokeComplete(stroke) {
-    setReferenceStrokes((prev) => [...prev, stroke]);
-    myReferenceStrokeStack.current.push(stroke.id);
-    setMyReferenceUndoAvailable(true);
-    channelRef.current?.send({ type: "broadcast", event: "reference-stroke", payload: { stroke } });
+  function handleRefAddPages() {
+    refAddingRef.current = true;
+    referenceFileInputRef.current?.click();
   }
 
-  function handleReferenceUndo() {
-    const lastId = myReferenceStrokeStack.current.pop();
-    if (!lastId) return;
-    setReferenceStrokes((prev) => prev.filter((s) => s.id !== lastId));
-    setMyReferenceUndoAvailable(myReferenceStrokeStack.current.length > 0);
-    channelRef.current?.send({
-      type: "broadcast",
-      event: "reference-stroke-remove",
-      payload: { strokeId: lastId },
+  // A part of the document clipped onto the board (as a picture that
+  // remembers where it came from).
+  async function handleRefClip(clip) {
+    if (!boardId || !clip) return;
+    const id = newId();
+    let src = await uploadBoardImage(clip, id);
+    if (!src) {
+      const prepared = await prepareImageFile(new File([clip.blob], "clip.png", { type: clip.type })).catch(() => null);
+      src = prepared ? await makeInlineImage(prepared) : null;
+    }
+    if (!src) {
+      flashNotice("Couldn't add the clip — please try again.", 5000);
+      return;
+    }
+    const center = viewportCenterWorld();
+    const scale = scaleRef.current;
+    const { width: paneW, height: paneH } = getPaneSize();
+    const shown = Math.max(120, Math.min(paneW * 0.55, clip.width / 2, (paneH * 0.6 * clip.width) / clip.height));
+    const width = shown / scale;
+    const height = (width * clip.height) / clip.width;
+    addAsNewSelection({
+      strokes: [], texts: [],
+      images: [{ id, x: center.x - width / 2, y: center.y - height / 2, width, height, src, source: clip.source }],
     });
+    setPhoneView("board");
+    track("reference_clip_added");
+    flashNotice("Clipped onto the board. Select it to keep it in view or find it in the document again.", 4500);
   }
+
+  function handleShowClipInPdf(img) {
+    const src = img && img.source;
+    const doc = referenceDocRef.current;
+    if (!src || !doc || !doc.pages.some((p) => p.id === src.pageId)) {
+      flashNotice(doc ? "That page isn't in the document any more." : "The document this came from has been removed.", 4000);
+      return;
+    }
+    setRefCollapsed(false);
+    setPhoneView("pdf");
+    setTimeout(() => {
+      if (refPaneHandleRef.current) refPaneHandleRef.current.showArea(src.pageId, src.box);
+    }, 80);
+  }
+
+  function keepClipInView(img) {
+    if (!img) return;
+    const { width: paneW } = getPaneSize();
+    const w = Math.round(Math.min(340, Math.max(180, paneW * 0.4)));
+    setClipWindows((prev) => {
+      const others = prev.filter((x) => x.id !== img.id);
+      return [...others, { id: img.id, x: Math.max(8, paneW - w - 16), y: 72 + others.length * 28, w }].slice(-3);
+    });
+    setSelection(emptySelection());
+  }
+
+  // Live messages about the document (registered with the board's channel).
+  function receiveRef(event, p) {
+    const payload = p || {};
+    if (event === "reference-set") {
+      const doc = normalizeDoc(payload.doc);
+      const same = !!doc && !!referenceDocRef.current && refDocKey(doc) === refDocKey(referenceDocRef.current);
+      // (the owner saves it with the board as they send it)
+      refSavedRef.current.serverKey = refDocKey(doc);
+      referenceDocRef.current = doc;
+      setReferenceDoc(doc);
+      if (!same) setReferenceMarks(normalizeMarks(payload.marks));
+      return;
+    }
+    if (event === "reference-update") {
+      const doc = normalizeDoc(payload.doc);
+      if (!doc) return;
+      refSavedRef.current.serverKey = refDocKey(doc);
+      referenceDocRef.current = doc;
+      setReferenceDoc(doc);
+      return;
+    }
+    if (event === "reference-remove") {
+      referenceDocRef.current = null;
+      setReferenceDoc(null);
+      setReferenceMarks([]);
+      setPhoneView("board");
+      return;
+    }
+    if (event === "reference-request") {
+      // The owner answers (everyone else loads it from the database), or
+      // anyone at all when there's no database to load it from.
+      const doc = referenceDocRef.current;
+      if (!doc || (!isOwner && refSavedRef.current.docSaved !== false)) return;
+      sendRef("reference-set", { doc });
+      if (refSavedRef.current.marksSaved === false) sendMarkChange({ add: referenceMarksRef.current });
+      return;
+    }
+    if (event === "ref-marks") {
+      setReferenceMarks((prev) => applyMarksChange(prev, payload));
+      return;
+    }
+    if (event === "reference-stroke") {
+      // (from an older version of the app)
+      const m = normalizeMark(payload.stroke);
+      if (m) setReferenceMarks((prev) => applyMarksChange(prev, { add: [m] }));
+      return;
+    }
+    if (event === "reference-stroke-remove") {
+      setReferenceMarks((prev) => applyMarksChange(prev, { remove: [payload.strokeId] }));
+      return;
+    }
+    if (event === "ref-laser") {
+      refBus.emit("laser", payload);
+      return;
+    }
+    if (event === "ref-view") refBus.emit("view", payload);
+  }
+
+  // The document as the database has it (on opening the board, and after
+  // being away): its markings merged with any still being saved from here.
+  async function refreshReference(first, known) {
+    if (student || !boardId) return;
+    const fetchStartedAt = Date.now();
+    const loaded = await loadReference(db, boardId, known || null);
+    if (!loaded) {
+      // couldn't ask just now: once more in a little while
+      if (first) setTimeout(() => refRefreshRef.current && refRefreshRef.current(true), 5000);
+      return;
+    }
+    refSavedRef.current.docSaved = loaded.docSaved;
+    refSavedRef.current.marksSaved = loaded.marksSaved;
+    const current = referenceDocRef.current;
+    if (loaded.doc) {
+      refSavedRef.current.serverKey = refDocKey(loaded.doc);
+      referenceDocRef.current = loaded.doc;
+      setReferenceDoc(loaded.doc);
+      if (loaded.marksSaved) {
+        // (not ones rubbed out here whose removal is still on its way)
+        const server = loaded.marks.filter((m) => !refDeletingRef.current.has(m.id));
+        setReferenceMarks((prev) => mergeServerList(prev, server, sync, syncSince(fetchStartedAt)));
+      }
+      return;
+    }
+    // Gone from the database: removed while we were away (but not a
+    // document someone has only just opened, still on its way there).
+    if (!first && loaded.docSaved && current && refSavedRef.current.serverKey === refDocKey(current)) {
+      referenceDocRef.current = null;
+      setReferenceDoc(null);
+      setReferenceMarks([]);
+    }
+  }
+
+  useEffect(() => {
+    refReceiveRef.current = receiveRef;
+    refRefreshRef.current = refreshReference;
+  });
 
   function handleDismissPencilTip() {
     setShowPencilTip(false);
@@ -3137,8 +3575,12 @@ export default function Whiteboard({
       grid: packedGraphs(),
       background: backgroundRef.current,
       referenceDoc: referenceDocRef.current,
-      referenceStrokes: referenceStrokesRef.current,
+      referenceStrokes: [],
     };
+    // the document's markings: with the rest when small, else in pieces after
+    const refMarks = referenceMarksRef.current;
+    const refMarksSmall = JSON.stringify(refMarks).length < 40000;
+    if (refMarksSmall) settings.referenceStrokes = refMarks;
     // The teacher's comments on a student's board go only when it is the
     // teacher's own view of it that asked (a classmate being shown this
     // board has no business with them).
@@ -3159,6 +3601,7 @@ export default function Whiteboard({
       inkPieces.forEach((piece) => send("classroom-state-piece", { teacherInk: piece.strokes, snapshotId }));
       send("classroom-state-done", { snapshotId });
     }
+    if (!refMarksSmall) for (const piece of chunkList(refMarks)) send("ref-marks", { add: piece });
     // Someone who joins while the pen is down has missed the start of that
     // line, and would never see it. So what there is of it so far is sent
     // again, from the top, and it carries on live from there.
@@ -3370,41 +3813,13 @@ export default function Whiteboard({
       setMyRedoAvailable(false);
     });
 
-    channel.on("broadcast", { event: "reference-set" }, ({ payload }) => {
-      setReferenceDoc(payload.doc);
-      setReferenceStrokes([]);
-      myReferenceStrokeStack.current = [];
-      setMyReferenceUndoAvailable(false);
-    });
-
-    channel.on("broadcast", { event: "reference-remove" }, () => {
-      setReferenceDoc(null);
-      setReferenceStrokes([]);
-      myReferenceStrokeStack.current = [];
-      setMyReferenceUndoAvailable(false);
-    });
-
-    // A late-joining viewer has no database to query for the reference
-    // doc (it's intentionally never persisted) — so instead they ask
-    // whoever's already here, and whoever currently has one loaded
-    // answers back.
-    channel.on("broadcast", { event: "reference-request" }, () => {
-      if (referenceDocRef.current) {
-        channelRef.current?.send({
-          type: "broadcast",
-          event: "reference-set",
-          payload: { doc: referenceDocRef.current },
-        });
-      }
-    });
-
-    channel.on("broadcast", { event: "reference-stroke" }, ({ payload }) => {
-      setReferenceStrokes((prev) => [...prev, payload.stroke]);
-    });
-
-    channel.on("broadcast", { event: "reference-stroke-remove" }, ({ payload }) => {
-      setReferenceStrokes((prev) => prev.filter((s) => s.id !== payload.strokeId));
-    });
+    // The reference document beside the board, its markings, live
+    // pointers and "follow me" (receiveRef, below).
+    for (const event of REF_EVENTS) {
+      channel.on("broadcast", { event }, ({ payload }) => {
+        if (refReceiveRef.current) refReceiveRef.current(event, payload);
+      });
+    }
 
     // Classroom Mode: a read-only viewer has no database access (students
     // never log in), so it asks over this same channel for the board's
@@ -5197,7 +5612,8 @@ export default function Whiteboard({
       (id) =>
         strokesRef.current.some((o) => o.id === id) ||
         textsRef.current.some((o) => o.id === id) ||
-        imagesRef.current.some((o) => o.id === id)
+        imagesRef.current.some((o) => o.id === id) ||
+        referenceMarksRef.current.some((o) => o.id === id)
     );
     function onOnline() {
       retryUnsaved(sync);
@@ -5491,6 +5907,32 @@ export default function Whiteboard({
   else if (tool === "text") boardCursor = "text";
 
   const showReferencePane = canUseReferencePane && !!referenceDoc;
+  // phones: the document full screen, switched with the board
+  const phoneReference = !canUseReferencePane && !!referenceDoc;
+  const selectedClip =
+    selectionCount(selection) === 1 && selection.images.length === 1
+      ? images.find((img) => img.id === selection.images[0] && img.source && img.source.kind === "clip") || null
+      : null;
+  const referencePane = referenceDoc ? (
+    <ReferencePane
+      key={referenceDoc.v === 2 ? "doc" : "legacy"}
+      doc={referenceDoc}
+      marks={referenceMarks}
+      canEditPages={isOwner && !student}
+      compact={!canUseReferencePane}
+      me={{ id: myRefId, name: user ? nameFor(displayNameFor(user), user.email) : "Someone" }}
+      bus={refBus}
+      onMarks={handleRefMarks}
+      onPagesChange={handleRefPagesChange}
+      onAddPages={isOwner && !student ? handleRefAddPages : null}
+      onClip={student ? null : handleRefClip}
+      onLaser={(payload) => sendRef("ref-laser", { ...payload, by: myRefId })}
+      onView={(payload) => sendRef("ref-view", { ...payload, by: myRefId, name: user ? nameFor(displayNameFor(user), user.email) : "Someone" })}
+      registerHandle={(api) => {
+        refPaneHandleRef.current = api;
+      }}
+    />
+  ) : null;
   const refMode = refStacked ? "stacked" : "side";
   const refFraction = refDragFraction ?? (refStacked ? savedRefFractionStacked : savedRefFractionSide);
 
@@ -5576,7 +6018,7 @@ export default function Whiteboard({
         onEditGraph={handleEditSelectedGraph}
         calculatorActive={calculatorActive}
         onToggleCalculator={handleToggleCalculator}
-        canInsertReference={isOwner && canUseReferencePane}
+        canInsertReference={isOwner && !student}
         hasReferenceDoc={!!referenceDoc}
         onReferenceToolClick={handleReferenceToolClick}
         onOpenSimModal={student ? undefined : handleOpenSimModal}
@@ -5608,10 +6050,67 @@ export default function Whiteboard({
         zoomPercent={zoomPercent}
         onResetView={handleResetView}
       />
+      {phoneReference && (
+        <div className={refStyles.switchBar}>
+          <div className={refStyles.switch} role="group" aria-label="Show the board or the document">
+            <button type="button" className={phoneView !== "pdf" ? refStyles.switchOn : ""} aria-pressed={phoneView !== "pdf"} onClick={() => setPhoneView("board")}>
+              <LayoutDashboard size={16} strokeWidth={2} />
+              Board
+            </button>
+            <button type="button" className={phoneView === "pdf" ? refStyles.switchOn : ""} aria-pressed={phoneView === "pdf"} onClick={() => setPhoneView("pdf")}>
+              <FileText size={16} strokeWidth={2} />
+              Document
+            </button>
+          </div>
+        </div>
+      )}
       <div
         ref={workAreaRef}
-        style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: refStacked ? "column" : "row" }}
+        style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: refStacked ? "column" : "row" }}
       >
+      {phoneReference && (
+        <div
+          // the whole screen, over the board and its tools (which stay as
+          // they are underneath)
+          style={{
+            position: "fixed", inset: 0, zIndex: 200, flexDirection: "column", background: "#ECEAE4",
+            display: phoneView === "pdf" ? "flex" : "none",
+          }}
+        >
+          <div
+            style={{
+              flexShrink: 0, display: "flex", alignItems: "center", gap: 8, padding: "6px 8px",
+              backgroundColor: "var(--paper)", borderBottom: "2px solid var(--ink-line)", fontSize: 13, color: "var(--ink)",
+            }}
+          >
+            <div className={refStyles.switch} role="group" aria-label="Show the board or the document">
+              <button type="button" aria-pressed={false} onClick={() => setPhoneView("board")}>
+                <LayoutDashboard size={16} strokeWidth={2} />
+                Board
+              </button>
+              <button type="button" className={refStyles.switchOn} aria-pressed={true} onClick={() => setPhoneView("pdf")}>
+                <FileText size={16} strokeWidth={2} />
+                Document
+              </button>
+            </div>
+            <span style={{ fontFamily: "var(--font-display)", fontSize: 13, fontWeight: 700, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {referenceDoc.fileName}
+            </span>
+            {isOwner && (
+              <PalmSafeButton
+                onPress={handleRemoveReferenceDoc}
+                style={{
+                  height: 32, flexShrink: 0, padding: "0 10px", border: "1.5px solid var(--danger)", borderRadius: 10,
+                  background: "var(--surface)", color: "var(--danger)", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                Remove
+              </PalmSafeButton>
+            )}
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>{referencePane}</div>
+        </div>
+      )}
       {showReferencePane && refCollapsed && (
         <PalmSafeButton
           aria-label={`Show reference document ${referenceDoc.fileName}`}
@@ -5722,19 +6221,7 @@ export default function Whiteboard({
               </PalmSafeButton>
             )}
           </div>
-          <div style={{ flex: 1, minHeight: 0 }}>
-            <ReferencePane
-              doc={referenceDoc}
-              strokes={referenceStrokes}
-              onStrokeComplete={handleReferenceStrokeComplete}
-              tool={referenceTool}
-              setTool={setReferenceTool}
-              color={referenceColor}
-              setColor={setReferenceColor}
-              canUndo={myReferenceUndoAvailable}
-              onUndo={handleReferenceUndo}
-            />
-          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>{referencePane}</div>
         </div>
       )}
       {showReferencePane && !refCollapsed && (
@@ -5899,6 +6386,19 @@ export default function Whiteboard({
           <span className={chrome.selectionHandle} />
         </div>
         <div ref={selectionBarElRef} role="toolbar" aria-label="Selected items" className={chrome.selectionBar}>
+          {selectedClip && (
+            <>
+              <PalmSafeButton className={chrome.selBtn} onPress={() => handleShowClipInPdf(selectedClip)}>
+                <LocateFixed size={17} strokeWidth={1.9} />
+                Show in document
+              </PalmSafeButton>
+              <PalmSafeButton className={chrome.selBtn} onPress={() => keepClipInView(selectedClip)}>
+                <PictureInPicture2 size={17} strokeWidth={1.9} />
+                Keep in view
+              </PalmSafeButton>
+              <span className={chrome.selDivider} />
+            </>
+          )}
           {selectionCount(selection) === 1 && (selection.graphs || []).length === 1 && (
             <>
               <PalmSafeButton className={chrome.selBtn} onPress={handleEditSelectedGraph}>
@@ -6065,6 +6565,27 @@ export default function Whiteboard({
             style={{ display: "none" }}
           />
         )}
+        {clipWindows.length > 0 && (
+          <ClipWindows
+            windows={clipWindows}
+            images={images}
+            onChange={(id, next) => setClipWindows((prev) => prev.map((w) => (w.id === id ? { ...w, ...next } : w)))}
+            onClose={(id) => setClipWindows((prev) => prev.filter((w) => w.id !== id))}
+            onShowInPdf={referenceDoc ? handleShowClipInPdf : null}
+          />
+        )}
+        {refPicker && typeof document !== "undefined" &&
+          createPortal(
+            <RefPagePicker
+              url={refPicker.url}
+              fileName={refPicker.fileName}
+              max={refPicker.max}
+              adding={refPicker.adding}
+              onCancel={closeRefPicker}
+              onDone={handleRefPagesPicked}
+            />,
+            document.body
+          )}
         {syncPaused &&
           createPortal(
           <div

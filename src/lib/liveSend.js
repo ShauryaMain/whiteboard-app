@@ -18,10 +18,12 @@ const LIVE_ONLY = new Set([
   "stroke-start", "stroke-points", "stroke-straight", "stroke-shape",
   "text-move", "text-transform", "person-where",
   "teacher-ink-start", "teacher-ink-points",
+  // the reference document: a laser pointer moving
+  "ref-laser",
   // answers to "what's on you?": whoever asked asks again
   "classroom-state-snapshot", "classroom-state-piece", "classroom-state-done",
 ]);
-const LATEST_ONLY = new Set(["grid-set", "background-set", "sim-embeds-set", "class-state"]);
+const LATEST_ONLY = new Set(["grid-set", "background-set", "sim-embeds-set", "class-state", "reference-update", "ref-view"]);
 const MAX_WAITING = 400;
 
 export function isConnected(channel) {

@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import ReferencePane from "./ReferencePane";
+import { normalizeDoc, normalizeMark, normalizeMarks, applyMarksChange, createBus, REF_EVENTS } from "@/lib/refDoc";
+import { subscribeViewport, getViewportWidth, getServerViewportWidth } from "@/lib/layoutPrefs";
+import refStyles from "./RefPane.module.css";
 import { applyBackground, normalizeBackground, isDarkBackground } from "@/lib/boardBackground";
 import { subscribeFonts } from "@/lib/fonts";
 import { inkOn } from "@/lib/inkColor";
@@ -180,6 +183,12 @@ export default function ClassroomBoardViewer({
   const [connectionStatus, setConnectionStatus] = useState("connecting"); // connecting | live | waiting
   const [referenceDoc, setReferenceDoc] = useState(null);
   const [referenceStrokes, setReferenceStrokes] = useState([]);
+  const referenceKeyRef = useRef(null);
+  // laser pointer and "follow me" from the teacher's document
+  const [refBus] = useState(createBus);
+  // phones: the board or the document, full screen
+  const viewportWidth = useSyncExternalStore(subscribeViewport, getViewportWidth, getServerViewportWidth);
+  const [phoneView, setPhoneView] = useState("board");
 
   useEffect(() => { strokesRef.current = strokes; }, [strokes]);
   useEffect(() => { textsRef.current = texts; }, [texts]);
@@ -586,8 +595,10 @@ export default function ClassroomBoardViewer({
       editionRef.current = payload.edition || null;
       gridConfigRef.current = payload.grid || null;
       backgroundRef.current = normalizeBackground(payload.background);
-      setReferenceDoc(payload.referenceDoc || null);
-      setReferenceStrokes(payload.referenceStrokes || []);
+      const refDoc = normalizeDoc(payload.referenceDoc);
+      referenceKeyRef.current = refDoc ? (refDoc.pdf && refDoc.pdf.path) || refDoc.path || refDoc.url : null;
+      setReferenceDoc(refDoc);
+      setReferenceStrokes(normalizeMarks(payload.referenceStrokes));
       if (payload.pieces) {
         // Contents follow. What's on screen is left alone meanwhile, so
         // re-joining after a dropped connection doesn't blank the board.
@@ -811,23 +822,36 @@ export default function ClassroomBoardViewer({
       setImages([]);
     });
 
-    channel.on("broadcast", { event: "reference-set" }, ({ payload }) => {
-      setReferenceDoc(payload.doc);
-      setReferenceStrokes([]);
-    });
-
-    channel.on("broadcast", { event: "reference-remove" }, () => {
-      setReferenceDoc(null);
-      setReferenceStrokes([]);
-    });
-
-    channel.on("broadcast", { event: "reference-stroke" }, ({ payload }) => {
-      setReferenceStrokes((prev) => [...prev, payload.stroke]);
-    });
-
-    channel.on("broadcast", { event: "reference-stroke-remove" }, ({ payload }) => {
-      setReferenceStrokes((prev) => prev.filter((s) => s.id !== payload.strokeId));
-    });
+    // The teacher's reference document (see refDoc.js): what it is, the
+    // markings on it, the laser pointer and "follow me".
+    for (const event of REF_EVENTS) {
+      channel.on("broadcast", { event }, ({ payload }) => {
+        const p = payload || {};
+        if (event === "reference-set" || event === "reference-update") {
+          const doc = normalizeDoc(p.doc);
+          const key = doc ? (doc.pdf && doc.pdf.path) || doc.path || doc.url : null;
+          if (event === "reference-set" && key !== referenceKeyRef.current) setReferenceStrokes(normalizeMarks(p.marks));
+          referenceKeyRef.current = key;
+          if (doc || event === "reference-set") setReferenceDoc(doc);
+        } else if (event === "reference-remove") {
+          referenceKeyRef.current = null;
+          setReferenceDoc(null);
+          setReferenceStrokes([]);
+          setPhoneView("board");
+        } else if (event === "ref-marks") {
+          setReferenceStrokes((prev) => applyMarksChange(prev, p));
+        } else if (event === "reference-stroke") {
+          const m = normalizeMark(p.stroke);
+          if (m) setReferenceStrokes((prev) => applyMarksChange(prev, { add: [m] }));
+        } else if (event === "reference-stroke-remove") {
+          setReferenceStrokes((prev) => applyMarksChange(prev, { remove: [p.strokeId] }));
+        } else if (event === "ref-laser") {
+          refBus.emit("laser", p);
+        } else if (event === "ref-view") {
+          refBus.emit("view", p);
+        }
+      });
+    }
 
     channel.subscribe((status) => {
       if (status !== "SUBSCRIBED") {
@@ -1113,18 +1137,37 @@ export default function ClassroomBoardViewer({
   }, [teacherInk]);
 
   const showReferencePane = !!referenceDoc;
+  // (a phone: the document goes over the board, with a switch between them)
+  const phone = showReferencePane && viewportWidth < 560;
 
   return (
-    <div style={{ width: "100%", height: "100%", overflow: "hidden", display: "flex" }}>
+    <div style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", display: "flex", flexDirection: phone ? "column" : "row" }}>
+      {phone && (
+        <div className={refStyles.switchBar}>
+          <div className={refStyles.switch} role="group" aria-label="Show the board or the document">
+            <button type="button" className={phoneView !== "pdf" ? refStyles.switchOn : ""} aria-pressed={phoneView !== "pdf"} onClick={() => setPhoneView("board")}>
+              Board
+            </button>
+            <button type="button" className={phoneView === "pdf" ? refStyles.switchOn : ""} aria-pressed={phoneView === "pdf"} onClick={() => setPhoneView("pdf")}>
+              Document
+            </button>
+          </div>
+        </div>
+      )}
       {showReferencePane && (
         <div
-          className={cls.refColumn}
+          className={phone ? undefined : cls.refColumn}
+          style={
+            phone
+              ? { position: "absolute", top: 50, left: 0, right: 0, bottom: 0, zIndex: 30, background: "#E8EAED", flexDirection: "column", display: phoneView === "pdf" ? "flex" : "none" }
+              : undefined
+          }
         >
           <div className={cls.refHeader}>
             {referenceDoc.fileName}
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <ReferencePane doc={referenceDoc} strokes={referenceStrokes} readOnly />
+            <ReferencePane doc={referenceDoc} marks={referenceStrokes} readOnly compact={phone} bus={refBus} />
           </div>
         </div>
       )}

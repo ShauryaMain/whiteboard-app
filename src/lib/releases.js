@@ -33,6 +33,42 @@
 
 export const RELEASES = [
   {
+    id: "2026-10-documents",
+    date: "2026-10-18",
+    title: "Documents beside the board",
+    headline: "Write on your worksheets, and clip questions onto the board",
+    intro:
+      "The PDF beside the board is now a proper notebook: more tools, saved with the board, easy to move through on a tablet or phone. Clip any question onto the board instead of taking screenshots.",
+    slides: [
+      {
+        src: "/whats-new/documents/picker.png",
+        alt: "The Choose pages window for a 40-page textbook, with pages 3 to 7 and 12 ticked and '6 of 30 picked' at the bottom.",
+        caption: "A long PDF? Pick the pages you need (up to 30)",
+      },
+      {
+        src: "/whats-new/documents/tools.png",
+        alt: "A worksheet beside the board with a highlighted question, a typed note, and tape hiding the answer. The document's tools run along its top.",
+        caption: "Highlight, type, cover answers with tape, and much more",
+      },
+      {
+        src: "/whats-new/documents/clip-box.png",
+        alt: "A box drawn round a question on the worksheet, with 'With my markings' and 'Add to board' underneath.",
+        caption: "Draw a box round a question…",
+      },
+      {
+        src: "/whats-new/documents/clip-board.png",
+        alt: "The question now on the board as a card labelled 'p. 1 · test40.pdf', selected, with Show in document and Keep in view buttons.",
+        caption: "…and it's on the board, ready to work on",
+      },
+    ],
+    points: [
+      "Pick pages from a long PDF, and add pages (or blank, lined and graph pages) any time.",
+      "Pen sizes and colours, highlighter, eraser, lasso, text, tape, a laser pointer and \"Follow me\". Hold the pen still to make a straight line.",
+      "Clip a question onto the board. \"Keep in view\" floats it over the board; \"Show in document\" takes you back to it.",
+      "Saved with the board. Easy to scroll: with an Apple Pencil your finger scrolls, without one use two fingers or the page handle. Phones get a Board | Document switch.",
+    ],
+  },
+  {
     id: "2026-10-text-pages",
     date: "2026-10-17",
     title: "Text styles and page colours",
