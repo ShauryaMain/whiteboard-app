@@ -13,11 +13,15 @@ import {
 } from "@/lib/boardRender";
 import { getPencilOnly } from "@/lib/pencilPrefs";
 import { createWatcher, isNewerEdition, isStudentBoard, samePage, steadyNow } from "@/lib/boardWatch";
+import { useLiveMode, liveChannel } from "@/lib/liveMode";
+import { cleanIncomingStroke } from "@/lib/liveSend";
 import cls from "./Classroom.module.css";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
 const STATE_REQUEST_RETRY_MS = 3000;
+const STATE_REQUEST_RETRY_MAX_MS = 15000;
+const INK_SEND_MS = 100; // the teacher writing on a student's board: points go this often
 const TAP_SLOP_PX = 8; // a press that moves less than this is a tap, not a drag
 const FIT_MARGIN_PX = 36;
 // A line the teacher writes on a student's board is sent whole when it is
@@ -112,6 +116,7 @@ export default function ClassroomBoardViewer({
   withComments = false, glance = false,
 }) {
   const router = useRouter();
+  const liveMode = useLiveMode();
   const canvasRef = useRef(null);
   const boardPaneRef = useRef(null);
   const ctxRef = useRef(null);
@@ -370,7 +375,7 @@ export default function ClassroomBoardViewer({
   function endInk(keep) {
     const mine = myStrokeRef.current;
     if (!mine) return;
-    if (inkFrameRef.current !== null) cancelAnimationFrame(inkFrameRef.current);
+    if (inkFrameRef.current !== null) clearTimeout(inkFrameRef.current);
     flushInk();
     myStrokeRef.current = null;
     const send = (event, payload) => channelRef.current?.send({ type: "broadcast", event, payload });
@@ -403,7 +408,8 @@ export default function ClassroomBoardViewer({
     if (Math.hypot(at.x - last.x, at.y - last.y) * scaleRef.current < 0.7) return;
     pts.push(at);
     pendingInkRef.current.push(at);
-    if (inkFrameRef.current === null) inkFrameRef.current = requestAnimationFrame(flushInk);
+    // (sent every 100 ms while writing, like lines on the board itself)
+    if (inkFrameRef.current === null) inkFrameRef.current = setTimeout(flushInk, INK_SEND_MS);
     // Just the new bit: redrawing the whole layer for every movement of the
     // pen would be slow on a board with a lot on it.
     const tctx = teacherCtxRef.current;
@@ -458,10 +464,8 @@ export default function ClassroomBoardViewer({
   // asks for a state snapshot since this viewer has no database access —
   // students never logged in, by design.
   useEffect(() => {
-    if (!boardId) return;
-    const channel = supabase.channel(`board-${boardId}`, {
-      config: { broadcast: { self: false } },
-    });
+    if (!boardId || !liveMode.ready) return;
+    const channel = liveChannel(`board-${boardId}`, { broadcast: { self: false } }, liveMode);
 
     // A student's board: this view tells it that it is being watched.
     const watcher = isStudentBoard(boardId)
@@ -720,15 +724,19 @@ export default function ClassroomBoardViewer({
     });
 
     channel.on("broadcast", { event: "stroke-end" }, ({ payload }) => {
-      const s = remoteStrokes.current[payload.strokeKey];
-      if (!s) return;
+      // The finished line comes whole with this message (from up-to-date
+      // boards), so it is kept even if some of its live messages were lost.
+      const live = remoteStrokes.current[payload.strokeKey];
       delete remoteStrokes.current[payload.strokeKey];
-      if (s.points.length > 1) {
-        keep("strokes", s.id);
-        // never twice (a re-sent board can include a stroke that then also
-        // finishes "live")
-        setStrokes((prev) => (prev.some((x) => x.id === s.id) ? prev : [...prev, s]));
+      const s = cleanIncomingStroke(payload.stroke) || (live && live.points.length > 1 ? live : null);
+      if (!s) {
+        if (live) fullRedraw();
+        return;
       }
+      keep("strokes", s.id);
+      // never twice (a re-sent board can include a stroke that then also
+      // finishes "live")
+      setStrokes((prev) => (prev.some((x) => x.id === s.id) ? prev.map((x) => (x.id === s.id ? s : x)) : [...prev, s]));
     });
 
     channel.on("broadcast", { event: "stroke-remove" }, ({ payload }) => {
@@ -841,17 +849,25 @@ export default function ClassroomBoardViewer({
 
     // The teacher's board might not have finished mounting/subscribing
     // yet in the moment right after "Start Class" — keep asking rather
-    // than giving up after one try.
-    const retryInterval = setInterval(() => {
+    // than giving up after one try (less and less often: every message
+    // reaches everyone on the board).
+    let retryTimer = null;
+    let retryGap = STATE_REQUEST_RETRY_MS;
+    const retry = () => {
       // (not when it has only just been asked: the answer is on its way)
       if (!hasReceivedSnapshot.current && steadyNow() - askedAt >= 1000) {
         setConnectionStatus("waiting");
         requestSnapshot();
+        retryGap = Math.min(STATE_REQUEST_RETRY_MAX_MS, Math.round(retryGap * 1.6));
+      } else if (hasReceivedSnapshot.current) {
+        retryGap = STATE_REQUEST_RETRY_MS;
       }
-    }, STATE_REQUEST_RETRY_MS);
+      retryTimer = setTimeout(retry, retryGap);
+    };
+    retryTimer = setTimeout(retry, retryGap);
 
     return () => {
-      clearInterval(retryInterval);
+      clearTimeout(retryTimer);
       if (askAgainTimer) clearTimeout(askAgainTimer);
       document.removeEventListener("visibilitychange", onVisibility);
       // "I've stopped watching", before the connection goes.
@@ -867,7 +883,7 @@ export default function ClassroomBoardViewer({
       liveExpiryRef.current = null;
       teacherLiveRef.current = {};
     };
-  }, [boardId, glance]);
+  }, [boardId, glance, liveMode.ready, liveMode.private]);
 
   // Canvas setup, resize, pan/zoom — no drawing tools, view navigation only.
   useEffect(() => {
@@ -1067,7 +1083,7 @@ export default function ClassroomBoardViewer({
 
     return () => {
       resizeObserver.disconnect();
-      if (inkFrameRef.current !== null) cancelAnimationFrame(inkFrameRef.current);
+      if (inkFrameRef.current !== null) clearTimeout(inkFrameRef.current);
       canvas.removeEventListener("pointerdown", handlePointerDown);
       canvas.removeEventListener("pointermove", handlePointerMove);
       canvas.removeEventListener("pointerup", handlePointerUp);

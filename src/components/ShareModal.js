@@ -5,6 +5,21 @@ import { X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import d from "./Dialog.module.css";
 
+// Suggestions while typing an address: people this teacher already shares
+// boards with (share_suggestions). Nobody else's address can be looked up.
+// (Before the database had that, any account's address could be suggested.)
+async function suggestPeople(query) {
+  try {
+    const { data, error } = await supabase.rpc("share_suggestions", { p_query: query });
+    if (!error && Array.isArray(data)) return data.filter((e) => typeof e === "string");
+    const old = await supabase.from("profiles").select("email").ilike("email", `%${query}%`).limit(5);
+    if (!old.error && old.data) return old.data.map((row) => row.email);
+  } catch (err) {
+    // offline: no suggestions
+  }
+  return null;
+}
+
 // Share a board with other signed-in people by email. Shows who already
 // has it, and lets the owner take someone off.
 export default function ShareModal({ board, onClose, onShare, onRemove }) {
@@ -20,16 +35,10 @@ export default function ShareModal({ board, onClose, onShare, onRemove }) {
     const query = email.trim();
     if (query.length < 2) return undefined;
     debounceRef.current = setTimeout(async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("email")
-        .ilike("email", `%${query}%`)
-        .limit(5);
-      if (!error && data) {
+      const emails = await suggestPeople(query);
+      if (emails) {
         setSuggestions(
-          data
-            .map((row) => row.email)
-            .filter((e) => e && e.toLowerCase() !== query.toLowerCase() && !peopleKey.split(",").includes(e.toLowerCase()))
+          emails.filter((e) => e && e.toLowerCase() !== query.toLowerCase() && !peopleKey.split(",").includes(e.toLowerCase()))
         );
       }
     }, 250);

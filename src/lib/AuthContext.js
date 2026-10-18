@@ -20,6 +20,13 @@ function sameUser(prev, next) {
   return prev.id === next.id && prev.email === next.email ? prev : next;
 }
 
+// Students in a live class get an invisible sign-in (see liveMode.js): that
+// isn't a teacher's account, so here it counts as signed out.
+function teacherOf(session) {
+  const u = session?.user ?? null;
+  return u && !u.is_anonymous ? u : null;
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -49,13 +56,13 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      const next = data.session?.user ?? null;
+      const next = teacherOf(data.session);
       setUser((prev) => sameUser(prev, next));
       setLoading(false);
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const next = session?.user ?? null;
+      const next = teacherOf(session);
       setUser((prev) => sameUser(prev, next));
     });
 

@@ -6,6 +6,7 @@
 // this browser.
 
 import { DEFAULT_AXIS, piStepValue } from "./graphAxes";
+import { readAccount, writeAccount } from "./accountStore";
 
 // the app's Supabase client (loaded when first needed)
 async function appClient() {
@@ -139,7 +140,8 @@ async function accountUser(client) {
   try {
     const { data } = await client.auth.getSession();
     const user = data && data.session && data.session.user;
-    if (!user || user.id === "demo-user" || typeof client.auth.updateUser !== "function") return null;
+    // (a student's invisible class sign-in isn't an account)
+    if (!user || user.id === "demo-user" || user.is_anonymous || typeof client.auth.updateUser !== "function") return null;
     if (typeof client.auth.getUser === "function") {
       try {
         const fresh = await client.auth.getUser();
@@ -154,7 +156,11 @@ async function accountUser(client) {
   }
 }
 
-const accountList = (user) => cleanPresets(isObj(user.user_metadata) ? user.user_metadata.graphPresets : null);
+// The account's list (kept in user_settings: see accountStore.js).
+async function accountList(client, user) {
+  const stored = await readAccount(client, user);
+  return stored ? cleanPresets(stored.graphPresets) : null;
+}
 
 // Presets kept in this browser that aren't in the account's list (saved
 // here when the account couldn't be reached).
@@ -167,7 +173,8 @@ function withBrowserOnes(list) {
 export async function loadGraphPresets(given) {
   const client = given || (await appClient());
   const user = await accountUser(client);
-  if (user) return { presets: withBrowserOnes(accountList(user)), where: "account" };
+  const list = user ? await accountList(client, user) : null;
+  if (list) return { presets: withBrowserOnes(list), where: "account" };
   return { presets: readBrowser(), where: "browser" };
 }
 
@@ -178,15 +185,10 @@ export async function saveGraphPresets(list, given) {
   const client = given || (await appClient());
   const user = await accountUser(client);
   if (user) {
-    try {
-      const { error } = await client.auth.updateUser({ data: { graphPresets: presets } });
-      if (!error) {
-        // (they're all in the account now)
-        writeBrowser([]);
-        return "account";
-      }
-    } catch (err) {
-      // falls back to the browser
+    if (await writeAccount(client, user, { graphPresets: presets })) {
+      // (they're all in the account now)
+      writeBrowser([]);
+      return "account";
     }
   }
   writeBrowser(presets);

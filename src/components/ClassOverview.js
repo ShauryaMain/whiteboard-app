@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Hand } from "lucide-react";
 import ClassroomBoardViewer from "./ClassroomBoardViewer";
 import { studentBoardId } from "@/lib/localBoard";
@@ -17,6 +18,11 @@ function byJoining(a, b) {
 //
 // The tiles stay in the order students joined (they don't jump about when
 // a hand goes up), with the hand / done flags on each.
+//
+// Only the tiles on screen (or nearly) are connected: a big class doesn't
+// open a live connection for every student at once (Supabase allows 100 per
+// page, and each one costs messages), and boards nobody is looking at
+// don't send anything.
 export default function ClassOverview({ code, students, question = null, pensDown = false, onOpen, onBack }) {
   const inOrder = students.slice().sort(byJoining);
   const hands = students.filter((s) => s.hand).length;
@@ -47,7 +53,7 @@ export default function ClassOverview({ code, students, question = null, pensDow
         <div className={cls.overviewGrid}>
           {inOrder.map((student) => (
             <div key={student.studentId} className={`${cls.tile} ${student.hand ? cls.tileHand : ""}`}>
-              <div className={cls.tileBoard}>
+              <OnScreen className={cls.tileBoard}>
                 <ClassroomBoardViewer
                   boardId={studentBoardId(code, student.studentId)}
                   embedded
@@ -58,7 +64,7 @@ export default function ClassOverview({ code, students, question = null, pensDow
                   question={question}
                   waitingText="Connecting…"
                 />
-              </div>
+              </OnScreen>
               <div className={cls.tileFoot}>
                 <span className={cls.tileName}>{student.name}</span>
                 {student.hand && (
@@ -84,6 +90,38 @@ export default function ClassOverview({ code, students, question = null, pensDow
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Shows its contents only while it is on screen (or about to be), and lets
+// go of them a few seconds after it scrolls away.
+const LET_GO_AFTER_MS = 4000;
+function OnScreen({ className, children }) {
+  const ref = useRef(null);
+  const [shown, setShown] = useState(() => typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return undefined;
+    let timer = null;
+    const seen = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.some((e) => e.isIntersecting);
+        clearTimeout(timer);
+        if (visible) setShown(true);
+        else timer = setTimeout(() => setShown(false), LET_GO_AFTER_MS);
+      },
+      { rootMargin: "240px 0px" }
+    );
+    seen.observe(el);
+    return () => {
+      clearTimeout(timer);
+      seen.disconnect();
+    };
+  }, []);
+  return (
+    <div ref={ref} className={className}>
+      {shown ? children : null}
     </div>
   );
 }

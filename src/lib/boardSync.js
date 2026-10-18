@@ -9,6 +9,13 @@
 // 3. Saving: a save that fails because of the network or an expired login
 //    is kept and retried, instead of the stroke silently never reaching
 //    the database (and then "disappearing" on the next load).
+// 4. With the database set up for it (supabase/2026-10-18-speed-and-
+//    privacy.sql): a board opens in one request (open_board), catching up
+//    fetches only what changed (board_changes), moving things sends just
+//    how far (move_objects), and the boards-list preview is a picture in
+//    storage rather than in the boards table. Each falls back to the older
+//    way when the database doesn't have it yet (or for the demo, and a
+//    student's board, which aren't in the database).
 
 import { supabase } from "./supabaseClient";
 
@@ -101,7 +108,9 @@ export async function fetchBoardContents(boardId, client = supabase) {
 // The board's own settings, for catching up after time away.
 export async function fetchBoardSettings(boardId, client = supabase) {
   try {
-    const { data, error } = await client.from("boards").select("*").eq("id", boardId).maybeSingle();
+    let { data, error } = await client.from("boards").select("id, name, owner_id, grid_config, sim_embeds, background").eq("id", boardId).maybeSingle();
+    // (a database without the newer columns)
+    if (error) ({ data, error } = await client.from("boards").select("id, name, owner_id, grid_config").eq("id", boardId).maybeSingle());
     if (error || !data) return null;
     return data;
   } catch (err) {
@@ -116,6 +125,219 @@ export async function touchBoard(boardId, client = supabase) {
     await client.rpc("touch_board", { p_board_id: String(boardId) });
   } catch (err) {
     // optional feature — never block the board over it
+  }
+}
+
+// ---------- the newer, quicker ways (see 4. above) ----------
+
+// The real database (not the demo's stand-in, or a student's board).
+export function isRealBackend(client) {
+  return !!client && client === supabase && !supabase.__demo;
+}
+
+// Opens a board in one go: joins it (when opened from a shared link), marks
+// it as used, and returns its settings plus the server's clock ("now").
+// null when that isn't available (then the older way is used).
+export async function openBoard(boardId, client = supabase) {
+  if (!isRealBackend(client)) return null;
+  try {
+    const { data, error } = await client.rpc("open_board", { p_board: boardId });
+    if (error || !data || typeof data !== "object") return null;
+    return data;
+  } catch (err) {
+    return null;
+  }
+}
+
+// Everything on a board that changed after `since` (the server's clock):
+// { now, strokes, texts, images, deletedIds } or { now, full: true } when
+// it's quicker to load the whole board. null if it couldn't be asked.
+export async function fetchBoardChanges(boardId, since, client = supabase) {
+  if (!isRealBackend(client) || !since) return null;
+  try {
+    const { data, error } = await client.rpc("board_changes", { p_board: boardId, p_since: since });
+    if (error || !data || typeof data !== "object" || !data.now) return null;
+    if (data.full) return { now: data.now, full: true };
+    const list = (v) => (Array.isArray(v) ? v : []);
+    return {
+      now: data.now,
+      strokes: list(data.strokes).map(PARTS.strokes.map),
+      texts: list(data.texts).map(PARTS.texts.map),
+      images: list(data.images).map(PARTS.images.map),
+      deleted: list(data.deleted),
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+// A moment a little before `serverTime`: catching up from there also
+// covers saves that were still on their way when the clock was read.
+export function syncFrom(serverTime, overlapMs = 15000) {
+  const t = Date.parse(serverTime);
+  if (!Number.isFinite(t)) return null;
+  return new Date(t - overlapMs).toISOString();
+}
+
+// The same content (whatever order the fields are in)?
+function stable(v) {
+  if (Array.isArray(v)) return `[${v.map(stable).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`;
+  return JSON.stringify(v);
+}
+function sameThing(a, b) {
+  return stable(a) === stable(b);
+}
+
+// What's on screen + what changed on the server -> what should be on
+// screen. Our own work that is still saving (or failed to save) is kept as
+// it is here.
+export function mergeChanges(local, changed, deletedIds, tracker) {
+  const changedById = new Map();
+  for (const o of changed) changedById.set(o.id, o);
+  const ours = (id) => tracker.pending.has(id) || tracker.failed.has(id);
+  const out = [];
+  let touched = false;
+  for (const o of local) {
+    const c = changedById.get(o.id);
+    if (c) {
+      changedById.delete(o.id);
+      if (ours(o.id) || o === c || sameThing(o, c)) {
+        out.push(o);
+      } else {
+        out.push(c);
+        touched = true;
+      }
+      continue;
+    }
+    if (deletedIds.has(o.id) && !ours(o.id)) {
+      touched = true;
+      continue;
+    }
+    out.push(o);
+  }
+  const now = Date.now();
+  for (const c of changedById.values()) {
+    // rubbed out here a moment ago (the delete just hasn't landed yet)
+    const removed = tracker.removedAt.get(c.id);
+    if (removed && now - removed < RECENT_MS) continue;
+    out.push(c);
+    touched = true;
+  }
+  return touched ? out : local;
+}
+
+// The ids rubbed out, per kind, from a board_changes answer (anything that
+// is back again since is left alone).
+export function deletedIdsOf(changes) {
+  const alive = {
+    strokes: new Set(changes.strokes.map((o) => o.id)),
+    texts: new Set(changes.texts.map((o) => o.id)),
+    images: new Set(changes.images.map((o) => o.id)),
+  };
+  const out = { strokes: new Set(), texts: new Set(), images: new Set() };
+  for (const d of changes.deleted) {
+    if (d && out[d.kind] && !alive[d.kind].has(String(d.id))) out[d.kind].add(String(d.id));
+  }
+  return out;
+}
+
+// Moves things on the server by (dx, dy): a few numbers instead of every
+// point of every line. Resolves with how many were moved, or null if it
+// couldn't (then the moved copies are saved the older way).
+export async function moveObjects(boardId, sel, dx, dy, client = supabase) {
+  if (!isRealBackend(client)) return null;
+  try {
+    const { data, error } = await client.rpc("move_objects", {
+      p_board: boardId,
+      p_strokes: sel.strokes || [],
+      p_texts: sel.texts || [],
+      p_images: sel.images || [],
+      p_dx: dx,
+      p_dy: dy,
+    });
+    if (error || typeof data !== "number") return null;
+    return data;
+  } catch (err) {
+    return null;
+  }
+}
+
+// One catch-up after time away (or a check now and then): only what changed
+// since `cursor` when that can be asked, else everything.
+//   { mode: "changes", now, changes, deleted, settings }
+//   { mode: "full", now, contents, settings, fetchStartedAt }
+// `settings` (the board's own settings) is null when not asked for.
+export async function catchUp(boardId, client, cursor, { withSettings = true } = {}) {
+  const real = isRealBackend(client);
+  if (real && cursor) {
+    const [changes, opened] = await Promise.all([
+      fetchBoardChanges(boardId, syncFrom(cursor), client),
+      withSettings ? openBoard(boardId, client) : Promise.resolve(null),
+    ]);
+    if (changes && !changes.full) {
+      return { mode: "changes", now: changes.now, changes, deleted: deletedIdsOf(changes), settings: opened && opened.found ? opened : null };
+    }
+  }
+  const fetchStartedAt = Date.now();
+  const [opened, contents] = await Promise.all([
+    real ? openBoard(boardId, client) : Promise.resolve(null),
+    fetchBoardContents(boardId, client),
+  ]);
+  let settings = opened && opened.found ? opened : null;
+  if (!real || !opened) settings = withSettings ? await fetchBoardSettings(boardId, client) : null;
+  return { mode: "full", now: opened ? opened.now : null, contents, settings, fetchStartedAt };
+}
+
+// ---------- the boards-list preview ----------
+
+// A short fingerprint of a picture (to tell whether it changed).
+export function pictureHash(text) {
+  let h = 0x811c9dc5;
+  const str = String(text || "");
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36) + "-" + str.length.toString(36);
+}
+
+// The fingerprint a saved preview was made from ("…/thumb.jpg?v=<it>"), or
+// of an older preview kept as a picture in the row itself.
+export function previewHashOf(saved) {
+  if (!saved || saved === "legacy") return null;
+  if (/^data:/.test(saved)) return pictureHash(saved);
+  const m = /[?&]v=([a-z0-9-]+)/i.exec(saved);
+  return m ? m[1] : null;
+}
+
+function dataUrlToBlob(dataUrl) {
+  const m = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl || "");
+  if (!m) return null;
+  const bin = atob(m[2]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] });
+}
+
+// Saves a board's preview picture into storage, next to the board's other
+// pictures, and points the board at it. false if that didn't work (the
+// caller then keeps it in the row, the older way).
+export async function savePreview(boardId, dataUrl, hash, client = supabase) {
+  if (!isRealBackend(client)) return false;
+  const blob = dataUrlToBlob(dataUrl);
+  if (!blob) return false;
+  try {
+    const path = `${boardId}/thumb.jpg`;
+    const bucket = client.storage.from("board-images");
+    const { error } = await bucket.upload(path, blob, { contentType: blob.type || "image/jpeg", upsert: true, cacheControl: "3600" });
+    if (error) return false;
+    const { data } = bucket.getPublicUrl(path);
+    if (!data || !data.publicUrl) return false;
+    const { error: rowError } = await client.from("boards").update({ thumbnail: `${data.publicUrl}?v=${hash}` }).eq("id", boardId);
+    return !rowError;
+  } catch (err) {
+    return false;
   }
 }
 

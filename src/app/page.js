@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Users, MoreHorizontal, Pencil, Share2, Trash2, LogOut, X, MessageSquarePlus, Settings } from "lucide-react";
@@ -36,6 +36,28 @@ async function selectBoards(build) {
   return build(supabase.from("boards").select(BASE_COLUMNS));
 }
 
+const PAGE_SIZE = 30;
+
+// A page of the boards list ("mine" or "shared"), newest first, from the
+// database in one request (list_boards). null when the database hasn't got
+// that yet: the older, everything-at-once way is used instead.
+// `after`: the last board shown so far (the next page starts after it).
+async function listBoards(kind, search, after) {
+  try {
+    const { data, error } = await supabase.rpc("list_boards", {
+      p_kind: kind,
+      p_search: search || null,
+      p_before: after ? after.created_at : null,
+      p_limit: PAGE_SIZE,
+      p_before_id: after ? after.id : null,
+    });
+    if (error || !data || !Array.isArray(data.rows)) return null;
+    return data;
+  } catch (err) {
+    return null;
+  }
+}
+
 function formatDate(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -65,10 +87,43 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
+  // The boards, a page at a time (more load as you scroll down), and
+  // searched in the database rather than on this device.
+  const [paged, setPaged] = useState(false); // the database pages the list
+  const [moreMine, setMoreMine] = useState(false);
+  const [moreShared, setMoreShared] = useState(false);
+  const [myTotal, setMyTotal] = useState(null);
+  const [searched, setSearched] = useState(""); // what the list shown was searched for
+  const [loadingMore, setLoadingMore] = useState(false);
+  // (once the list is paged, a new search asks the database again)
+  const searchKey = paged ? query.trim() : "";
+
+  // Which list is showing (a new search starts a new one): a "more" that
+  // comes back for an older one is dropped.
+  const listGenRef = useRef(0);
+
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    (async () => {
+    const gen = ++listGenRef.current;
+    // (typing in the search box waits for a pause)
+    const wait = searchKey ? 300 : 0;
+    const timer = setTimeout(async () => {
+      const [mineList, sharedList] = await Promise.all([listBoards("mine", searchKey), listBoards("shared", searchKey)]);
+      if (cancelled || gen !== listGenRef.current) return;
+      if (mineList && sharedList) {
+        setPaged(true);
+        setLoadError("");
+        setMyBoards(mineList.rows);
+        setMoreMine(!!mineList.more);
+        if (typeof mineList.total === "number") setMyTotal(mineList.total);
+        setSharedBoards(sharedList.rows);
+        setMoreShared(!!sharedList.more);
+        setSearched(searchKey);
+        setLoading(false);
+        return;
+      }
+      // the older way: everything at once (searched on this device)
       const [owned, shared] = await Promise.all([
         selectBoards((q) => q.eq("owner_id", user.id).order("created_at", { ascending: false })),
         selectBoards((q) => q.contains("shared_with", [user.email.toLowerCase()]).order("created_at", { ascending: false })),
@@ -76,15 +131,44 @@ export default function Home() {
       if (cancelled) return;
       if (owned.error) console.error("Error loading owned boards:", owned.error);
       if (shared.error) console.error("Error loading shared boards:", shared.error);
+      setPaged(false);
       setLoadError(owned.error ? "Couldn't load your boards. Check your connection and refresh the page." : "");
-      if (!owned.error && owned.data) setMyBoards(owned.data);
+      if (!owned.error && owned.data) {
+        setMyBoards(owned.data);
+        setMyTotal(owned.data.length);
+      }
       if (!shared.error && shared.data) setSharedBoards(shared.data.filter((b) => b.owner_id !== user.id));
+      setMoreMine(false);
+      setMoreShared(false);
+      setSearched("");
       setLoading(false);
-    })();
+    }, wait);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, [user]);
+  }, [user, searchKey]);
+
+  async function loadMore(kind) {
+    if (loadingMore) return;
+    const list = kind === "shared" ? sharedBoards : myBoards;
+    const last = list[list.length - 1];
+    if (!last) return;
+    setLoadingMore(true);
+    const gen = listGenRef.current;
+    const next = await listBoards(kind, searched, last);
+    setLoadingMore(false);
+    if (!next || gen !== listGenRef.current) return;
+    const seen = new Set(list.map((b) => b.id));
+    const add = next.rows.filter((b) => !seen.has(b.id));
+    if (kind === "shared") {
+      setSharedBoards((prev) => [...prev, ...add]);
+      setMoreShared(!!next.more);
+    } else {
+      setMyBoards((prev) => [...prev, ...add]);
+      setMoreMine(!!next.more);
+    }
+  }
 
   // Close the ⋯ / account menus when tapping anywhere else.
   useEffect(() => {
@@ -148,6 +232,7 @@ export default function Home() {
       return;
     }
     setMyBoards((prev) => prev.filter((b) => b.id !== board.id));
+    setMyTotal((n) => (typeof n === "number" ? Math.max(0, n - 1) : n));
   }
 
   async function saveSharing(board, list) {
@@ -174,9 +259,12 @@ export default function Home() {
   }
 
   const q = query.trim().toLowerCase();
+  // (a paged list is searched in the database; this only covers the moment
+  // before its answer arrives, and the older way)
   const matches = (b) => !q || (b.name || "Untitled board").toLowerCase().includes(q);
   const mine = myBoards.filter(matches);
   const shared = sharedBoards.filter(matches);
+  const mineCount = paged && q && searched.toLowerCase() === q && typeof myTotal === "number" ? myTotal : mine.length;
   // their name from Settings (or Google), else their email
   const shownName = useSyncExternalStore(subscribeSettings, () => displayNameFor(user), () => "");
   const initial = (shownName || user?.email || "?").charAt(0).toUpperCase();
@@ -334,7 +422,11 @@ export default function Home() {
           <div>
             <h1 className={s.heading}>Your boards</h1>
             <p className={s.subheading}>
-              {loading ? "Loading…" : q ? `${mine.length} matching “${query.trim()}”` : `${myBoards.length} board${myBoards.length === 1 ? "" : "s"} · newest first`}
+              {loading
+                ? "Loading…"
+                : q
+                  ? `${mineCount} matching “${query.trim()}”`
+                  : `${myTotal ?? myBoards.length} board${(myTotal ?? myBoards.length) === 1 ? "" : "s"} · newest first`}
             </p>
           </div>
           <div className={s.spacer} />
@@ -369,11 +461,13 @@ export default function Home() {
             {mine.map((b) => renderCard(b, true))}
           </div>
         )}
+        {!loading && moreMine && <MoreBoards busy={loadingMore} onMore={() => loadMore("mine")} />}
 
         {!loading && shared.length > 0 && (
           <>
             <h2 className={s.sectionHeading}>Shared with you</h2>
             <div className={s.grid}>{shared.map((b) => renderCard(b, false))}</div>
+            {moreShared && <MoreBoards busy={loadingMore} onMore={() => loadMore("shared")} />}
           </>
         )}
       </main>
@@ -383,7 +477,7 @@ export default function Home() {
       <DemoCarryOver userId={user?.id} createdAt={user?.created_at} />
 
       {feedbackOpen && (
-        <FeedbackModal userEmail={user?.email} boardCount={myBoards.length} onClose={() => setFeedbackOpen(false)} />
+        <FeedbackModal userEmail={user?.email} boardCount={myTotal ?? myBoards.length} onClose={() => setFeedbackOpen(false)} />
       )}
 
       {showNew && <NewBoardModal onClose={() => setShowNew(false)} onCreate={handleCreate} />}
@@ -458,6 +552,32 @@ function RenameDialog({ board, onClose, onSave }) {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// More boards load by themselves as the bottom of the list comes into view
+// (or with the button, which also says what is happening).
+function MoreBoards({ busy, onMore }) {
+  const ref = useRef(null);
+  const onMoreRef = useRef(onMore);
+  useEffect(() => {
+    onMoreRef.current = onMore;
+  });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return undefined;
+    const seen = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) onMoreRef.current();
+    }, { rootMargin: "400px 0px" });
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, []);
+  return (
+    <div ref={ref} className={s.moreRow}>
+      <button type="button" className={s.moreBoardsBtn} onClick={() => onMore()} disabled={busy}>
+        {busy ? "Loading…" : "Show more boards"}
+      </button>
     </div>
   );
 }

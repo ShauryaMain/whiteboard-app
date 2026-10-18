@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import d from "./Dialog.module.css";
 import p from "./Paper.module.css";
 import { generateClassCode, getStoredClassCode, storeClassCode } from "@/lib/classroomCode";
+import { useLiveMode, liveChannel, openClassReliably } from "@/lib/liveMode";
 import { createAttendance, attendanceJoin, attendanceLeave, attendanceSync, attendanceState, rosterFromPresence } from "@/lib/classRoster";
 
 // Phase 1: just the lobby — generate a code, show who's joined via
@@ -13,7 +14,8 @@ import { createAttendance, attendanceJoin, attendanceLeave, attendanceSync, atte
 // actual master board once a session is under way.
 export default function LiveClassTeacherView({ boardId }) {
   const router = useRouter();
-  const [code] = useState(() => {
+  const liveMode = useLiveMode();
+  const [code, setCode] = useState(() => {
     const existing = getStoredClassCode(boardId);
     if (existing) return existing;
     const fresh = generateClassCode();
@@ -24,9 +26,9 @@ export default function LiveClassTeacherView({ boardId }) {
   const channelRef = useRef(null);
 
   useEffect(() => {
-    const channel = supabase.channel(`classroom-${code}`, {
-      config: { presence: { key: "teacher" } },
-    });
+    if (!liveMode.ready) return undefined;
+    let gone = false;
+    const channel = liveChannel(`classroom-${code}`, { presence: { key: "teacher" } }, liveMode);
 
     // Who has joined: kept from the "joined" / "left" events themselves
     // (see src/lib/classRoster.js for why not simply presenceState()).
@@ -42,17 +44,29 @@ export default function LiveClassTeacherView({ boardId }) {
       setRoster(rosterFromPresence(attendanceState(attendance), null));
     });
 
-    channel.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await channel.track({ role: "teacher" });
+    // The class is registered first (so its students are let in). A code
+    // that turns out to be someone else's class is swapped for a new one.
+    openClassReliably(code, boardId, () => gone).then((result) => {
+      if (gone || result === "gone") return;
+      if (result === "taken") {
+        const fresh = generateClassCode();
+        storeClassCode(boardId, fresh);
+        setCode(fresh);
+        return;
       }
+      channel.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          await channel.track({ role: "teacher" });
+        }
+      });
     });
 
     channelRef.current = channel;
     return () => {
+      gone = true;
       supabase.removeChannel(channel);
     };
-  }, [code]);
+  }, [code, boardId, liveMode]);
 
   const joinUrl =
     typeof window !== "undefined" ? `${window.location.origin}/join` : "/join";

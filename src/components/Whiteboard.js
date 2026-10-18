@@ -14,7 +14,7 @@ import ReferencePane from "./ReferencePane";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-import { getStoredClassCode, clearClassCode, generateClassCode } from "@/lib/classroomCode";
+import { getStoredClassCode, clearClassCode, generateClassCode, storeClassCode } from "@/lib/classroomCode";
 import {
   rosterFromPresence, newHandsNotice, readStatus,
   createAttendance, attendanceJoin, attendanceLeave, attendanceSync, attendanceState,
@@ -59,12 +59,18 @@ import { iconCursor, ringLook, isInkTool } from "@/lib/boardCursor";
 import { keyFromEvent, keysWith, actionForKey, createTapGesture, GESTURE_WORDS } from "@/lib/shortcuts";
 import { nameFor, personId, wherePayload, sameWhere, peopleFrom, facesKey, viewFor, viewBetween, createPenTags } from "@/lib/boardPeople";
 import {
+  catchUp,
   createSyncTracker,
-  fetchBoardContents,
   fetchBoardPart,
-  fetchBoardSettings,
   forgetUnsaved,
+  isRealBackend,
+  mergeChanges,
   mergeServerList,
+  moveObjects,
+  openBoard,
+  pictureHash,
+  previewHashOf,
+  savePreview,
   noteList,
   nudgeRealtime,
   retryUnsaved,
@@ -76,6 +82,8 @@ import {
   touchBoard,
   unsavedCount,
 } from "@/lib/boardSync";
+import { useLiveMode, liveChannel, openClassReliably, closeClass } from "@/lib/liveMode";
+import { createSender, wholeStroke, cleanIncomingStroke } from "@/lib/liveSend";
 import { getServerIdlePaused, isIdlePaused, noteRemoteActivity, resumeFromIdle, startIdleWatch, subscribeIdle } from "@/lib/idleWatch";
 import {
   subscribeInkPrefs, getEraserMode, getServerEraserMode, setEraserMode,
@@ -526,6 +534,13 @@ export default function Whiteboard({
   const [catchingUp, setCatchingUp] = useState(false);
   const connectedOnceRef = useRef(false);
   const catchUpRunningRef = useRef(false);
+  // The server's clock when this board was last caught up with (catching
+  // up then fetches only what changed since; see boardSync.js).
+  const syncCursorRef = useRef(null);
+  const quickSyncTimerRef = useRef(null);
+  const catchUpAgainRef = useRef(false);
+  // Private live channels (src/lib/liveMode.js): known before connecting.
+  const liveMode = useLiveMode();
   const shortcutHandlersRef = useRef(null);
   // Boards-list preview picture (boards.thumbnail).
   const boardLoadedRef = useRef(false);
@@ -676,10 +691,12 @@ export default function Whiteboard({
   // and what makes the End button's broadcast land reliably instead of
   // racing a connection that's still settling.
   useEffect(() => {
-    if (!liveClassCode) return;
-    const channel = supabase.channel(`classroom-${liveClassCode}`, {
-      config: { presence: { key: "teacher" } },
-    });
+    if (!liveClassCode || !liveMode.ready) return;
+    // (the class is registered first, so its students are let in; tried
+    // again until it works)
+    let gone = false;
+    const opening = demo ? Promise.resolve("ok") : openClassReliably(liveClassCode, boardId, () => gone);
+    const channel = liveChannel(`classroom-${liveClassCode}`, { presence: { key: "teacher" } }, liveMode);
     channel.on("broadcast", { event: "request-session-status" }, () => {
       channel.send({ type: "broadcast", event: "session-started", payload: { boardId } });
     });
@@ -729,7 +746,7 @@ export default function Whiteboard({
       broadcastQuestion();
     });
 
-    channel.subscribe(async (status) => {
+    const subscribeClass = () => channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
         await channel.track({ role: "teacher" });
         // Hands may already be up (this board was reloaded mid-class):
@@ -739,9 +756,21 @@ export default function Whiteboard({
         broadcastClassState();
       }
     });
+    opening.then((result) => {
+      if (gone) return;
+      // Someone else's class has this code: this class gets a new one.
+      if (result === "taken") {
+        const fresh = generateClassCode();
+        storeClassCode(boardId, fresh);
+        setLiveClassCode(fresh);
+        return;
+      }
+      subscribeClass();
+    });
     liveClassChannelRef.current = channel;
 
     return () => {
+      gone = true;
       supabase.removeChannel(channel);
       liveClassChannelRef.current = null;
       if (classStateTimerRef.current) clearTimeout(classStateTimerRef.current);
@@ -757,7 +786,7 @@ export default function Whiteboard({
       rosterIdsRef.current = new Set();
       setClassRoster([]);
     };
-  }, [liveClassCode, boardId]);
+  }, [liveClassCode, boardId, liveMode.ready, liveMode.private]);
 
   // Locks the actual page/body from scrolling for as long as the
   // whiteboard is open — restored when navigating away. The canvas
@@ -1422,7 +1451,8 @@ export default function Whiteboard({
     if (!pr.channel) return;
     pr.sent = payload;
     pr.lastAt = Date.now();
-    pr.channel.send({ type: "broadcast", event: "person-where", payload: { key: clientId.current, ...payload } });
+    // (through the board's sender: skipped while the connection is down)
+    (channelRef.current || pr.channel).send({ type: "broadcast", event: "person-where", payload: { key: clientId.current, ...payload } });
   }
 
   // Tells the others when it changes (no more than every PRESENCE_GAP_MS).
@@ -1605,39 +1635,90 @@ export default function Whiteboard({
     if (contents.images) setImages((prev) => mergeServerList(prev, contents.images, sync, since));
   }
 
-  // Catch up after the live connection was down (idle pause, sleep,
-  // network drop): anything saved by others meanwhile appears, anything
-  // they rubbed out disappears, and our own unsaved work is re-sent.
-  async function catchUpWithServer() {
-    if (!boardId || catchUpRunningRef.current) return;
-    catchUpRunningRef.current = true;
-    setCatchingUp(true);
-    const fetchStartedAt = Date.now();
-    const [contents, settings] = await Promise.all([fetchBoardContents(boardId, db), fetchBoardSettings(boardId, db)]);
-    applyServerContents(contents, fetchStartedAt);
-    if (settings) {
-      // (not over a graph change of ours that's about to be saved)
-      if ("grid_config" in settings && !graphSaveTimer.current && !graphSavingRef.current.busy && !graphSavingRef.current.retries) setGraphsFromServer(settings.grid_config);
-      if ("background" in settings) {
-        backgroundRef.current = normalizeBackground(settings.background);
-        setBoardBackground(backgroundRef.current);
-      }
-      if ("sim_embeds" in settings) {
-        simsRef.current = settings.sim_embeds || [];
-        setSims(simsRef.current);
-      }
-      if (settings.name) setBoardName(settings.name);
+  // The board's own settings, as saved (after catching up).
+  function applyBoardSettings(settings) {
+    if (!settings) return;
+    // (not over a graph change of ours that's about to be saved)
+    if ("grid_config" in settings && !graphSaveTimer.current && !graphSavingRef.current.busy && !graphSavingRef.current.retries) setGraphsFromServer(settings.grid_config);
+    if ("background" in settings) {
+      backgroundRef.current = normalizeBackground(settings.background);
+      setBoardBackground(backgroundRef.current);
     }
-    retryUnsaved(sync);
+    if ("sim_embeds" in settings) {
+      simsRef.current = settings.sim_embeds || [];
+      setSims(simsRef.current);
+    }
+    if (settings.name) setBoardName(settings.name);
+  }
+
+  // Catch up after the live connection was down (idle pause, sleep,
+  // network drop), or now and then while others are drawing (`quiet`: no
+  // "catching up" chip, and the board's settings aren't asked for): anything
+  // saved by others meanwhile appears, anything they rubbed out
+  // disappears, and our own unsaved work is re-sent. Only what changed is
+  // fetched when the database can say what that is.
+  async function catchUpWithServer({ quiet = false } = {}) {
+    if (!boardId) return;
+    if (catchUpRunningRef.current) {
+      // (a full one asked for while a quick one runs: it follows)
+      if (!quiet) catchUpAgainRef.current = true;
+      return;
+    }
+    catchUpRunningRef.current = true;
+    let q = quiet;
+    // (once more, in full, if a full one was asked for meanwhile)
+    for (let round = 0; round < 2; round++) {
+      if (!q) setCatchingUp(true);
+      const result = await catchUp(boardId, db, syncCursorRef.current, { withSettings: !q });
+      if (result.mode === "changes") {
+        const { changes, deleted } = result;
+        if (changes.strokes.length || deleted.strokes.size) setStrokes((prev) => mergeChanges(prev, changes.strokes, deleted.strokes, sync));
+        if (changes.texts.length || deleted.texts.size) setTexts((prev) => mergeChanges(prev, changes.texts, deleted.texts, sync));
+        if (changes.images.length || deleted.images.size) setImages((prev) => mergeChanges(prev, changes.images, deleted.images, sync));
+      } else {
+        applyServerContents(result.contents, result.fetchStartedAt);
+      }
+      if (result.now) syncCursorRef.current = result.now;
+      applyBoardSettings(result.settings);
+      retryUnsaved(sync);
+      if (!q) setCatchingUp(false);
+      fullRedraw();
+      if (!catchUpAgainRef.current) break;
+      catchUpAgainRef.current = false;
+      q = false;
+    }
     catchUpRunningRef.current = false;
-    setCatchingUp(false);
-    fullRedraw();
+  }
+
+  // A quiet check with the server a little later (several reasons in a
+  // row make one check).
+  function syncSoon(ms = 2500) {
+    // (only when only what changed can be asked for)
+    if (!isRealBackend(db) || !syncCursorRef.current || quickSyncTimerRef.current) return;
+    quickSyncTimerRef.current = setTimeout(() => {
+      quickSyncTimerRef.current = null;
+      catchUpWithServer({ quiet: true });
+    }, ms);
   }
 
   useEffect(() => {
     if (!boardId || !userId) return;
     connectedOnceRef.current = false;
-    async function loadBoard() {
+    // The board's settings: in one request when the database can (and the
+    // server's clock, to catch up from later), else the older way.
+    function applyOpened(row) {
+      graphsRef.current = graphsOf(row.grid_config);
+      setIsOwner(userId === row.owner_id);
+      setBoardName(row.name || "");
+      simsRef.current = row.sim_embeds || [];
+      setSims(simsRef.current);
+      backgroundRef.current = normalizeBackground(row.background);
+      setBoardBackground(backgroundRef.current);
+      lastThumbRef.current = previewHashOf(row.thumbnail);
+      fullRedraw();
+    }
+
+    async function loadBoardSettingsTheOlderWay() {
       const { error: joinError } = await db.rpc("join_board_via_link", { board_id: boardId });
       if (joinError) console.error("Error joining board:", joinError);
 
@@ -1690,7 +1771,7 @@ export default function Whiteboard({
 
       // The saved preview picture, so an unchanged board isn't re-saved.
       db.from("boards").select("thumbnail").eq("id", boardId).maybeSingle().then(({ data, error }) => {
-        if (!error && data) lastThumbRef.current = data.thumbnail || null;
+        if (!error && data) lastThumbRef.current = previewHashOf(data.thumbnail);
       });
 
       // Page background: `alter table boards add column background text;`
@@ -1703,6 +1784,20 @@ export default function Whiteboard({
           console.warn("Could not load the page background (has the background column been added yet?):", error);
         }
       });
+    }
+
+    async function loadBoard() {
+      const opened = await openBoard(boardId, db);
+      if (opened && opened.found) {
+        syncCursorRef.current = opened.now;
+        applyOpened(opened);
+      } else if (opened) {
+        // (not there, or not shared with this person)
+        syncCursorRef.current = opened.now;
+        console.error("Error loading board: not found, or not shared with you.");
+      } else {
+        await loadBoardSettingsTheOlderWay();
+      }
 
       // Everything drawn so far (all of it — Supabase hands rows back
       // 1,000 at a time), merged with anything drawn while it loaded.
@@ -1715,7 +1810,7 @@ export default function Whiteboard({
       );
       boardLoadedRef.current = true;
       fullRedraw();
-      touchBoard(boardId, db);
+      if (!opened) touchBoard(boardId, db);
       // A student's class board that came back from an earlier visit (a
       // refresh, or joining again after closing the tab): say so, once.
       if (student && backend && backend.__restored > 0 && !restoredNoticeShownRef.current) {
@@ -1770,13 +1865,13 @@ export default function Whiteboard({
 
   // ---------- changing the graphs ----------
 
-  // Sends the graphs (as shown) to everyone watching, at most every 60ms.
+  // Sends the graphs (as shown) to everyone watching, at most every 100ms.
   function queueGraphBroadcast() {
     if (graphBroadcastTimer.current) return;
     graphBroadcastTimer.current = setTimeout(() => {
       graphBroadcastTimer.current = null;
       channelRef.current?.send({ type: "broadcast", event: "grid-set", payload: { grid: packGraphs(graphsShown()) } });
-    }, 60);
+    }, 100);
   }
 
   function saveGridSoon() {
@@ -1945,6 +2040,18 @@ export default function Whiteboard({
     data.images.forEach((img) => insertImage(img));
   }
 
+  // Saves a change to a text box (moved, resized, turned). Counted as
+  // "saving" meanwhile, so a check with the server can't put it back.
+  function updateTextRow(id, patch, what) {
+    sync.pending.set(id, (sync.pending.get(id) || 0) + 1);
+    db.from("texts").update(patch).eq("id", id).then(({ error }) => {
+      const left = (sync.pending.get(id) || 1) - 1;
+      if (left > 0) sync.pending.set(id, left);
+      else sync.pending.delete(id);
+      if (error) console.error(`Error saving text ${what}:`, error);
+    });
+  }
+
   function persistRemove(sel) {
     const run = (table, ids) => {
       if (!ids.length) return;
@@ -2008,15 +2115,35 @@ export default function Whiteboard({
     const g = new Set(sel.graphs || []);
     if (!remote && g.size) commitGraphs(graphsRef.current.map((x) => (g.has(x.id) ? translateGraph(x, dx, dy) : x)));
     if (!remote) {
-      channelRef.current?.send({ type: "broadcast", event: "objects-move", payload: { strokes: [...s], texts: [...t], images: [...i], dx, dy } });
-      // Save the moved copies (computed from the current refs, which don't
-      // include this move yet).
-      const moved = getObjectsData({ strokes: [...s], texts: [...t], images: [...i] });
-      persistAdd({
-        strokes: moved.strokes.map((x) => translateStroke(x, dx, dy)),
-        texts: moved.texts.map((x) => translateText(x, dx, dy)),
-        images: moved.images.map((x) => translateImage(x, dx, dy)),
-      });
+      const ids = { strokes: [...s], texts: [...t], images: [...i] };
+      channelRef.current?.send({ type: "broadcast", event: "objects-move", payload: { ...ids, dx, dy } });
+      // Saved as "moved by dx, dy" (a few numbers, however much was moved),
+      // unless something in it is still being saved, or that can't be done:
+      // then the moved copies themselves are saved.
+      const all = [...s, ...t, ...i];
+      const saveCopies = () => persistAdd(getObjectsData(ids));
+      if (!isRealBackend(db) || all.some((id) => sync.pending.has(id) || sync.failed.has(id))) {
+        // (computed from the current refs, which don't include this move yet)
+        const moved = getObjectsData(ids);
+        persistAdd({
+          strokes: moved.strokes.map((x) => translateStroke(x, dx, dy)),
+          texts: moved.texts.map((x) => translateText(x, dx, dy)),
+          images: moved.images.map((x) => translateImage(x, dx, dy)),
+        });
+      } else {
+        // (counted as "saving" meanwhile, so a check with the server can't
+        // put them back where they were)
+        for (const id of all) sync.pending.set(id, (sync.pending.get(id) || 0) + 1);
+        moveObjects(boardId, ids, dx, dy, db).then((count) => {
+          for (const id of all) {
+            const left = (sync.pending.get(id) || 1) - 1;
+            if (left > 0) sync.pending.set(id, left);
+            else sync.pending.delete(id);
+          }
+          // (by now the refs show where everything is)
+          if (count === null || count < all.length) saveCopies();
+        });
+      }
     }
   }
 
@@ -2309,13 +2436,26 @@ export default function Whiteboard({
       grid: packedGraphs(),
       background: backgroundRef.current,
     });
-    if (url === lastThumbRef.current) return;
-    lastThumbRef.current = url;
-    db.from("boards").update({ thumbnail: url }).eq("id", boardId).then(({ error }) => {
-      if (error && !thumbWarnedRef.current) {
-        thumbWarnedRef.current = true;
-        console.warn("Could not save the board preview (has the thumbnail column been added yet?):", error);
-      }
+    if (!url) return;
+    const hash = pictureHash(url);
+    if (hash === lastThumbRef.current) return;
+    lastThumbRef.current = hash;
+    // A picture in storage, beside the board's others (so the boards list
+    // doesn't carry every preview in its rows); in the row itself if that
+    // can't be done.
+    const keepInRow = () =>
+      db.from("boards").update({ thumbnail: url }).eq("id", boardId).then(({ error }) => {
+        if (error && !thumbWarnedRef.current) {
+          thumbWarnedRef.current = true;
+          console.warn("Could not save the board preview (has the thumbnail column been added yet?):", error);
+        }
+      });
+    if (!isRealBackend(db)) {
+      keepInRow();
+      return;
+    }
+    savePreview(boardId, url, hash, db).then((ok) => {
+      if (!ok) keepInRow();
     });
   }
 
@@ -2371,7 +2511,10 @@ export default function Whiteboard({
       await liveClassChannelRef.current.send({ type: "broadcast", event: "class-ended", payload: {} });
     }
 
-    if (!demo) track("live_class_ended", { students: classRoster.length });
+    if (!demo) {
+      track("live_class_ended", { students: classRoster.length });
+      closeClass(liveClassCode);
+    }
     forgetClass(liveClassCode);
     clearClassCode(boardId);
     setLiveClassCode(null);
@@ -3034,14 +3177,17 @@ export default function Whiteboard({
   }
 
   useEffect(() => {
-    if (!boardId || syncPaused) return;
+    if (!boardId || syncPaused || !liveMode.ready) return;
     const presence = presenceRef.current;
-    const channel = supabase.channel(`board-${boardId}`, {
+    const channel = liveChannel(
+      `board-${boardId}`,
       // presence: who else has the board open, and where (keyed by this tab)
-      config: peopleOn
-        ? { broadcast: { self: false }, presence: { key: clientId.current } }
-        : { broadcast: { self: false } },
-    });
+      peopleOn ? { broadcast: { self: false }, presence: { key: clientId.current } } : { broadcast: { self: false } },
+      liveMode
+    );
+    // Messages sent while the connection is down wait for it (or, if they
+    // only matter right now, are skipped): see src/lib/liveSend.js.
+    const sender = createSender(channel);
     if (peopleOn) {
       // who's here: kept from the "joined" / "left" events (classRoster.js)
       const attendance = createAttendance();
@@ -3068,9 +3214,9 @@ export default function Whiteboard({
     // A student's own board only sends what the student is doing while
     // somebody is watching it (see src/lib/boardWatch.js). Everything this
     // board sends goes through the gate, which lets it out or keeps it back.
-    const gate = student ? createSendGate((message) => channel.send(message)) : null;
+    const gate = student ? createSendGate((message) => sender.send(message)) : null;
     // (through the gate, which stamps it with the board's edition)
-    const sayHere = () => (gate || channel).send({ type: "broadcast", event: "board-here", payload: {} });
+    const sayHere = () => (gate || sender).send({ type: "broadcast", event: "board-here", payload: {} });
 
     // Someone else changing the board keeps a watching viewer "active",
     // so a student following along never gets paused.
@@ -3127,12 +3273,23 @@ export default function Whiteboard({
         delete penTagOwners.current[payload.strokeKey];
         penTags.done(by);
       }
-      const s = remoteStrokes.current[payload.strokeKey];
-      if (!s) return;
+      // The finished line comes whole with this message, so it is kept even
+      // if some of the live messages for it never arrived (or arrived in
+      // the wrong order). Older apps send only the key.
+      const live = remoteStrokes.current[payload.strokeKey];
       delete remoteStrokes.current[payload.strokeKey];
-      if (s.points.length > 1) {
-        setStrokes((prev) => [...prev, s]);
+      const s = cleanIncomingStroke(payload.stroke) || (live && live.points.length > 1 ? live : null);
+      if (!s) {
+        // A line finished that never showed up here: fetch it shortly.
+        if (!live) syncSoon();
+        fullRedraw();
+        return;
       }
+      // (a finished line that was held back while the writer's connection was
+      // down can arrive after someone rubbed it out: it stays rubbed out)
+      const removed = sync.removedAt.get(s.id);
+      if (removed && Date.now() - removed < 120000) return;
+      setStrokes((prev) => (prev.some((x) => x.id === s.id) ? prev.map((x) => (x.id === s.id ? s : x)) : [...prev, s]));
     });
 
     channel.on("broadcast", { event: "stroke-remove" }, ({ payload }) => {
@@ -3381,18 +3538,25 @@ export default function Whiteboard({
             sayHere();
           }
         }
+        // what waited while the connection was down goes now
+        sender.flush();
         channel.send({ type: "broadcast", event: "reference-request", payload: {} });
         // Re-joined after being away (idle pause, sleep, dropped Wi-Fi):
         // fetch what changed meanwhile. The first join is covered by the
-        // initial load.
-        if (connectedOnceRef.current) catchUpWithServer();
-        else retryUnsaved(sync);
+        // initial load. Then once more a few seconds later, for anything
+        // that was still being saved by someone else at that moment.
+        if (connectedOnceRef.current) {
+          catchUpWithServer();
+          syncSoon(6000);
+        } else {
+          retryUnsaved(sync);
+        }
         connectedOnceRef.current = true;
       } else if (gate) {
         gate.dropped();
       }
     });
-    channelRef.current = gate || channel;
+    channelRef.current = gate || sender;
     // If the join hasn't gone through after a few seconds (the old
     // connection was still closing), give the connection a nudge.
     const joinWatchdog = setInterval(() => {
@@ -3417,6 +3581,8 @@ export default function Whiteboard({
       teacherLiveTimerRef.current = null;
       supabase.removeChannel(channel);
       channelRef.current = null;
+      if (quickSyncTimerRef.current) clearTimeout(quickSyncTimerRef.current);
+      quickSyncTimerRef.current = null;
       // a slider moved a moment ago: save it now rather than lose it
       if (graphBroadcastTimer.current) clearTimeout(graphBroadcastTimer.current);
       graphBroadcastTimer.current = null;
@@ -3430,7 +3596,19 @@ export default function Whiteboard({
       penTagOwners.current = {};
       penTags.clear();
     };
-  }, [boardId, syncPaused]);
+  }, [boardId, syncPaused, liveMode.ready, liveMode.private]);
+
+  // While other people are on the board, check with the server now and
+  // then (a quick look at what changed), so a line whose live messages were
+  // lost on the way still turns up.
+  useEffect(() => {
+    if (!boardId || syncPaused || !peopleOn || !isRealBackend(db)) return undefined;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "hidden" || !peopleRef.current.list.length || !syncCursorRef.current) return;
+      catchUpWithServer({ quiet: true });
+    }, 45000);
+    return () => clearInterval(timer);
+  }, [boardId, syncPaused, peopleOn]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -3489,7 +3667,11 @@ export default function Whiteboard({
     // rendering never goes through the network at all, and incoming
     // points are already smoothed into curves on arrival regardless of
     // how large a batch they come in.
-    const BROADCAST_THROTTLE_MS = 60;
+    // (100 ms: about 10 messages a second while the pen moves. Each one
+    // reaches everyone on the board, and Supabase counts every copy, so
+    // this is the biggest single lever on how many messages a class uses.
+    // Lines still look smooth: the points come in bigger batches.)
+    const BROADCAST_THROTTLE_MS = 100;
 
     function scheduleBroadcastFlush() {
       if (rafId.current) return;
@@ -3572,7 +3754,9 @@ export default function Whiteboard({
       }, BROADCAST_THROTTLE_MS);
     }
 
-    function finalizeStroke(strokeId) {
+    // `finished`: the whole line, sent with "stroke-end" so that anyone who
+    // missed some of its live messages still gets all of it.
+    function finalizeStroke(strokeId, finished) {
       if (rafId.current) {
         clearTimeout(rafId.current);
         rafId.current = null;
@@ -3605,10 +3789,11 @@ export default function Whiteboard({
         });
       }
       if (strokeId) {
+        const whole = wholeStroke(finished);
         channelRef.current?.send({
           type: "broadcast",
           event: "stroke-end",
-          payload: { strokeKey: `${clientId.current}-${strokeId}` },
+          payload: whole ? { strokeKey: `${clientId.current}-${strokeId}`, stroke: whole } : { strokeKey: `${clientId.current}-${strokeId}` },
         });
       }
     }
@@ -3678,7 +3863,7 @@ export default function Whiteboard({
       activeCompassParams.current = null;
       touchDrivenStrokeActive.current = false;
 
-      finalizeStroke(strokeId);
+      finalizeStroke(strokeId, finished);
 
       if (finished && finished.points.length > 1) {
         commitFinishedStroke(finished);
@@ -4729,9 +4914,7 @@ export default function Whiteboard({
         const finalY = lastY ?? origY;
         movingTextRef.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        db.from("texts").update({ x: finalX, y: finalY }).eq("id", id).then(({ error }) => {
-          if (error) console.error("Error saving text position:", error);
-        });
+        updateTextRow(id, { x: finalX, y: finalY }, "position");
         return;
       }
 
@@ -4741,13 +4924,7 @@ export default function Whiteboard({
         const finalFontSize = r.lastFontSize ?? r.origFontSize;
         resizingTextRef.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        db
-          .from("texts")
-          .update({ width: finalWidth, font_size: finalFontSize })
-          .eq("id", r.id)
-          .then(({ error }) => {
-            if (error) console.error("Error saving text size:", error);
-          });
+        updateTextRow(r.id, { width: finalWidth, font_size: finalFontSize }, "size");
         return;
       }
 
@@ -4756,9 +4933,7 @@ export default function Whiteboard({
         const finalRotation = r.lastRotation ?? r.origRotation;
         rotatingTextRef.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
-        db.from("texts").update({ rotation: finalRotation }).eq("id", r.id).then(({ error }) => {
-          if (error) console.error("Error saving text rotation:", error);
-        });
+        updateTextRow(r.id, { rotation: finalRotation }, "rotation");
         return;
       }
 
@@ -4790,7 +4965,7 @@ export default function Whiteboard({
         fullRedraw();
       }
 
-      finalizeStroke(strokeId);
+      finalizeStroke(strokeId, finished);
 
       if (finished && finished.points.length > 1 && !tryScratchOut(finished)) {
         commitFinishedStroke(finished);

@@ -8,7 +8,7 @@
 --                              on or opened
 --   boards.deletion_warned_at  when the owner was emailed that it will be
 --                              deleted (cleared again as soon as it's used)
---   a trigger that keeps last_activity_at up to date whenever strokes,
+--   triggers that keep last_activity_at up to date whenever strokes,
 --   text boxes or images are added, changed or removed
 --   touch_board(), which the app calls when a board is opened
 --
@@ -50,11 +50,12 @@ update public.boards set last_activity_at = coalesce(last_activity_at, created_a
 create index if not exists boards_last_activity_at_idx on public.boards (last_activity_at);
 
 -- 3. Keep it up to date ----------------------------------------------
--- Runs on every stroke/text/image change, but only actually writes to
--- the board at most once an hour (or straight away if the board had been
--- warned about deletion), so it adds almost no load.
+-- Runs once per change to strokes, text boxes or images (a whole cleared
+-- board is one change), but only actually writes to the board at most once
+-- an hour (or straight away if the board had been warned about deletion),
+-- so it adds almost no load.
 
-create or replace function public.note_board_activity()
+create or replace function public.note_board_activity_batch()
 returns trigger
 language plpgsql
 security definer
@@ -62,7 +63,6 @@ set search_path = public
 as $$
 declare
   claims text;
-  target_board public.boards.id%type;
 begin
   -- Never let this get in the way of saving a stroke: any problem in here
   -- is ignored.
@@ -72,17 +72,10 @@ begin
     if claims is not null and claims <> '' and (claims::jsonb ->> 'role') = 'service_role' then
       return null;
     end if;
-
-    if tg_op = 'DELETE' then
-      target_board := old.board_id;
-    else
-      target_board := new.board_id;
-    end if;
-
     update public.boards
     set last_activity_at = now(),
         deletion_warned_at = null
-    where id = target_board
+    where id in (select distinct board_id from changed_rows where board_id is not null)
       and (
         last_activity_at is null
         or last_activity_at < now() - interval '1 hour'
@@ -95,24 +88,22 @@ begin
 end;
 $$;
 
-drop trigger if exists strokes_note_board_activity on public.strokes;
-create trigger strokes_note_board_activity
-after insert or update or delete on public.strokes
-for each row execute function public.note_board_activity();
-
-drop trigger if exists texts_note_board_activity on public.texts;
-create trigger texts_note_board_activity
-after insert or update or delete on public.texts
-for each row execute function public.note_board_activity();
-
 do $$
+declare
+  t text;
 begin
-  if to_regclass('public.images') is not null then
-    execute 'drop trigger if exists images_note_board_activity on public.images';
-    execute 'create trigger images_note_board_activity
-             after insert or update or delete on public.images
-             for each row execute function public.note_board_activity()';
-  end if;
+  foreach t in array array['strokes', 'texts', 'images'] loop
+    if to_regclass('public.' || t) is not null then
+      -- (the older once-per-row version, if it's there)
+      execute format('drop trigger if exists %I on public.%I', t || '_note_board_activity', t);
+      execute format('drop trigger if exists %I on public.%I', t || '_activity_insert', t);
+      execute format('drop trigger if exists %I on public.%I', t || '_activity_update', t);
+      execute format('drop trigger if exists %I on public.%I', t || '_activity_delete', t);
+      execute format('create trigger %I after insert on public.%I referencing new table as changed_rows for each statement execute function public.note_board_activity_batch()', t || '_activity_insert', t);
+      execute format('create trigger %I after update on public.%I referencing new table as changed_rows for each statement execute function public.note_board_activity_batch()', t || '_activity_update', t);
+      execute format('create trigger %I after delete on public.%I referencing old table as changed_rows for each statement execute function public.note_board_activity_batch()', t || '_activity_delete', t);
+    end if;
+  end loop;
 end $$;
 
 -- 4. Opening a board counts as using it -------------------------------
@@ -124,13 +115,15 @@ security definer
 set search_path = public
 as $$
 begin
-  if auth.uid() is null then
+  if auth.uid() is null or p_board_id is null
+     or p_board_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     return;
   end if;
+  -- (compared as a uuid, so the board is found by its index)
   update public.boards
   set last_activity_at = now(),
       deletion_warned_at = null
-  where id::text = p_board_id
+  where id = p_board_id::uuid
     and (
       last_activity_at is null
       or last_activity_at < now() - interval '10 minutes'

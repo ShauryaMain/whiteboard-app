@@ -43,8 +43,8 @@
 
 import { newId } from "./boardObjects";
 
-export const WATCH_BEAT_MS = 10000; // a watcher says "still watching" this often
-export const WATCH_TTL_MS = 30000; // and is taken to have gone after this long without a word
+export const WATCH_BEAT_MS = 25000; // a watcher says "still watching" this often (each one reaches everyone on the board)
+export const WATCH_TTL_MS = 60000; // and is taken to have gone after this long without a word
 export const WATCH_LEAVE_GRACE_MS = 3000; // after "I've stopped": time for anyone else watching to say so
 const ANSWER_WITHIN_MS = 1000;
 const BEAT_SLACK_MS = 1000;

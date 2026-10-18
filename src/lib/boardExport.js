@@ -13,6 +13,7 @@
 import { supabase } from "./supabaseClient";
 import { normalizeBackground } from "./boardBackground";
 import { loadBoardImages, renderBoardPicture } from "./boardRender";
+import { liveChannel } from "./liveMode";
 import { studentBoardId } from "./localBoard";
 
 // ---------- asking a board for its contents ----------
@@ -34,7 +35,8 @@ export function collectBoard(boardId, { timeoutMs = 7000, job = null } = {}) {
       resolve(null);
       return;
     }
-    const channel = supabase.channel(`board-${boardId}`, { config: { broadcast: { self: false } } });
+    // (private when the database is set up for it: see liveMode.js)
+    const channel = liveChannel(`board-${boardId}`, { broadcast: { self: false } });
     let settled = false;
     let board = null;
     let collecting = null; // { id, expected, received } while a big board arrives in pieces

@@ -16,6 +16,7 @@
 import { useSyncExternalStore } from "react";
 import { isValidOverrides, GESTURE_IDS } from "./shortcuts";
 import { isFontUrl } from "./richText";
+import { readAccount, writeAccount, writeDisplayName } from "./accountStore";
 
 export const PEN_COLORS = [
   ["Black", "#1a1a1a"],
@@ -315,9 +316,9 @@ function setWhere(next) {
   notify();
 }
 
-function accountCopy(user) {
-  const meta = user && user.user_metadata;
-  const saved = meta && meta.settings && typeof meta.settings === "object" ? meta.settings : null;
+// The account's copy (as read with readAccount: see accountStore.js).
+function accountCopy(stored) {
+  const saved = stored && stored.settings && typeof stored.settings === "object" ? stored.settings : null;
   if (!saved) return { values: {}, stamps: {} };
   const values = cleanValues(saved.values);
   return { values, stamps: cleanStamps(saved.stamps, values, Number(saved.updatedAt) || 0) };
@@ -350,7 +351,7 @@ async function freshUser(client) {
   try {
     if (typeof client.auth.getUser !== "function" || typeof client.auth.updateUser !== "function") return null;
     const { data, error } = await client.auth.getUser();
-    if (error || !data || !data.user || data.user.id === "demo-user") return null;
+    if (error || !data || !data.user || data.user.id === "demo-user" || data.user.is_anonymous) return null;
     return data.user;
   } catch (err) {
     return null;
@@ -367,21 +368,30 @@ async function upload() {
   const user = await freshUser(client);
   if (!account || account.userId !== userId) return false;
   s = reload();
-  if (user && user.id === userId) {
-    const merged = merge(s, accountCopy(user));
-    if (!sameValues(merged.values, s.values) || !sameValues(merged.stamps, s.stamps)) {
-      state = { ...s, ...merged };
-      persist();
-      notify();
-      s = state;
-    }
+  const stored = user && user.id === userId ? await readAccount(client, user) : null;
+  if (!account || account.userId !== userId) return false;
+  // Can't see the account's copy right now: sending this one could undo a
+  // newer change made on another device. It waits for the next change or
+  // visit.
+  if (!stored) {
+    setWhere("device");
+    return false;
+  }
+  const merged = merge(s, accountCopy(stored));
+  if (!sameValues(merged.values, s.values) || !sameValues(merged.stamps, s.stamps)) {
+    state = { ...s, ...merged };
+    persist();
+    notify();
+    s = state;
   }
   const sentAt = newest(s);
   const payload = { values: s.values, stamps: s.stamps, updatedAt: sentAt };
   try {
+    if (!user || user.id !== userId) throw new Error("can't reach the account");
     const name = cleanDisplayName(s.values.displayName);
-    const { error } = await client.auth.updateUser({ data: { settings: payload, display_name: name || null } });
-    if (error) throw error;
+    const ok = await writeAccount(client, user, { settings: payload });
+    if (!ok) throw new Error("not saved");
+    await writeDisplayName(client, user, name);
     const now = reload();
     if (now.owner === userId) {
       state = { ...now, syncedAt: Math.max(now.syncedAt, sentAt) };
@@ -458,8 +468,14 @@ export async function connectSettings(client, userId) {
     setWhere("device");
     return where;
   }
+  const stored = await readAccount(client, user);
+  if (!account || account.userId !== userId) return where;
+  if (!stored) {
+    setWhere("device");
+    return where;
+  }
   local = reload();
-  const remote = accountCopy(user);
+  const remote = accountCopy(stored);
   const merged = merge(local, remote);
   const changed = !sameValues(merged.values, local.values);
   const send = ahead(local, remote);

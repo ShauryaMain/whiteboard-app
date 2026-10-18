@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { getOrCreateStudentId } from "@/lib/classroomCode";
+import { readyStudent, liveChannel } from "@/lib/liveMode";
 import d from "@/components/Dialog.module.css";
 import p from "@/components/Paper.module.css";
 
@@ -14,79 +15,123 @@ import p from "@/components/Paper.module.css";
 
 const JOIN_TIMEOUT_MS = 4000;
 const STATUS_REQUEST_RETRY_MS = 2000;
+const STATUS_REQUEST_RETRY_MAX_MS = 10000;
+
+// The name the student typed on the join page (kept for this tab).
+function savedStudentName() {
+  let name = null;
+  try {
+    name = sessionStorage.getItem("classroom_student_name");
+  } catch (err) {
+    // storage switched off
+  }
+  return name || "Student";
+}
 
 export default function JoinCodePage() {
   const { code } = useParams();
   const router = useRouter();
-  const [status, setStatus] = useState("connecting"); // connecting | connected | not_found | ended
+  const [status, setStatus] = useState("connecting"); // connecting | connected | not_found | ended | error
   const channelRef = useRef(null);
   const navigatedRef = useRef(false);
 
   useEffect(() => {
     const normalizedCode = String(code).toUpperCase();
     const studentId = getOrCreateStudentId();
-    let name = "Student";
-    try {
-      name = sessionStorage.getItem("classroom_student_name") || "Student";
-    } catch (err) {}
+    const name = savedStudentName();
 
-    const channel = supabase.channel(`classroom-${normalizedCode}`, {
-      config: { presence: { key: studentId } },
-    });
-    channelRef.current = channel;
+    let cancelled = false;
+    let channel = null;
+    let timeoutId = null;
+    let retryTimer = null;
 
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      setStatus((prev) => (prev === "connecting" ? "not_found" : prev));
-    }, JOIN_TIMEOUT_MS);
+    (async () => {
+      // Signed in (invisibly) and let into the class first, when the live
+      // channels are private (src/lib/liveMode.js). A code that isn't a
+      // class is known straight away then.
+      const ready = await readyStudent(normalizedCode, studentId, name);
+      if (cancelled) return;
+      if (!ready.ok) {
+        setStatus(ready.status === "ended" ? "ended" : ready.status === "not_found" ? "not_found" : "error");
+        return;
+      }
 
-    channel.on("presence", { event: "sync" }, () => {
-      const state = channel.presenceState();
-      if (state.teacher && !timedOut) {
+      channel = liveChannel(`classroom-${normalizedCode}`, { presence: { key: studentId } });
+      channelRef.current = channel;
+
+      let timedOut = false;
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        setStatus((prev) => (prev === "connecting" ? "not_found" : prev));
+      }, JOIN_TIMEOUT_MS);
+
+      channel.on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState();
+        if (state.teacher && !timedOut) {
+          clearTimeout(timeoutId);
+          setStatus((prev) => (prev === "ended" ? prev : "connected"));
+        }
+      });
+
+      // Covers a rejoin after the class already started — the original
+      // "session-started" broadcast only ever fires once, at the moment
+      // Start was pressed, so anyone arriving after that moment needs to
+      // actively ask instead of waiting for a message that already passed.
+      channel.on("broadcast", { event: "session-started" }, ({ payload }) => {
+        if (payload?.boardId && !navigatedRef.current) {
+          navigatedRef.current = true;
+          router.push(`/join/${normalizedCode}/view?board=${payload.boardId}`);
+        }
+      });
+
+      // The teacher ended the class while this student was still waiting to
+      // be let in: say so, rather than leaving them waiting for ever.
+      channel.on("broadcast", { event: "class-ended" }, () => {
         clearTimeout(timeoutId);
-        setStatus((prev) => (prev === "ended" ? prev : "connected"));
-      }
-    });
-
-    // Covers a rejoin after the class already started — the original
-    // "session-started" broadcast only ever fires once, at the moment
-    // Start was pressed, so anyone arriving after that moment needs to
-    // actively ask instead of waiting for a message that already passed.
-    channel.on("broadcast", { event: "session-started" }, ({ payload }) => {
-      if (payload?.boardId && !navigatedRef.current) {
         navigatedRef.current = true;
-        router.push(`/join/${normalizedCode}/view?board=${payload.boardId}`);
-      }
-    });
+        setStatus("ended");
+      });
 
-    // The teacher ended the class while this student was still waiting to
-    // be let in: say so, rather than leaving them waiting for ever.
-    channel.on("broadcast", { event: "class-ended" }, () => {
-      clearTimeout(timeoutId);
-      navigatedRef.current = true;
-      setStatus("ended");
-    });
+      channel.subscribe(async (subStatus) => {
+        if (subStatus === "SUBSCRIBED") {
+          await channel.track({ studentId, name, joinedAt: Date.now() });
+          channel.send({ type: "broadcast", event: "request-session-status", payload: {} });
+        }
+      });
 
-    channel.subscribe(async (subStatus) => {
-      if (subStatus === "SUBSCRIBED") {
-        await channel.track({ studentId, name, joinedAt: Date.now() });
-        channel.send({ type: "broadcast", event: "request-session-status", payload: {} });
-      }
-    });
-
-    const retryInterval = setInterval(() => {
-      if (!navigatedRef.current) {
-        channel.send({ type: "broadcast", event: "request-session-status", payload: {} });
-      }
-    }, STATUS_REQUEST_RETRY_MS);
+      // Asked again until the teacher answers, less and less often (every
+      // message reaches the whole class).
+      let gap = STATUS_REQUEST_RETRY_MS;
+      const ask = () => {
+        if (cancelled) return;
+        if (!navigatedRef.current) channel.send({ type: "broadcast", event: "request-session-status", payload: {} });
+        gap = Math.min(STATUS_REQUEST_RETRY_MAX_MS, Math.round(gap * 1.5));
+        retryTimer = setTimeout(ask, gap);
+      };
+      retryTimer = setTimeout(ask, gap);
+    })();
 
     return () => {
+      cancelled = true;
       clearTimeout(timeoutId);
-      clearInterval(retryInterval);
-      supabase.removeChannel(channel);
+      clearTimeout(retryTimer);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [code]);
+
+  if (status === "error") {
+    return (
+      <div className={p.screen}>
+        <div className={`${p.sticky} ${p.stickyPink}`} role="alert">
+          <h1 className={p.stickyTitle}>Couldn&apos;t connect to the class</h1>
+          <p className={p.stickyText}>Check your connection, then try again.</p>
+          <button type="button" className={`${d.btn} ${d.btnPrimary}`} onClick={() => window.location.reload()} style={{ marginTop: 6 }}>
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (status === "ended") {
     return (

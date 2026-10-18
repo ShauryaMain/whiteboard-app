@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "rea
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Check, Columns2, Hand, MonitorUp, Pause, Rows2, Send } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { readyStudent, liveChannel } from "@/lib/liveMode";
 import ClassroomBoardViewer from "@/components/ClassroomBoardViewer";
 import Whiteboard from "@/components/Whiteboard";
 import SplitDivider from "@/components/SplitDivider";
@@ -151,6 +152,27 @@ function JoinCodeViewInner() {
     setPrefersBoth(next === "both");
   }
 
+  // Before connecting: signed in (invisibly) and let into the class (see
+  // src/lib/liveMode.js). null while that is happening; "ok", or why not.
+  const [access, setAccess] = useState(null);
+  const [accessTry, setAccessTry] = useState(0);
+  useEffect(() => {
+    if (!code || !studentId) return undefined;
+    let cancelled = false;
+    readyStudent(classCode, studentId, studentName).then((r) => {
+      if (cancelled) return;
+      if (r.status === "ended") setClassStatus(classCode, { ended: true, hand: false, handAt: 0 });
+      if (r.status === "not_found") {
+        router.replace(`/join/${code}`);
+        return;
+      }
+      setAccess(r.ok || r.status === "ended" ? "ok" : "error");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, classCode, studentId, studentName, accessTry, router]);
+
   // Guards against someone landing on /view directly without a board
   // id (e.g. a bookmarked/typed URL) — bounce back to the join screen
   // so the handshake can run and supply one.
@@ -169,11 +191,9 @@ function JoinCodeViewInner() {
   // has ended", "put that hand down" and "clear everyone's hands and ticks".
   const roomRef = useRef(null);
   useEffect(() => {
-    if (!code || !studentId || ended) return;
+    if (!code || !studentId || ended || access !== "ok") return;
     const joinedAt = Date.now();
-    const channel = supabase.channel(`classroom-${classCode}`, {
-      config: { presence: { key: studentId } },
-    });
+    const channel = liveChannel(`classroom-${classCode}`, { presence: { key: studentId } });
     const room = { joined: false, tell: null };
 
     // Is the teacher here? Worked out from the "joined" and "left" events
@@ -294,7 +314,7 @@ function JoinCodeViewInner() {
       clearTimeout(wantTimer);
       supabase.removeChannel(channel);
     };
-  }, [code, classCode, studentId, studentName, ended, teacherStore]);
+  }, [code, classCode, studentId, studentName, ended, teacherStore, access]);
 
   // A hand going up or down, or "I'm done": tell the class straight away.
   useEffect(() => {
@@ -309,7 +329,29 @@ function JoinCodeViewInner() {
     router.push("/join");
   }
 
-  if (!boardId) {
+  if (access === "error") {
+    return (
+      <div className={p.screen}>
+        <div className={`${p.sticky} ${p.stickyPink}`} role="alert">
+          <h1 className={p.stickyTitle}>Couldn&apos;t connect to the class</h1>
+          <p className={p.stickyText}>Check your connection, then try again.</p>
+          <button
+            type="button"
+            className={`${d.btn} ${d.btnPrimary}`}
+            onClick={() => {
+              setAccess(null);
+              setAccessTry((n) => n + 1);
+            }}
+            style={{ marginTop: 6 }}
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!boardId || access === null) {
     return (
       <div className={p.screen}>
         <div className={p.sticky} role="status">

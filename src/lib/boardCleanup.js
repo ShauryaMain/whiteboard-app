@@ -35,6 +35,21 @@ function dataUrlToBuffer(url) {
   return { contentType: match[1], content: Buffer.from(match[2], "base64") };
 }
 
+// A board's preview picture, for the email: kept in the row (older boards)
+// or in storage beside the board's other pictures (<board id>/thumb.jpg).
+async function previewOf(admin, board) {
+  const inRow = dataUrlToBuffer(board.thumbnail);
+  if (inRow) return inRow;
+  if (!board.thumbnail || !/\/board-images\//.test(board.thumbnail)) return null;
+  try {
+    const { data, error } = await admin.storage.from("board-images").download(`${board.id}/thumb.jpg`);
+    if (error || !data) return null;
+    return { contentType: "image/jpeg", content: Buffer.from(await data.arrayBuffer()) };
+  } catch (err) {
+    return null;
+  }
+}
+
 // Removes every file in a storage folder. With `strict`, a failure is
 // thrown rather than skipped (deleting an account must not leave files
 // behind without saying so).
@@ -181,24 +196,25 @@ export async function runBoardCleanup({ admin, sendMail, from, appUrl, secret, n
     const attachments = [
       { filename: "clean-slate.png", content: Buffer.from(BRAND_MARK_PNG_BASE64, "base64"), contentType: "image/png", cid: logoCid },
     ];
-    const shown = boards.slice(0, RULES.cardsPerEmail).map((b, i) => {
+    const shown = [];
+    for (const [i, b] of boards.slice(0, RULES.cardsPerEmail).entries()) {
       let thumbCid = null;
       if (i < RULES.previewsPerEmail) {
-        const img = dataUrlToBuffer(b.thumbnail);
+        const img = await previewOf(admin, b);
         if (img) {
           thumbCid = `board-${i + 1}@cleanslate`;
           attachments.push({ filename: `board-${i + 1}.${img.contentType === "image/png" ? "png" : "jpg"}`, cid: thumbCid, ...img });
         }
       }
-      return {
+      shown.push({
         id: b.id,
         name: b.name,
         lastActive: b.last_activity_at,
         thumbCid,
         openUrl: `${appUrl}/board/${b.id}`,
         keepUrl: keepUrl(appUrl, b.id, secret),
-      };
-    });
+      });
+    }
     const email = buildCleanupEmail({
       firstName: owner.firstName,
       boards: shown,
