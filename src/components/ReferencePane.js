@@ -19,6 +19,7 @@ import RefPage from "./RefPage";
 import { RefPagesPanel, RefSearchPanel } from "./RefPanels";
 import PalmSafeButton from "./PalmSafeButton";
 import s from "./RefPane.module.css";
+import { getSetting } from "@/lib/settings";
 
 // Sizes are for a page shown 600 px wide (they grow and shrink with it).
 const REF_W = 600;
@@ -1145,7 +1146,7 @@ export default function ReferencePane({
         if (Math.hypot(x - g.hold.x, y - g.hold.y) > 3) {
           g.hold = { x, y };
           if (g.holdTimer) clearTimeout(g.holdTimer);
-          if (g.mark.tool !== "eraser") g.holdTimer = setTimeout(() => straighten(g), HOLD_MS);
+          if (g.mark.tool !== "eraser" && getSetting("holdStraighten")) g.holdTimer = setTimeout(() => straighten(g), HOLD_MS);
         }
       }
       engine.schedule(g.pageId);

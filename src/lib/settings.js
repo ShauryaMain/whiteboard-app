@@ -46,6 +46,7 @@ const isFontList = (v) =>
 const SPEC = {
   scribbleErase: [true, isBool],
   scribbleLevel: ["normal", oneOf(["gentle", "normal", "eager"])],
+  holdStraighten: [true, isBool], // hold the pen still at the end of a line and it straightens
   eraserMode: ["precise", oneOf(["precise", "stroke"])],
   moveReturns: [true, isBool], // the Move tool goes back to the last tool after one drag
   showHints: [true, isBool], // the one-line explanation beside the tools

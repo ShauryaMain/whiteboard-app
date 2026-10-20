@@ -182,6 +182,26 @@ function distance(p1, p2) {
   return Math.hypot(p1.x - p2.x, p1.y - p2.y);
 }
 
+// Whether a stroke (world points) is close enough to a straight line to
+// snap into one when it's held still: at least 24 px long on screen, and
+// nowhere further from the line between its ends than about a fifth of
+// its length (or 8 px for a short one).
+function isRoughlyStraight(points, scale) {
+  if (!points || points.length < 2) return false;
+  const a = points[0];
+  const b = points[points.length - 1];
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  if (len * scale < 24) return false;
+  let worst = 0;
+  for (const p of points) {
+    // distance from the segment a-b
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (len * len)));
+    const d = Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y)));
+    if (d > worst) worst = d;
+  }
+  return worst * scale <= Math.max(8, len * scale * 0.2);
+}
+
 function centroid(p1, p2) {
   return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
 }
@@ -325,6 +345,9 @@ export default function Whiteboard({
 
   const pendingBroadcastPoints = useRef([]);
   const pendingStraightUpdate = useRef(null);
+  // A pen or highlighter line held still at its end straightens (see
+  // noteHoldPoint): { x, y, timer, straight }
+  const holdStraightRef = useRef(null);
   const pendingShapeUpdate = useRef(null);
   const rafId = useRef(null);
 
@@ -443,6 +466,11 @@ export default function Whiteboard({
   const [calculatorActive, setCalculatorActive] = useState(false);
   const [calculatorPos, setCalculatorPos] = useState({ x: 300, y: 200 });
   const [zoomPercent, setZoomPercent] = useState(100);
+  // "Lock zoom" (beside the zoom menu): pinching and the wheel only move
+  // the board, so a resting hand or a sloppy two-finger drag on a phone
+  // can't change the zoom. For this visit to the board only.
+  const [zoomLocked, setZoomLocked] = useState(false);
+  const zoomLockedRef = useRef(false);
 
   // ---------- who else has this board open (src/lib/boardPeople.js) ----------
   // Signed-in boards only: not the demo, not a student's board in a class.
@@ -1618,7 +1646,8 @@ export default function Whiteboard({
     const person = ref.list.find((p) => p.key === key) || ref.byKey.get(key);
     if (!person) return;
     const pane = getPaneSize();
-    const to = viewFor(person, pane, { scale: scaleRef.current }, MIN_SCALE, MAX_SCALE);
+    const keep = zoomLockedRef.current ? scaleRef.current : null;
+    const to = viewFor(person, pane, { scale: scaleRef.current }, keep || MIN_SCALE, keep || MAX_SCALE);
     if (!to) {
       flashNotice(`${person.short} hasn't got anywhere on the board yet.`, 3000);
       return;
@@ -1670,12 +1699,25 @@ export default function Whiteboard({
 
   function handleResetView() {
     panRef.current = { x: 0, y: 0 };
-    scaleRef.current = 1;
+    // with the zoom locked, only the position goes back
+    if (!zoomLockedRef.current) scaleRef.current = 1;
     fullRedraw();
-    setZoomPercent(100);
+    setZoomPercent(Math.round(scaleRef.current * 100));
+  }
+
+  function handleToggleZoomLock() {
+    const next = !zoomLockedRef.current;
+    zoomLockedRef.current = next;
+    setZoomLocked(next);
+    track("zoom_lock", { on: next });
+    flashNotice(next ? `Zoom locked at ${Math.round(scaleRef.current * 100)}%` : "Zoom unlocked", 2000);
   }
 
   function handleSetZoom(percent) {
+    if (zoomLockedRef.current) {
+      flashNotice("Zoom is locked. Tap the lock beside the zoom to unlock it.", 2600);
+      return;
+    }
     const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, percent / 100));
     const { width: paneW, height: paneH } = getPaneSize();
     const center = { x: paneW / 2, y: paneH / 2 };
@@ -4249,6 +4291,69 @@ export default function Whiteboard({
       }
     }
 
+    // ---------- hold to straighten ----------
+    // A pen or highlighter line that's held still at its end for a moment
+    // snaps into a straight line from where it started (like Notability).
+    // Keep the pen down and the end follows it, to aim the line. Only a
+    // line that's already roughly straight snaps, so a pause in the middle
+    // of a word leaves the handwriting alone.
+    const HOLD_STRAIGHT_MS = 550;
+    const HOLD_STILL_PX = 4;
+
+    function clearHoldStraight() {
+      const h = holdStraightRef.current;
+      if (h && h.timer) clearTimeout(h.timer);
+      holdStraightRef.current = null;
+    }
+
+    function noteHoldPoint(screenPt) {
+      const s = currentStroke.current;
+      if (!s || (s.tool !== "pen" && s.tool !== "highlighter")) return;
+      if (activeCompassParams.current || rulerEdgeRef.current || !getSetting("holdStraighten")) return;
+      const h = holdStraightRef.current;
+      if (h && h.straight) return;
+      if (h && Math.hypot(screenPt.x - h.x, screenPt.y - h.y) <= HOLD_STILL_PX) return;
+      if (h && h.timer) clearTimeout(h.timer);
+      const strokeId = currentStrokeId.current;
+      holdStraightRef.current = {
+        x: screenPt.x,
+        y: screenPt.y,
+        straight: false,
+        timer: setTimeout(() => straightenHeldStroke(strokeId), HOLD_STRAIGHT_MS),
+      };
+    }
+
+    function straightenHeldStroke(strokeId) {
+      const h = holdStraightRef.current;
+      const s = currentStroke.current;
+      if (!h || !s || !isDrawing.current || currentStrokeId.current !== strokeId) return;
+      h.timer = null;
+      if (!isRoughlyStraight(s.points, scaleRef.current)) return;
+      const start = s.points[0];
+      const end = s.points[s.points.length - 1];
+      h.straight = true;
+      s.points = [start, end];
+      fullRedraw();
+      // everyone watching gets the straight line now (any points still
+      // waiting to go out are part of the old wobbly one)
+      pendingBroadcastPoints.current = [];
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "stroke-straight",
+        payload: { strokeKey: `${clientId.current}-${strokeId}`, start, end },
+      });
+    }
+
+    // Once straightened, the line's end follows the pen.
+    function followStraight(screenPt) {
+      const s = currentStroke.current;
+      const start = s.points[0];
+      const end = screenToWorld(screenPt);
+      s.points = [start, end];
+      fullRedraw();
+      scheduleStraightBroadcast(start, end);
+    }
+
     function ingestPoint(screenPt, timeMs) {
       const gapPoints = lastRawScreenPos.current
         ? interpolateGap(lastRawScreenPos.current, screenPt, INTERP_MAX_STEP)
@@ -4304,6 +4409,7 @@ export default function Whiteboard({
 
     function cancelActiveDrawing() {
       if (!isDrawing.current) return;
+      clearHoldStraight();
       isDrawing.current = false;
       const finished = currentStroke.current;
       const strokeId = currentStrokeId.current;
@@ -4342,7 +4448,7 @@ export default function Whiteboard({
       const [p1, p2] = pts;
       const c = centroid(p1, p2);
       const dist = distance(p1, p2);
-      const rawScale = pz.initialScale * (dist / pz.initialDistance);
+      const rawScale = zoomLockedRef.current ? pz.initialScale : pz.initialScale * (dist / pz.initialDistance);
       const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, rawScale));
       panRef.current = {
         x: c.x - pz.worldAnchor.x * newScale,
@@ -4385,6 +4491,13 @@ export default function Whiteboard({
         // jarring, oversized jump instead of a gentle zoom step.
         const step = 0.1;
         newScale = scaleRef.current * (e.deltaY < 0 ? 1 + step : 1 - step);
+      }
+
+      if (newScale !== null && zoomLockedRef.current) {
+        // zoom locked: a pinch on the trackpad does nothing, and a mouse
+        // wheel scrolls the board instead
+        if (e.ctrlKey) return;
+        newScale = null;
       }
 
       if (newScale !== null) {
@@ -4949,6 +5062,7 @@ export default function Whiteboard({
         return;
       }
 
+      clearHoldStraight();
       isDrawing.current = true;
       activePointerId.current = e.pointerId;
       activePointerType.current = e.pointerType;
@@ -5207,6 +5321,11 @@ export default function Whiteboard({
 
       if (touchDrivenStrokeActive.current) return;
 
+      if (holdStraightRef.current && holdStraightRef.current.straight) {
+        followStraight(screenPos);
+        return;
+      }
+
       const coalesced = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
       const eventsToProcess = coalesced.length > 0 ? coalesced : [e];
 
@@ -5220,6 +5339,7 @@ export default function Whiteboard({
 
       drawNewSegment(ctxRef.current, currentStroke.current, newCount);
       scheduleBroadcastFlush();
+      noteHoldPoint(screenPos);
     }
 
     function handleTouchMove(e) {
@@ -5243,15 +5363,23 @@ export default function Whiteboard({
       const before = currentStroke.current.points.length;
       const t = e.timeStamp || performance.now();
 
+      let lastSp = null;
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i];
-        const sp = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
-        ingestPoint(sp, t);
+        lastSp = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+        if (holdStraightRef.current && holdStraightRef.current.straight) continue;
+        ingestPoint(lastSp, t);
+      }
+      if (!lastSp) return;
+      if (holdStraightRef.current && holdStraightRef.current.straight) {
+        followStraight(lastSp);
+        return;
       }
 
       const newCount = currentStroke.current.points.length - before;
       drawNewSegment(ctxRef.current, currentStroke.current, newCount);
       scheduleBroadcastFlush();
+      noteHoldPoint(lastSp);
     }
 
     function handlePointerUp(e) {
@@ -5396,6 +5524,7 @@ export default function Whiteboard({
 
       if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current) return;
+      clearHoldStraight();
       isDrawing.current = false;
       activePointerId.current = null;
       activePointerType.current = null;
@@ -6802,7 +6931,7 @@ export default function Whiteboard({
         )}
           </div>
         )}
-        <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} />
+        <ZoomMenu zoomPercent={zoomPercent} onSelect={handleSetZoom} locked={zoomLocked} onToggleLock={handleToggleZoomLock} />
       </div>
       </div>
     </div>

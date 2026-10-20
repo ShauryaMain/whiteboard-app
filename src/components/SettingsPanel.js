@@ -85,6 +85,7 @@ const WHERE_TEXT = {
 export default function SettingsPanel({ user, signOut, onClose, initialTab = "board" }) {
   const scribbleErase = useSetting("scribbleErase");
   const scribbleLevel = useSetting("scribbleLevel");
+  const holdStraighten = useSetting("holdStraighten");
   const eraserMode = useSetting("eraserMode");
   const moveReturns = useSetting("moveReturns");
   const showHints = useSetting("showHints");
@@ -231,6 +232,9 @@ export default function SettingsPanel({ user, signOut, onClose, initialTab = "bo
                 options={[["gentle", "Gentle"], ["normal", "Normal"], ["eager", "Eager"]]}
                 onChange={(v) => setSetting("scribbleLevel", v)}
               />
+            </Row>
+            <Row label="Hold to straighten" sub="Draw a line and keep the pen still at the end: it snaps straight. Keep the pen down to aim it.">
+              <Switch on={holdStraighten} onChange={(v) => setSetting("holdStraighten", v)} label="Hold to straighten" />
             </Row>
             <Row label="Eraser" info="eraser" onInfo={openExplainer}>
               <Choice

@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Lock, LockOpen } from "lucide-react";
 
 const ZOOM_LEVELS = [25, 50, 75, 100, 150, 200, 300];
 
-export default function ZoomMenu({ zoomPercent, onSelect }) {
+// The zoom level (top right of the board), and a lock beside it: with the
+// zoom locked, pinching and the wheel only move the board (handy on a
+// phone, where a two-finger drag easily zooms by accident).
+export default function ZoomMenu({ zoomPercent, onSelect, locked = false, onToggleLock }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -21,7 +24,7 @@ export default function ZoomMenu({ zoomPercent, onSelect }) {
 
   return (
     <div ref={containerRef} style={containerStyle}>
-      {open && (
+      {open && !locked && (
         <div style={dropdownStyle}>
           {ZOOM_LEVELS.map((level) => (
             <button
@@ -41,14 +44,45 @@ export default function ZoomMenu({ zoomPercent, onSelect }) {
           ))}
         </div>
       )}
-      <button onClick={() => setOpen((v) => !v)} style={buttonStyle}>
-        <span>{zoomPercent}%</span>
-        <ChevronDown
-          size={14}
-          strokeWidth={2}
-          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
-        />
-      </button>
+      <div style={rowStyle}>
+        {onToggleLock && (
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onToggleLock();
+            }}
+            style={locked ? { ...lockStyle, ...lockOnStyle } : lockStyle}
+            aria-pressed={locked}
+            aria-label={locked ? "Unlock zoom" : "Lock zoom"}
+            title={locked ? "Zoom locked: tap to unlock" : "Lock the zoom where it is"}
+          >
+            {locked ? <Lock size={16} strokeWidth={2.2} aria-hidden="true" /> : <LockOpen size={16} strokeWidth={2.2} aria-hidden="true" />}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            if (locked) {
+              onSelect(zoomPercent); // says the zoom is locked
+              return;
+            }
+            setOpen((v) => !v);
+          }}
+          style={locked ? { ...buttonStyle, ...buttonLockedStyle } : buttonStyle}
+          aria-label={locked ? `Zoom ${zoomPercent}%, locked` : `Zoom ${zoomPercent}%`}
+          aria-expanded={locked ? undefined : open}
+        >
+          <span>{zoomPercent}%</span>
+          {!locked && (
+            <ChevronDown
+              size={14}
+              strokeWidth={2}
+              style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+            />
+          )}
+        </button>
+      </div>
     </div>
   );
 }
@@ -80,6 +114,41 @@ const buttonStyle = {
   WebkitUserSelect: "none",
   userSelect: "none",
   touchAction: "manipulation",
+};
+
+const rowStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+};
+
+const lockStyle = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: 40,
+  height: 40,
+  padding: 0,
+  borderRadius: 999,
+  border: "1.5px solid var(--ink-line)",
+  background: "rgba(255,255,255,0.96)",
+  boxShadow: "var(--shadow-hard-sm)",
+  color: "var(--ink-2)",
+  cursor: "pointer",
+  WebkitTouchCallout: "none",
+  WebkitUserSelect: "none",
+  userSelect: "none",
+  touchAction: "manipulation",
+};
+
+const lockOnStyle = {
+  background: "var(--ink-line)",
+  color: "#fff",
+};
+
+const buttonLockedStyle = {
+  cursor: "default",
+  background: "var(--accent-soft)",
 };
 
 const dropdownStyle = {
