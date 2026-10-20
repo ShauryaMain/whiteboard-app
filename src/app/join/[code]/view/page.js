@@ -21,6 +21,7 @@ import {
 } from "@/lib/classLayout";
 import d from "@/components/Dialog.module.css";
 import p from "@/components/Paper.module.css";
+import { landingLink } from "@/lib/links";
 
 // This route is where a student lands *after* the join handshake in
 // ../page.js resolves (it navigates here with ?board=<id>). It shows two
@@ -603,6 +604,9 @@ function JoinCodeViewInner() {
                 Leave
               </button>
             </div>
+            <a href={landingLink("student-ended")} target="_blank" rel="noopener" className={p.madeWith}>
+              Made with Clean Slate, free for teachers and tutors
+            </a>
           </div>
         </div>
       )}

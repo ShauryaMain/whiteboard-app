@@ -9,7 +9,7 @@ import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import SplitDivider from "./SplitDivider";
 import PalmSafeButton from "./PalmSafeButton";
-import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine, LocateFixed, PictureInPicture2, LayoutDashboard } from "lucide-react";
+import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine, LocateFixed, PictureInPicture2, LayoutDashboard, X } from "lucide-react";
 import ReferencePane from "./ReferencePane";
 import RefPagePicker from "./RefPagePicker";
 import ClipWindows from "./ClipWindows";
@@ -106,6 +106,8 @@ import {
   CLIPBOARD_MARKER, prepareImageFile, makeInlineImage, imageFilesFrom, writeClipboardMarker, readSystemClipboard,
 } from "@/lib/boardObjects";
 import { track } from "@/lib/track";
+import { landingLink } from "@/lib/links";
+import { askToShareNow } from "@/lib/shareAsk";
 import chrome from "./StudioChrome.module.css";
 import cls from "./Classroom.module.css";
 import {
@@ -570,6 +572,10 @@ export default function Whiteboard({
   const strokeEraseRef = useRef(null);
   // "Scribbled out … · Undo" note after a scratch-out
   const [scratchNotice, setScratchNotice] = useState(null);
+  // "Know another teacher who'd like this?" after a real class:
+  // null, "ask" or "copied"
+  const [shareNotice, setShareNotice] = useState(null);
+  const shareTimerRef = useRef(null);
   const scratchEntryRef = useRef(null);
   const scratchTimerRef = useRef(null);
   // Saves in flight / waiting to retry, and what's arrived or left the
@@ -2567,6 +2573,35 @@ export default function Whiteboard({
     router.push(`/board/${boardId}/live`);
   }
 
+  // ---------- "Know another teacher who'd like this?" ----------
+
+  function showShareNotice(kind, ms) {
+    setShareNotice(kind);
+    if (shareTimerRef.current) clearTimeout(shareTimerRef.current);
+    shareTimerRef.current = setTimeout(() => setShareNotice(null), ms);
+  }
+
+  async function handleCopyShareLink() {
+    const link = landingLink("teacher-share");
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(link);
+      copied = true;
+    } catch (err) {
+      copied = false;
+    }
+    if (!copied) {
+      window.prompt("Copy this link to send to them:", link);
+    }
+    track("share_link_copied", { from: "class-end" });
+    showShareNotice("copied", 4000);
+  }
+
+  function handleCloseShareNotice() {
+    if (shareTimerRef.current) clearTimeout(shareTimerRef.current);
+    setShareNotice(null);
+  }
+
   async function handleEndLiveClass() {
     if (!liveClassCode) return;
     if (!demo && !window.confirm("End the live class? Students currently watching will be disconnected.\n\nTheir boards can't be saved afterwards: use Save boards (in the Students list) first if you want to keep them.")) return;
@@ -2578,6 +2613,7 @@ export default function Whiteboard({
     if (!demo) {
       track("live_class_ended", { students: classRoster.length });
       closeClass(liveClassCode);
+      if (classRoster.length > 0 && askToShareNow()) showShareNotice("ask", 15000);
     }
     forgetClass(liveClassCode);
     clearClassCode(boardId);
@@ -6614,7 +6650,7 @@ export default function Whiteboard({
           </div>,
             document.body
           )}
-        {(showPencilOnlyNotice || showPencilTip || boardNotice || scratchNotice || catchingUp || unsaved > 0 || restoredNotice || (saveProblem && !saveProblemTold)) && (
+        {(showPencilOnlyNotice || showPencilTip || boardNotice || shareNotice || scratchNotice || catchingUp || unsaved > 0 || restoredNotice || (saveProblem && !saveProblemTold)) && (
           <div
             style={{
               position: "fixed",
@@ -6645,6 +6681,22 @@ export default function Whiteboard({
             {boardNotice && (
               <div role="status" className={chrome.boardNotice}>
                 {boardNotice}
+              </div>
+            )}
+            {shareNotice === "ask" && (
+              <div role="status" className={`${chrome.boardNotice} ${chrome.undoNotice}`}>
+                <span>Class ended. Know another teacher who&apos;d find this useful?</span>
+                <button type="button" className={chrome.undoNoticeBtn} onClick={handleCopyShareLink}>
+                  Copy a link
+                </button>
+                <button type="button" className={chrome.noticeClose} onClick={handleCloseShareNotice} aria-label="Close">
+                  <X size={16} aria-hidden="true" />
+                </button>
+              </div>
+            )}
+            {shareNotice === "copied" && (
+              <div role="status" className={chrome.boardNotice}>
+                Link copied. Paste it in a message to them.
               </div>
             )}
             {restoredNotice && (

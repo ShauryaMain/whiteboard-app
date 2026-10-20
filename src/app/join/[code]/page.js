@@ -7,6 +7,7 @@ import { getOrCreateStudentId } from "@/lib/classroomCode";
 import { readyStudent, liveChannel } from "@/lib/liveMode";
 import d from "@/components/Dialog.module.css";
 import p from "@/components/Paper.module.css";
+import { landingLink } from "@/lib/links";
 
 // Save this file as: src/app/join/[code]/page.js
 // Phase 1: confirms the code is live and shows a waiting screen.
@@ -142,6 +143,9 @@ export default function JoinCodePage() {
           <button type="button" className={`${d.btn} ${d.btnPrimary}`} onClick={() => router.push("/join")} style={{ marginTop: 6 }}>
             Join another class
           </button>
+          <a href={landingLink("student-ended")} target="_blank" rel="noopener" className={p.madeWith}>
+            Made with Clean Slate, free for teachers and tutors
+          </a>
         </div>
       </div>
     );

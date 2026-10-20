@@ -694,3 +694,26 @@
   gap: 10px;
   margin-top: 6px;
 }
+
+/* "Made with Clean Slate" under a student's class-ended note */
+.madeWith {
+  display: inline-block;
+  margin-top: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.madeWith:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (hover: hover) {
+  .madeWith:hover {
+    color: var(--ink);
+  }
+}

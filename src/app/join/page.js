@@ -4,7 +4,7 @@ import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import d from "@/components/Dialog.module.css";
 import p from "@/components/Paper.module.css";
-import { LANDING_URL } from "@/lib/links";
+import { landingLink } from "@/lib/links";
 
 // Save this file as: src/app/join/page.js
 // No auth required to join a class — matches the low-friction,
@@ -47,7 +47,7 @@ function JoinForm() {
 
   return (
     <div className={p.screen}>
-      <a href={LANDING_URL} className={p.brand} aria-label="Clean Slate home page" title="About Clean Slate">
+      <a href={landingLink("join-logo")} className={p.brand} aria-label="Clean Slate home page" title="About Clean Slate">
         <span className={p.brandMark} aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 17c3-6 6-9 8-9s1 6 3 6 3-3 5-5" />

@@ -36,7 +36,35 @@ export const EVENTS = [
   "live_class_started", // a real live class ({ })
   "live_class_ended", // ...and how many students joined ({ students })
   "phone_link_copied", // a phone visitor copied the demo's link
+  "share_link_copied", // a teacher copied a link to pass on to a colleague ({ from })
 ];
+
+// ?ref=... on the link that brought the visitor (e.g. ?ref=mswb-reply for
+// a reply on Reddit). It goes with every event of this visit as `ref`,
+// and the first one this browser ever came with is kept as `first_ref`,
+// so PostHog can show which links bring people who go on to sign in.
+const REF_RE = /^[A-Za-z0-9_-]{1,40}$/;
+export function readRef(search) {
+  let ref = null;
+  try {
+    ref = new URLSearchParams(search || "").get("ref");
+  } catch (err) {
+    ref = null;
+  }
+  if (!ref || !REF_RE.test(ref)) return null;
+  return ref.toLowerCase();
+}
+
+function rememberRef(posthog) {
+  const ref = readRef(window.location.search);
+  if (!ref) return;
+  try {
+    posthog.register_for_session({ ref });
+    posthog.register_once({ first_ref: ref });
+  } catch (err) {
+    // an older PostHog library: the address still carries it
+  }
+}
 
 let loading = null;
 let ph = null; // the PostHog library, once it's loaded
@@ -114,6 +142,7 @@ export function startTracking() {
         before_send: scrubEvent,
       });
       ph = posthog;
+      rememberRef(posthog);
       if (forgetPending) {
         forgetPending = false;
         forgetTeacher();
