@@ -29,6 +29,22 @@ export const RULES = {
 
 const iso = (ms) => new Date(ms).toISOString();
 
+// Notebooks are kept for good: the clean-up never warns about or deletes
+// one. `kind` comes with supabase/2026-11-notebooks.sql; before that file
+// has been run there are no notebooks, and the filter is left off.
+let kindColumn = true;
+const boardsOnly = (query) => (kindColumn ? query.neq("kind", "notebook") : query);
+const missingKind = (error) => !!error && (error.code === "42703" || /\bkind\b/.test(String(error.message || "")));
+
+async function runBoardsQuery(build) {
+  let result = await build();
+  if (result.error && kindColumn && missingKind(result.error)) {
+    kindColumn = false;
+    result = await build();
+  }
+  return result;
+}
+
 function dataUrlToBuffer(url) {
   const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(url || "");
   if (!match) return null;
@@ -84,14 +100,17 @@ export async function emptyFolder(admin, bucket, folder, { strict = false } = {}
 // an error message.
 async function deleteBoard(admin, board, cutoffs) {
   const guarded = () =>
-    admin
-      .from("boards")
-      .delete()
-      .eq("id", board.id)
-      .not("deletion_warned_at", "is", null)
-      .lte("deletion_warned_at", cutoffs.notice)
-      .lte("last_activity_at", cutoffs.inactive)
-      .select("id");
+    runBoardsQuery(() =>
+      boardsOnly(
+        admin
+          .from("boards")
+          .delete()
+          .eq("id", board.id)
+          .not("deletion_warned_at", "is", null)
+          .lte("deletion_warned_at", cutoffs.notice)
+          .lte("last_activity_at", cutoffs.inactive)
+      ).select("id")
+    );
 
   let result = await guarded();
   if (result.error && result.error.code === "23503") {
@@ -132,14 +151,19 @@ export async function runBoardCleanup({ admin, sendMail, from, appUrl, secret, n
   };
 
   // ---- 1. delete boards whose warning has run out ----
-  const due = await admin
-    .from("boards")
-    .select("id, name, owner_id, last_activity_at, deletion_warned_at")
-    .not("deletion_warned_at", "is", null)
-    .lte("deletion_warned_at", cutoffs.notice)
-    .lte("last_activity_at", cutoffs.inactive)
-    .order("last_activity_at", { ascending: true })
-    .limit(RULES.maxDeletesPerRun);
+  kindColumn = true;
+  const due = await runBoardsQuery(() =>
+    boardsOnly(
+      admin
+        .from("boards")
+        .select("id, name, owner_id, last_activity_at, deletion_warned_at")
+        .not("deletion_warned_at", "is", null)
+        .lte("deletion_warned_at", cutoffs.notice)
+        .lte("last_activity_at", cutoffs.inactive)
+    )
+      .order("last_activity_at", { ascending: true })
+      .limit(RULES.maxDeletesPerRun)
+  );
   if (due.error) {
     const missing = due.error.code === "42703" || /last_activity_at|deletion_warned_at/.test(due.error.message || "");
     report.errors.push(missing ? "not_set_up: run supabase/board-cleanup.sql first" : `listing boards: ${due.error.message}`);
@@ -158,14 +182,18 @@ export async function runBoardCleanup({ admin, sendMail, from, appUrl, secret, n
   }
 
   // ---- 2. warn owners of boards unused for 23+ days ----
-  const toWarn = await admin
-    .from("boards")
-    .select("id, name, owner_id, last_activity_at, thumbnail")
-    .is("deletion_warned_at", null)
-    .lte("last_activity_at", cutoffs.warn)
-    .order("owner_id", { ascending: true })
-    .order("last_activity_at", { ascending: true })
-    .limit(RULES.maxBoardsScanned);
+  const toWarn = await runBoardsQuery(() =>
+    boardsOnly(
+      admin
+        .from("boards")
+        .select("id, name, owner_id, last_activity_at, thumbnail")
+        .is("deletion_warned_at", null)
+        .lte("last_activity_at", cutoffs.warn)
+    )
+      .order("owner_id", { ascending: true })
+      .order("last_activity_at", { ascending: true })
+      .limit(RULES.maxBoardsScanned)
+  );
   if (toWarn.error) {
     report.errors.push(`listing boards to warn: ${toWarn.error.message}`);
     return report;

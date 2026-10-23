@@ -18,6 +18,7 @@
 //    student's board, which aren't in the database).
 
 import { supabase } from "./supabaseClient";
+import { unpackStroke } from "./inkPack";
 
 const PAGE = 1000;
 const RECENT_MS = 60 * 1000; // anything seen/removed this recently is trusted locally
@@ -68,7 +69,8 @@ export function rowToText(r) {
 }
 
 const PARTS = {
-  strokes: { columns: "id, data", map: (r) => ({ ...r.data, id: r.id }), label: "strokes" },
+  // (a notebook's strokes are saved packed: inkPack.js)
+  strokes: { columns: "id, data", map: (r) => ({ ...unpackStroke(r.data), id: r.id }), label: "strokes" },
   texts: { columns: "id, x, y, text, color, font_size, width, rotation", map: rowToText, label: "texts" },
   images: {
     columns: "id, x, y, width, height, src, source",
@@ -159,6 +161,17 @@ export async function openBoard(boardId, client = supabase) {
   } catch (err) {
     return null;
   }
+}
+
+// Rows as the database sends them ({ strokes, texts, images }) as the
+// board's own objects (a notebook opened from its link reads them this way).
+export function contentsFromRows(data) {
+  const list = (v) => (Array.isArray(v) ? v : []);
+  return {
+    strokes: list(data && data.strokes).map(PARTS.strokes.map),
+    texts: list(data && data.texts).map(PARTS.texts.map),
+    images: list(data && data.images).map(PARTS.images.map),
+  };
 }
 
 // Everything on a board that changed after `since` (the server's clock):
@@ -426,6 +439,22 @@ function emit(tracker) {
 export function subscribeUnsaved(tracker, listener) {
   tracker.listeners.add(listener);
   return () => tracker.listeners.delete(listener);
+}
+
+// Changes the saves waiting to be tried again: rework(table, row) returns
+// the row to save instead, or null to forget it (a notebook's pages moved
+// or went: see Whiteboard.js).
+export function reworkQueued(tracker, rework) {
+  let changed = false;
+  for (const [id, entry] of tracker.failed) {
+    if (!entry || !entry.row) continue;
+    const next = rework(entry.table, entry.row);
+    if (next === entry.row) continue;
+    changed = true;
+    if (next) entry.row = next;
+    else tracker.failed.delete(id);
+  }
+  if (changed) emit(tracker);
 }
 
 export function unsavedCount(tracker) {

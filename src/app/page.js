@@ -13,6 +13,10 @@ import FeedbackModal from "@/components/FeedbackModal";
 import WhatsNew from "@/components/WhatsNew";
 import DemoCarryOver from "@/components/DemoCarryOver";
 import SettingsPanel from "@/components/SettingsPanel";
+import NotebookShelf from "@/components/NotebookShelf";
+import NotebookShare from "@/components/NotebookShare";
+import LessonCarryOver from "@/components/LessonCarryOver";
+import { takeReturn } from "@/lib/returnTo";
 import { displayNameFor, subscribeSettings } from "@/lib/settings";
 import { track } from "@/lib/track";
 import s from "./Home.module.css";
@@ -21,10 +25,14 @@ import d from "@/components/Dialog.module.css";
 
 const BASE_COLUMNS = "id, name, created_at, owner_id, shared_with";
 const FULL_COLUMNS = BASE_COLUMNS + ", background, thumbnail";
+const KIND_COLUMNS = FULL_COLUMNS + ", kind";
 
 // Loads boards with their preview + paper type when those (newer) columns
 // exist, and without them when they don't, so the list always works.
 async function selectBoards(build) {
+  // (with `kind`, so notebooks can be left out, once the database has it)
+  const withKind = await build(supabase.from("boards").select(KIND_COLUMNS));
+  if (!withKind.error) return withKind;
   let full = await build(supabase.from("boards").select(FULL_COLUMNS));
   // An expired sign-in comes back as 401: refresh it once and try again.
   if (full.error && (full.status === 401 || /jwt/i.test(full.error.message || ""))) {
@@ -80,6 +88,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [shareTarget, setShareTarget] = useState(null);
+  const [nbShareTarget, setNbShareTarget] = useState(null); // a notebook being shared
   const [renameTarget, setRenameTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [menuFor, setMenuFor] = useState(null); // board id whose ⋯ menu is open
@@ -133,9 +142,11 @@ export default function Home() {
       if (shared.error) console.error("Error loading shared boards:", shared.error);
       setPaged(false);
       setLoadError(owned.error ? "Couldn't load your boards. Check your connection and refresh the page." : "");
+      // (notebooks have their own shelf)
+      const boardsOnly = (list) => list.filter((b) => b.kind !== "notebook");
       if (!owned.error && owned.data) {
-        setMyBoards(owned.data);
-        setMyTotal(owned.data.length);
+        setMyBoards(boardsOnly(owned.data));
+        setMyTotal(boardsOnly(owned.data).length);
       }
       if (!shared.error && shared.data) setSharedBoards(shared.data.filter((b) => b.owner_id !== user.id));
       setMoreMine(false);
@@ -246,6 +257,20 @@ export default function Home() {
     }
   }
 
+  // Sharing a notebook from the shelf: by link or by email (NotebookShare
+  // reads how it's shared now).
+  function shareNotebook(nb) {
+    setNbShareTarget(nb);
+  }
+
+  // Signed in from a page that asked to be come back to (a notebook opened
+  // from its link, say: see src/lib/returnTo.js).
+  useEffect(() => {
+    if (!user) return;
+    const back = takeReturn();
+    if (back) router.replace(back);
+  }, [user, router]);
+
   function handleShare(email) {
     const board = shareTarget;
     if (!board) return;
@@ -350,7 +375,7 @@ export default function Home() {
         </a>
         <label className={s.search}>
           <Search size={16} aria-hidden="true" />
-          <input type="search" placeholder="Search boards" aria-label="Search boards" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input type="search" placeholder="Search" aria-label="Search notebooks and boards" value={query} onChange={(e) => setQuery(e.target.value)} />
         </label>
         <div className={s.spacer} />
         {/* Announced updates: the button, and the pop-up that opens by itself after a new one */}
@@ -418,6 +443,9 @@ export default function Home() {
       </header>
 
       <main className={s.main}>
+        {/* Notebooks (once the database has them: supabase/2026-11-notebooks.sql) */}
+        <NotebookShelf user={user} query={query} onOpen={(id) => router.push(`/board/${id}`)} onShare={shareNotebook} />
+
         <div className={s.headRow}>
           <div>
             <h1 className={s.heading}>Your boards</h1>
@@ -475,6 +503,9 @@ export default function Home() {
       {/* A demo board someone asked to keep before signing in is saved to
           their account here, then opened. */}
       <DemoCarryOver userId={user?.id} createdAt={user?.created_at} />
+      {/* A lesson a student asked to keep (when their class ended) becomes a
+          notebook here, then opens. */}
+      <LessonCarryOver userId={user?.id} />
 
       {feedbackOpen && (
         <FeedbackModal userEmail={user?.email} boardCount={myTotal ?? myBoards.length} onClose={() => setFeedbackOpen(false)} />
@@ -487,6 +518,7 @@ export default function Home() {
       {shareTarget && (
         <ShareModal board={shareTarget} onClose={() => setShareTarget(null)} onShare={handleShare} onRemove={handleUnshare} />
       )}
+      {nbShareTarget && <NotebookShare boardId={nbShareTarget.id} name={nbShareTarget.name} onClose={() => setNbShareTarget(null)} />}
 
       {renameTarget && (
         <RenameDialog board={renameTarget} onClose={() => setRenameTarget(null)} onSave={(name) => handleRename(renameTarget, name)} />

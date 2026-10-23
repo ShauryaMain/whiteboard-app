@@ -2,12 +2,17 @@
 
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Check, Columns2, Hand, MonitorUp, Pause, Rows2, Send } from "lucide-react";
+import { BookPlus, Check, Columns2, Hand, MonitorUp, Pause, Rows2, Send } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { readyStudent, liveChannel } from "@/lib/liveMode";
 import ClassroomBoardViewer from "@/components/ClassroomBoardViewer";
 import Whiteboard from "@/components/Whiteboard";
 import SplitDivider from "@/components/SplitDivider";
+import SignInSheet from "@/components/SignInSheet";
+import { contentsFromRows } from "@/lib/boardSync";
+import { graphsOf } from "@/lib/graphList";
+import { lessonHasWork, stashLesson } from "@/lib/lessonKeep";
+import { track } from "@/lib/track";
 import {
   myClassBoard, markCommentsSeen, studentBoardId, NO_COMMENTS, noComments, NO_TEACHER_LAYER, noTeacherLayer,
 } from "@/lib/localBoard";
@@ -99,6 +104,12 @@ function JoinCodeViewInner() {
 
   // After the class has ended: have they chosen to keep looking at their board?
   const [staying, setStaying] = useState(false);
+  // "Keep this lesson" (src/lib/lessonKeep.js): the teacher's board as it
+  // was when the class ended, and the sign-in sheet.
+  const teacherViewRef = useRef(null);
+  const lessonTeacherRef = useRef(null);
+  const [keepSheet, setKeepSheet] = useState(false);
+  const [keepNote, setKeepNote] = useState("");
   const ended = status.ended;
   const afterClass = ended && staying;
   // The teacher has been gone from the class for a while without ending it
@@ -236,6 +247,10 @@ function JoinCodeViewInner() {
       });
     };
     channel.on("broadcast", { event: "class-ended" }, () => {
+      // (the teacher's board is put away now: what was on it is kept, for
+      // "Keep this lesson")
+      const view = teacherViewRef.current;
+      if (view && view.contents) lessonTeacherRef.current = view.contents();
       setClassStatus(classCode, { ended: true, hand: false, handAt: 0 });
       setControl(NO_CONTROL);
     });
@@ -322,6 +337,49 @@ function JoinCodeViewInner() {
     const room = roomRef.current;
     if (room && room.joined) room.tell();
   }, [status.hand, status.done]);
+
+  // The lesson as it stands: the teacher's board (as it was when the class
+  // ended) and this student's own, with what the teacher put on it.
+  function lessonNow() {
+    const t = lessonTeacherRef.current || (teacherViewRef.current && teacherViewRef.current.contents ? teacherViewRef.current.contents() : null);
+    const teacher = t ? { strokes: t.strokes || [], texts: t.texts || [], images: t.images || [], graphs: graphsOf(t.grid) } : null;
+    let own = null;
+    if (mine && mine.backend && mine.backend.snapshot) {
+      const snap = mine.backend.snapshot();
+      const rows = contentsFromRows({ strokes: snap.strokes, texts: snap.texts });
+      const layer = (snap.teacher && typeof snap.teacher === "object" ? snap.teacher : {}) || {};
+      const q = layer.question || null;
+      own = {
+        strokes: [...(q ? q.strokes || [] : []), ...(Array.isArray(layer.ink) ? layer.ink : []), ...rows.strokes],
+        texts: [...(q ? q.texts || [] : []), ...rows.texts],
+        images: q ? q.images || [] : [],
+        graphs: [...(q ? graphsOf(q.grid) : []), ...graphsOf(snap.board && snap.board.grid_config)],
+      };
+    }
+    return { name: (t && t.name) || "", background: t ? t.background : "blank", teacher, mine: own };
+  }
+
+  // "Keep this lesson": a copy kept on this device, then signing in (once
+  // signed in, the home page makes it into a notebook: LessonCarryOver.js).
+  async function keepLesson() {
+    const lesson = lessonNow();
+    if (!lessonHasWork({ teacher: lesson.teacher, mine: lesson.mine })) {
+      setKeepNote("There's nothing on the boards to keep.");
+      return;
+    }
+    if (!stashLesson({ ...lesson, classCode })) {
+      setKeepNote("This device couldn't keep a copy (its storage is full or switched off).");
+      return;
+    }
+    track("lesson_keep_pressed", {});
+    // already signed in with an account of their own: straight there
+    const u = await signedInUser();
+    if (u && !u.is_anonymous) {
+      window.location.assign("/");
+      return;
+    }
+    setKeepSheet(true);
+  }
 
   // Leaving the class: the hand comes down and "done" is cleared, so
   // neither is still set if they join the same class again.
@@ -421,6 +479,9 @@ function JoinCodeViewInner() {
             <span className={p.tabTitle}>My board</span>
             <span className={p.tabNote} style={{ marginLeft: 0 }}>class ended</span>
             <span className={p.tabSpacer} />
+            <button type="button" className={`${p.tab} ${p.tabOn}`} onClick={keepLesson} data-keep-lesson="bar">
+              <BookPlus size={16} aria-hidden="true" /> Keep this lesson
+            </button>
             <button type="button" className={p.tab} onClick={leave}>
               Leave
             </button>
@@ -524,7 +585,7 @@ function JoinCodeViewInner() {
       >
         {/* Once the class has ended the teacher's board is disconnected. */}
         <div style={paneStyle("master")} inert={watchingSpot || (!both && view !== "master")}>
-          {!ended && <ClassroomBoardViewer boardId={boardId} onLeave={leave} />}
+          {!ended && <ClassroomBoardViewer ref={teacherViewRef} boardId={boardId} onLeave={leave} />}
         </div>
         {both && (
           <SplitDivider
@@ -589,18 +650,26 @@ function JoinCodeViewInner() {
         )}
       </div>
 
-      {ended && !staying && (
+      {ended && !staying && !keepSheet && (
         <div className={p.endedOverlay}>
           <div className={p.sticky} role="alertdialog" aria-labelledby="class-ended-title" aria-describedby="class-ended-text">
             <h1 className={p.stickyTitle} id="class-ended-title">This class has ended</h1>
             <p className={p.stickyText} id="class-ended-text">
-              Your teacher has finished the lesson. You can still look at your own board.
+              Your teacher has finished the lesson. Keep it in a notebook of your own to revise from, or look at your board.
             </p>
+            <button type="button" className={`${d.btn} ${d.btnPrimary}`} onClick={keepLesson} autoFocus data-keep-lesson="ended">
+              <BookPlus size={17} aria-hidden="true" /> Keep this lesson
+            </button>
+            {keepNote && (
+              <p className={p.stickyText} role="alert" style={{ marginTop: 8 }}>
+                {keepNote}
+              </p>
+            )}
             <div className={p.endedButtons}>
               <button type="button" className={d.btn} onClick={() => setStaying(true)}>
                 Look at my board
               </button>
-              <button type="button" className={`${d.btn} ${d.btnPrimary}`} onClick={leave} autoFocus>
+              <button type="button" className={d.btn} onClick={leave}>
                 Leave
               </button>
             </div>
@@ -610,8 +679,24 @@ function JoinCodeViewInner() {
           </div>
         </div>
       )}
+      {keepNote && afterClass && (
+        <div className={p.classToast} role="alert">
+          <span>{keepNote}</span>
+        </div>
+      )}
+      {keepSheet && <SignInSheet trigger="lesson" onKeep={() => true} onClose={() => setKeepSheet(false)} />}
     </div>
   );
+}
+
+// Who's signed in on this device (null if nobody, or it can't be told).
+async function signedInUser() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data && data.session ? data.session.user : null;
+  } catch (err) {
+    return null;
+  }
 }
 
 // The student's board never changes once made, so there is nothing to

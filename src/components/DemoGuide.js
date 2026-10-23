@@ -222,10 +222,18 @@ export default function DemoGuide({ kind, restored, classTourRunning, classFinis
       if (copiedTimer.current) clearTimeout(copiedTimer.current);
       copiedTimer.current = setTimeout(() => setCopied(false), 2500);
     };
+    // (some app windows have no pop-ups at all: then nothing happens)
+    const ask = () => {
+      try {
+        window.prompt("Copy this link:", url);
+      } catch (err) {
+        // nothing more to try
+      }
+    };
     try {
-      navigator.clipboard.writeText(url).then(done, () => window.prompt("Copy this link:", url));
+      navigator.clipboard.writeText(url).then(done, ask);
     } catch (err) {
-      window.prompt("Copy this link:", url);
+      ask();
     }
   }
 

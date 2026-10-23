@@ -9,7 +9,7 @@ import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import SplitDivider from "./SplitDivider";
 import PalmSafeButton from "./PalmSafeButton";
-import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine, LocateFixed, PictureInPicture2, LayoutDashboard, X } from "lucide-react";
+import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine, LocateFixed, PictureInPicture2, LayoutDashboard, X, Plus, GraduationCap } from "lucide-react";
 import ReferencePane from "./ReferencePane";
 import RefPagePicker from "./RefPagePicker";
 import ClipWindows from "./ClipWindows";
@@ -54,9 +54,9 @@ import {
   REF_EVENTS, REF_MAX_PICK, REF_MAX_PAGES, REF_MAX_UPLOAD_BYTES, REF_MAX_READ_BYTES,
 } from "@/lib/refDoc";
 import { loadReference, saveReferenceDoc, markRow, deleteMarkRows, deleteAllMarks, isMissing as isMissingTable, MARKS_TABLE } from "@/lib/refStore";
-import { buildPdf } from "@/lib/refPdf";
+import { buildPdf, openPdfBytes, closePdf, pageBaseSize, drawPage } from "@/lib/refPdf";
 import { notePenActivity, msSincePenActivity } from "@/lib/penActivity";
-import { applyBackground, normalizeBackground, isDarkBackground } from "@/lib/boardBackground";
+import { applyBackground, normalizeBackground, isDarkBackground, parseBackground } from "@/lib/boardBackground";
 import { inkOn } from "@/lib/inkColor";
 import { drawText, textBoxHeight, plainText, encodeText, decodeText } from "@/lib/richText";
 import { subscribeFonts, uploadFont } from "@/lib/fonts";
@@ -90,6 +90,7 @@ import {
   syncSince,
   touchBoard,
   unsavedCount,
+  reworkQueued,
 } from "@/lib/boardSync";
 import { useLiveMode, liveChannel, openClassReliably, closeClass } from "@/lib/liveMode";
 import { createSender, wholeStroke, cleanIncomingStroke } from "@/lib/liveSend";
@@ -108,6 +109,19 @@ import {
 import { track } from "@/lib/track";
 import { landingLink } from "@/lib/links";
 import { askToShareNow } from "@/lib/shareAsk";
+import { packStroke, unpackStroke, isPacked } from "@/lib/inkPack";
+import {
+  normalizeNotebook, layoutPages, pageInView, planRelayout, applyBands, bandsToJson, bandsFromJson,
+  paintPages, clipToPages, viewForPage, newPage, pageSize, PAGE_GAP, DESK, DESK_DARK, pageColorIsDark, MAX_PAGES,
+  bandFor, pageRectAt, trimStrokeToPage,
+} from "@/lib/notebook";
+import { contentsByPage, exportNotebookPdf, loadPagePictures, pageThumbnail } from "@/lib/notebookRender";
+import { NotebookPagesPanel, NotebookExportDialog } from "./NotebookBits";
+import { QuizBar } from "./StudyBits";
+import NotebookShare from "./NotebookShare";
+import { isTape, tapeFromCorners, tapeAt, tapesAlong, tapesInReadingOrder } from "@/lib/tape";
+import { startQuiz, showAnswer, markAnswer, currentTape, dropMissing, readTally, saveTally } from "@/lib/quiz";
+import nbStyles from "./Notebook.module.css";
 import chrome from "./StudioChrome.module.css";
 import cls from "./Classroom.module.css";
 import {
@@ -180,6 +194,18 @@ function widthForTool(t, baseWidth) {
 
 function distance(p1, p2) {
   return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+// Each stroke's box, worked out once (strokes are replaced, never changed
+// in place), so a redraw can skip ink that's off screen.
+const strokeBoxCache = new WeakMap();
+function cachedStrokeBox(stroke) {
+  let b = strokeBoxCache.get(stroke);
+  if (b === undefined) {
+    b = stroke.points && stroke.points.length ? strokeBounds(stroke) : null;
+    strokeBoxCache.set(stroke, b);
+  }
+  return b;
 }
 
 // Whether a stroke (world points) is close enough to a straight line to
@@ -471,6 +497,42 @@ export default function Whiteboard({
   // can't change the zoom. For this visit to the board only.
   const [zoomLocked, setZoomLocked] = useState(false);
   const zoomLockedRef = useRef(false);
+  // A notebook: this board laid out as paper pages (see src/lib/notebook.js).
+  // null for an ordinary board.
+  const [notebook, setNotebook] = useState(null);
+  const notebookRef = useRef(null);
+  const nbLayoutRef = useRef([]);
+  const pagesCanvasRef = useRef(null);
+  const nbImagesRef = useRef(new Map()); // imported page pictures, by address
+  const nbViewSetRef = useRef(false); // the first view (page 1, fitted) has been set
+  const nbBusyRef = useRef(false); // pages being changed: writing waits
+  const [nbBusy, setNbBusy] = useState(false);
+  const nbPillRef = useRef(null);
+  const nbAddRef = useRef(null);
+  const [nbPage, setNbPage] = useState(0); // the page on screen (index)
+  const nbPageRef = useRef(0);
+  const [pagesPanelOpen, setPagesPanelOpen] = useState(false);
+  const [nbThumbs, setNbThumbs] = useState({});
+  const [nbExportOpen, setNbExportOpen] = useState(false);
+  const [nbImageTick, setNbImageTick] = useState(0); // an imported page's picture arrived
+  const nbThumbCacheRef = useRef(new Map()); // page id -> { key, url }
+  const [nbPicker, setNbPicker] = useState(null); // adding pages from a PDF: { file, url, fileName, max }
+  const [nbImportStatus, setNbImportStatus] = useState("");
+  const nbImportInputRef = useRef(null);
+  const nbImportAfterRef = useRef(null);
+  // Study: tape over a notebook's pages (src/lib/tape.js). Which pieces are
+  // showing what's under them is this person's own (never saved or sent).
+  const [revealedTapes, setRevealedTapes] = useState(() => new Set());
+  const revealedTapesRef = useRef(revealedTapes);
+  const tapeDraftRef = useRef(null); // tape being pulled out: { pointerId, start, end, rect }
+  const tapeDraftElRef = useRef(null);
+  const tapeTapRef = useRef(null); // a press that may be a tap on tape: { pointerId, id, x, y, t }
+  // "Quiz me" on one page (src/lib/quiz.js), and how that page went last time
+  const [quiz, setQuiz] = useState(null);
+  const quizRef = useRef(null); // (for the board's own pointer handling)
+  const [quizTally, setQuizTally] = useState(null);
+  // Sharing a notebook (by link or by email): the dialog is open
+  const [nbShareOpen, setNbShareOpen] = useState(false);
 
   // ---------- who else has this board open (src/lib/boardPeople.js) ----------
   // Signed-in boards only: not the demo, not a student's board in a class.
@@ -545,6 +607,10 @@ export default function Whiteboard({
   const [showPencilTip, setShowPencilTip] = useState(false);
   const [showPencilOnlyNotice, setShowPencilOnlyNotice] = useState(false);
   const [boardName, setBoardName] = useState("");
+  const boardNameRef = useRef(""); // (for the live connection's handlers)
+  useEffect(() => {
+    boardNameRef.current = boardName;
+  }, [boardName]);
   // Per-device stylus preferences (see pencilPrefs.js). The server render
   // always sees "off"; the saved values take over after hydration.
   const pencilOnly = useSyncExternalStore(subscribePencilPrefs, getPencilOnly, getServerPrefSnapshot);
@@ -677,6 +743,12 @@ export default function Whiteboard({
     imagesRef.current = images;
     noteList(sync, "images", images);
   }, [images]);
+  useEffect(() => {
+    revealedTapesRef.current = revealedTapes;
+  }, [revealedTapes]);
+  useEffect(() => {
+    quizRef.current = quiz;
+  }, [quiz]);
   useEffect(() => { selectedTextIdRef.current = selectedTextId; }, [selectedTextId]);
   useEffect(() => {
     if (tool !== "select") setSelectedTextId(null);
@@ -1362,10 +1434,110 @@ export default function Whiteboard({
     }
   }
 
+  // ================= Notebooks =================
+  // (see src/lib/notebook.js for how the pages are laid out)
+
+  function setNotebookNow(nb) {
+    notebookRef.current = nb;
+    nbLayoutRef.current = nb ? layoutPages(nb) : [];
+    setNotebook(nb);
+  }
+
+  // An imported page's picture, fetched once (then the pages are drawn again).
+  function loadNotebookImage(url) {
+    const map = nbImagesRef.current;
+    if (map.has(url)) return;
+    const img = new Image();
+    if (!/^data:/i.test(url)) img.crossOrigin = "anonymous";
+    img.onload = () => setNbImageTick((t) => t + 1);
+    map.set(url, img);
+    img.src = url;
+  }
+
+  // The desk and the paper of every page on screen (a canvas of its own,
+  // under the ink, so the eraser never rubs the paper out).
+  function paintNotebookPages(scale, pan, paneW, paneH, ratio) {
+    const canvas = pagesCanvasRef.current;
+    if (!canvas) return;
+    const w = Math.round(paneW * ratio);
+    const h = Math.round(paneH * ratio);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      canvas.style.width = paneW + "px";
+      canvas.style.height = paneH + "px";
+    }
+    const color = parseBackground(backgroundRef.current).color;
+    paintPages(canvas.getContext("2d"), {
+      layout: nbLayoutRef.current,
+      color,
+      scale,
+      pan,
+      width: paneW,
+      height: paneH,
+      ratio,
+      images: nbImagesRef.current,
+      onImage: loadNotebookImage,
+    });
+    const el = pageBgRef.current;
+    const desk = pageColorIsDark(color) ? DESK_DARK : DESK;
+    const key = "desk:" + desk;
+    if (el && backgroundCssKeyRef.current !== key) {
+      backgroundCssKeyRef.current = key;
+      el.style.backgroundImage = "none";
+      el.style.backgroundColor = desk;
+    }
+  }
+
+  // The page number, and "Add a page" under the last page.
+  function repositionNotebookBits(scale, pan, paneW, paneH) {
+    const layout = nbLayoutRef.current;
+    if (!layout.length) return;
+    const idx = pageInView(layout, -pan.y / scale, (paneH - pan.y) / scale);
+    if (idx !== nbPageRef.current) {
+      nbPageRef.current = idx;
+      setNbPage(idx);
+    }
+    const add = nbAddRef.current;
+    if (add) {
+      const last = layout[layout.length - 1];
+      const x = pan.x + (last.x + last.w / 2) * scale;
+      const y = pan.y + (last.y + last.h) * scale + 14;
+      const shown = y > -60 && y < paneH;
+      add.style.display = shown ? "inline-flex" : "none";
+      if (shown) add.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, 0)`;
+    }
+  }
+
+  // A notebook scrolls like a document: no further than its first and last
+  // pages (with room under the last one for "Add a page").
+  function clampNotebookView() {
+    const layout = nbLayoutRef.current;
+    if (!layout.length) return;
+    const { width: paneW, height: paneH } = getPaneSize();
+    const scale = scaleRef.current;
+    let minX = Infinity, maxX = -Infinity;
+    for (const r of layout) {
+      minX = Math.min(minX, r.x);
+      maxX = Math.max(maxX, r.x + r.w);
+    }
+    const last = layout[layout.length - 1];
+    const bottom = (last.y + last.h) * scale;
+    let { x, y } = panRef.current;
+    const contentW = (maxX - minX) * scale;
+    if (contentW + 32 <= paneW) x = paneW / 2 - ((minX + maxX) / 2) * scale;
+    else x = Math.min(32 - minX * scale, Math.max(paneW - 32 - maxX * scale, x));
+    const topLimit = 40;
+    const bottomLimit = Math.min(topLimit, paneH * 0.55 - bottom - 80);
+    y = Math.min(topLimit, Math.max(bottomLimit, y));
+    if (x !== panRef.current.x || y !== panRef.current.y) panRef.current = { x, y };
+  }
+
   function fullRedraw() {
     const canvas = canvasRef.current;
     const ctx = ctxRef.current;
     if (!canvas || !ctx) return;
+    if (notebookRef.current) clampNotebookView();
     const ratio = window.devicePixelRatio || 1;
     const scale = scaleRef.current;
     const pan = panRef.current;
@@ -1374,15 +1546,29 @@ export default function Whiteboard({
     const { width: paneW, height: paneH } = getPaneSize();
     ctx.clearRect(-pan.x / scale, -pan.y / scale, paneW / scale, paneH / scale);
 
-    for (const stroke of strokesRef.current) drawStroke(ctx, stroke);
+    // what's on screen, in board units (ink outside it isn't drawn)
+    const view = { minX: -pan.x / scale, minY: -pan.y / scale, maxX: (paneW - pan.x) / scale, maxY: (paneH - pan.y) / scale };
+    const onScreen = (stroke) => {
+      const b = cachedStrokeBox(stroke);
+      return !!b && b.maxX >= view.minX && b.minX <= view.maxX && b.maxY >= view.minY && b.minY <= view.maxY;
+    };
+    const nbLayout = notebookRef.current ? nbLayoutRef.current : null;
+    // a notebook's ink stays on its pages, like paper
+    if (nbLayout) {
+      ctx.save();
+      clipToPages(ctx, nbLayout, view.minY, view.maxY);
+    }
+    for (const stroke of strokesRef.current) if (onScreen(stroke)) drawStroke(ctx, stroke);
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
 
     drawTexts(ctx, textsRef.current, selectedTextIdRef.current);
+    if (nbLayout) ctx.restore();
     drawGrid(ctx);
 
-    applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
+    if (nbLayout) paintNotebookPages(scale, pan, paneW, paneH, ratio);
+    else applyBackground(pageBgRef.current, backgroundRef.current, scale, pan, backgroundCssKeyRef);
 
     repositionEditingTextarea();
     repositionSimEmbeds();
@@ -1390,15 +1576,15 @@ export default function Whiteboard({
     repositionSelectionOverlay();
     repositionCommentPins();
     repositionPeopleBits();
+    if (nbLayout) repositionNotebookBits(scale, pan, paneW, paneH);
     sharePresence();
     if (student) drawTeacherOverlay();
     graphStore.set(graphsRef.current, graphTraceRef.current);
     repositionGraphBits();
   }
 
-  function drawNewSegment(ctx, styleStroke, newPointsCount) {
+  function drawSegmentInk(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
-    if (pts.length < 2 || newPointsCount < 1) return;
     const lookback = 3;
     const startIdx = Math.max(0, pts.length - newPointsCount - 1 - lookback);
     const endIdx = pts.length - 1;
@@ -1416,7 +1602,20 @@ export default function Whiteboard({
       smoothPath(ctx, pts, startIdx, endIdx);
     }
     ctx.globalAlpha = 1;
+  }
 
+  function drawNewSegment(ctx, styleStroke, newPointsCount) {
+    const pts = styleStroke.points;
+    if (pts.length < 2 || newPointsCount < 1) return;
+    if (notebookRef.current) {
+      ctx.save();
+      clipToPages(ctx, nbLayoutRef.current, -Infinity, Infinity);
+      drawSegmentInk(ctx, styleStroke, newPointsCount);
+      ctx.restore();
+      if (graphsRef.current.length) drawGrid(ctx, true);
+      return;
+    }
+    drawSegmentInk(ctx, styleStroke, newPointsCount);
     if (graphsRef.current.length) drawGrid(ctx, true);
   }
 
@@ -1450,7 +1649,7 @@ export default function Whiteboard({
   // The row a stroke / text box is saved as.
   function strokeRow(stroke) {
     const dash = strokeDash(stroke);
-    const data = {
+    let data = {
       tool: stroke.tool,
       color: stroke.color,
       width: stroke.width,
@@ -1458,6 +1657,8 @@ export default function Whiteboard({
       points: roundPoints(stroke.points),
     };
     if (dash) data.dash = dash;
+    // a notebook's ink is kept for good, so it's saved packed (inkPack.js)
+    if (notebookRef.current) data = packStroke(data);
     return { id: stroke.id, board_id: boardId, data };
   }
 
@@ -1698,6 +1899,17 @@ export default function Whiteboard({
   }, [penTags]);
 
   function handleResetView() {
+    // a notebook: the page on screen, fitted to the width
+    const rect = notebookRef.current ? nbLayoutRef.current[nbPageRef.current] : null;
+    if (rect) {
+      const v = viewForPage(rect, getPaneSize(), { maxScale: 1.2 });
+      if (!zoomLockedRef.current) scaleRef.current = v.scale;
+      const scale = scaleRef.current;
+      panRef.current = { x: getPaneSize().width / 2 - (rect.x + rect.w / 2) * scale, y: 16 - rect.y * scale };
+      fullRedraw();
+      setZoomPercent(Math.round(scale * 100));
+      return;
+    }
     panRef.current = { x: 0, y: 0 };
     // with the zoom locked, only the position goes back
     if (!zoomLockedRef.current) scaleRef.current = 1;
@@ -1741,6 +1953,19 @@ export default function Whiteboard({
     if (contents.images) setImages((prev) => mergeServerList(prev, contents.images, sync, since));
   }
 
+  // A notebook has opened: its pages, and the first page fitted to the screen.
+  function openNotebook(nb) {
+    setNotebookNow(nb);
+    if (nbViewSetRef.current) return;
+    nbViewSetRef.current = true;
+    const first = nbLayoutRef.current[0];
+    if (!first) return;
+    const v = viewForPage(first, getPaneSize(), { maxScale: 1.2 });
+    scaleRef.current = v.scale;
+    panRef.current = v.pan;
+    setZoomPercent(Math.round(v.scale * 100));
+  }
+
   // The board's own settings, as saved (after catching up).
   function applyBoardSettings(settings) {
     if (!settings) return;
@@ -1755,6 +1980,14 @@ export default function Whiteboard({
       setSims(simsRef.current);
     }
     if (settings.name) setBoardName(settings.name);
+    // a notebook's pages, as saved (not while ours are being changed)
+    if (settings.kind === "notebook" && settings.notebook && !nbBusyRef.current) {
+      const nb = normalizeNotebook(settings.notebook);
+      if (JSON.stringify(nb) !== JSON.stringify(notebookRef.current)) {
+        setNotebookNow(nb);
+        fullRedraw();
+      }
+    }
   }
 
   // Catch up after the live connection was down (idle pause, sleep,
@@ -1822,6 +2055,7 @@ export default function Whiteboard({
       backgroundRef.current = normalizeBackground(row.background);
       setBoardBackground(backgroundRef.current);
       lastThumbRef.current = previewHashOf(row.thumbnail);
+      if (row.kind === "notebook") openNotebook(normalizeNotebook(row.notebook));
       fullRedraw();
     }
 
@@ -1854,6 +2088,13 @@ export default function Whiteboard({
         graphsRef.current = graphsOf(boardRow.grid_config);
         setIsOwner(userId === boardRow.owner_id);
         setBoardName(boardRow.name || "");
+        // a notebook (once the database has them)
+        db.from("boards").select("kind, notebook").eq("id", boardId).maybeSingle().then(({ data, error }) => {
+          if (!error && data && data.kind === "notebook") {
+            openNotebook(normalizeNotebook(data.notebook));
+            fullRedraw();
+          }
+        });
       } else if (boardError) {
         console.error("Error loading board:", boardError);
       }
@@ -2107,6 +2348,83 @@ export default function Whiteboard({
   // Everything here works from refs so it can be called from the canvas
   // pointer handlers (registered once) as well as from React handlers.
 
+  // The pages changed (here or by the owner elsewhere): what was on them
+  // moves with them, and what was on a page that went goes too. That
+  // includes what's still being written, a text box that's open, and saves
+  // waiting to be tried again, so nothing lands back in the old place.
+  function applyNotebookChange(next, bands) {
+    if (!next) return;
+    if (bands.length) {
+      const now = applyBands(bands, {
+        strokes: strokesRef.current,
+        texts: textsRef.current,
+        images: imagesRef.current,
+        graphs: graphsRef.current,
+        sims: simsRef.current,
+      });
+      // (the lists from what's on screen now; React's from whatever it holds)
+      strokesRef.current = now.strokes;
+      setStrokes((prev) => (prev === strokesRef.current ? prev : applyBands(bands, { strokes: prev }).strokes));
+      textsRef.current = now.texts;
+      setTexts((prev) => applyBands(bands, { texts: prev }).texts);
+      imagesRef.current = now.images;
+      setImages((prev) => applyBands(bands, { images: prev }).images);
+      graphsRef.current = now.graphs;
+      tidyAfterGraphChange();
+      if (now.sims.length || simsRef.current.length) {
+        simsRef.current = now.sims;
+        setSims(now.sims);
+      }
+      // a line being written, and an open text box
+      const cs = currentStroke.current;
+      if (cs && cs.points && cs.points.length) {
+        const band = bandFor(bands, cs.points[0].y);
+        if (band && !band.del) cs.points = cs.points.map((pt) => ({ ...pt, x: pt.x + band.dx, y: pt.y + band.dy }));
+      }
+      const editing = editingTextRef.current;
+      if (editing) {
+        const band = bandFor(bands, editing.y);
+        if (band && band.del) textEditorRef.current?.commit();
+        else if (band) editingTextRef.current = { ...editing, x: editing.x + band.dx, y: editing.y + band.dy };
+      }
+      // saves waiting to be tried again
+      reworkQueued(sync, (table, row) => {
+        if (table === "strokes" && row.data) {
+          const plain = unpackStroke(row.data);
+          const band = plain.points && plain.points.length ? bandFor(bands, plain.points[0].y) : null;
+          if (!band) return row;
+          if (band.del) return null;
+          const data = isPacked(row.data)
+            ? { ...row.data, o: [row.data.o[0] + band.dx, row.data.o[1] + band.dy] }
+            : { ...row.data, points: plain.points.map((pt) => ({ ...pt, x: pt.x + band.dx, y: pt.y + band.dy })) };
+          return { ...row, data };
+        }
+        if ((table === "texts" || table === "images") && typeof row.y === "number") {
+          const band = bandFor(bands, row.y);
+          if (!band) return row;
+          if (band.del) return null;
+          return { ...row, x: row.x + band.dx, y: row.y + band.dy };
+        }
+        return row;
+      });
+      // undo would put things back where they were before the pages moved
+      myStrokeStack.current = [];
+      myRedoStack.current = [];
+      setMyUndoAvailable(false);
+      setMyRedoAvailable(false);
+      setSelection(emptySelection());
+    }
+    setNotebookNow(next);
+    fullRedraw();
+  }
+
+  // Everything again from the server: the notebook's pages and what's on
+  // them (after a page change that couldn't be followed here).
+  function reloadNotebook() {
+    syncCursorRef.current = null;
+    catchUpWithServer();
+  }
+
   function flashNotice(text, ms = 2600) {
     setBoardNotice(text);
     if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
@@ -2264,6 +2582,125 @@ export default function Whiteboard({
     myRedoStack.current = [];
     setMyUndoAvailable(true);
     setMyRedoAvailable(false);
+  }
+
+  // ---------- study: tape and "Quiz me" (src/lib/tape.js, src/lib/quiz.js) ----------
+
+  function setRevealed(next) {
+    revealedTapesRef.current = next;
+    setRevealedTapes(next);
+  }
+
+  // The quiz as it stands, without any piece of tape that has since gone
+  // (rubbed out, or its page taken out, here or by someone else).
+  function liveQuiz(q) {
+    if (!q || q.done) return q;
+    return dropMissing(q, new Set(imagesRef.current.filter(isTape).map((t) => t.id)));
+  }
+
+  // A piece of tape shown or covered again (a tap on it).
+  function toggleTape(id) {
+    const next = new Set(revealedTapesRef.current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setRevealed(next);
+    // during a quiz, uncovering the piece being asked is "Show it"
+    const q = liveQuiz(quizRef.current);
+    if (q && !q.done && currentTape(q) === id && next.has(id)) setQuiz(showAnswer(q));
+  }
+
+  function addTape(t) {
+    const data = { strokes: [], texts: [], images: [t] };
+    applyAdd(data);
+    pushUndo({ op: "add", sel: selectionFromData(data) });
+  }
+
+  // Scrolls just enough to bring a piece of tape into view.
+  function bringTapeIntoView(id) {
+    const t = imagesRef.current.find((x) => x.id === id);
+    if (!t) return;
+    const { height: paneH } = getPaneSize();
+    const scale = scaleRef.current;
+    const top = panRef.current.y + t.y * scale;
+    const bottom = top + t.height * scale;
+    // (room left at the bottom for the quiz bar)
+    if (top >= 70 && bottom <= paneH - 130) return;
+    panRef.current = { ...panRef.current, y: paneH * 0.35 - (t.y + t.height / 2) * scale };
+    fullRedraw();
+  }
+
+  function pageTapes(index) {
+    const rect = nbLayoutRef.current[index];
+    return rect ? tapesInReadingOrder(imagesRef.current, rect) : [];
+  }
+
+  // Every piece of tape on a page covered (or every one shown).
+  function handleCoverPage(index, cover) {
+    const ids = pageTapes(index).map((t) => t.id);
+    if (!ids.length) {
+      flashNotice("There's no tape on this page yet. Pick Tape in the tools, then drag over what you want to hide.", 4500);
+      return;
+    }
+    const next = new Set(revealedTapesRef.current);
+    for (const id of ids) {
+      if (cover) next.delete(id);
+      else next.add(id);
+    }
+    setRevealed(next);
+  }
+
+  // "Quiz me" on a page: every piece of tape on it covered, then asked one
+  // at a time. `only`: just these pieces (another go at the missed ones).
+  function handleQuizStart(index, only = null) {
+    const rect = nbLayoutRef.current[index];
+    if (!rect) return;
+    const ids = only && only.length ? only : pageTapes(index).map((t) => t.id);
+    if (!ids.length) {
+      flashNotice("Cover answers on this page with tape first: pick Tape in the tools, then drag over them.", 4500);
+      return;
+    }
+    const next = new Set(revealedTapesRef.current);
+    for (const id of ids) next.delete(id);
+    setRevealed(next);
+    setQuizTally(readTally(boardId, rect.id));
+    setQuiz({ ...startQuiz(rect.id, ids), whole: !only });
+    setPagesPanelOpen(false);
+    bringTapeIntoView(ids[0]);
+    track("notebook_quiz_started", { tapes: ids.length, again: !!only });
+  }
+
+  function handleQuizShow() {
+    const q = liveQuiz(quiz);
+    const id = currentTape(q);
+    if (!id) return;
+    const next = new Set(revealedTapesRef.current);
+    next.add(id);
+    setRevealed(next);
+    setQuiz(showAnswer(q));
+  }
+
+  function handleQuizMark(knew) {
+    const q = markAnswer(liveQuiz(quiz), knew);
+    setQuiz(q);
+    if (!q) return;
+    if (q.done) {
+      // (a go at every piece on the page is what's remembered)
+      if (q.whole) saveTally(boardId, q.pageId, q.right.length, q.ids.length);
+      track("notebook_quiz_finished", { tapes: q.ids.length, right: q.right.length });
+      return;
+    }
+    bringTapeIntoView(currentTape(q));
+  }
+
+  function handleQuizAgain(onlyMissed) {
+    const q = liveQuiz(quiz);
+    if (!q) return;
+    const index = nbLayoutRef.current.findIndex((r) => r.id === q.pageId);
+    if (index < 0) {
+      setQuiz(null);
+      return;
+    }
+    handleQuizStart(index, onlyMissed ? q.missed : null);
   }
 
   // A graph's settings changed by the teacher: can be undone.
@@ -2633,7 +3070,11 @@ export default function Whiteboard({
       copied = false;
     }
     if (!copied) {
-      window.prompt("Copy this link to send to them:", link);
+      try {
+        window.prompt("Copy this link to send to them:", link);
+      } catch (err) {
+        // some app windows have no pop-ups: the notice below still shows
+      }
     }
     track("share_link_copied", { from: "class-end" });
     showShareNotice("copied", 4000);
@@ -3654,6 +4095,8 @@ export default function Whiteboard({
       background: backgroundRef.current,
       referenceDoc: referenceDocRef.current,
       referenceStrokes: [],
+      // (a student keeping the lesson names the notebook after it)
+      name: student ? "" : boardNameRef.current || "",
     };
     // the document's markings: with the rest when small, else in pieces after
     const refMarks = referenceMarksRef.current;
@@ -3870,6 +4313,20 @@ export default function Whiteboard({
     channel.on("broadcast", { event: "image-update" }, ({ payload }) => {
       const img = payload.image;
       if (img) setImages((prev) => prev.map((x) => (x.id === img.id ? img : x)));
+    });
+
+    // the notebook's owner changed its pages: everything moves with them
+    channel.on("broadcast", { event: "notebook-layout" }, ({ payload }) => {
+      const mine = notebookRef.current;
+      if (!mine || !payload || !payload.notebook) return;
+      const next = normalizeNotebook(payload.notebook);
+      // only a change made from the pages as we have them; anything else
+      // (we missed one) means fetching the notebook as it's saved
+      if (next && payload.from === (mine.rev || 0) && next.rev === (mine.rev || 0) + 1) {
+        applyNotebookChange(next, bandsFromJson(payload.bands));
+      } else {
+        reloadNotebook();
+      }
     });
 
     channel.on("broadcast", { event: "background-set" }, ({ payload }) => {
@@ -4484,7 +4941,7 @@ export default function Whiteboard({
         // continuous, so a proportional exponential step feels smooth.
         const zoomFactor = Math.exp(-e.deltaY * 0.01);
         newScale = scaleRef.current * zoomFactor;
-      } else if (isLikelyMouseWheel(e)) {
+      } else if (isLikelyMouseWheel(e) && !notebookRef.current) {
         // A plain mouse wheel tick — a fixed percentage step per tick
         // feels natural here; reusing the trackpad's proportional
         // formula against a wheel's much larger delta would produce a
@@ -4509,9 +4966,11 @@ export default function Whiteboard({
         scaleRef.current = newScale;
         setZoomPercent(Math.round(newScale * 100));
       } else {
+        // (some mice report lines or whole pages rather than pixels)
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? getPaneSize().height * 0.9 : 1;
         panRef.current = {
-          x: panRef.current.x - e.deltaX,
-          y: panRef.current.y - e.deltaY,
+          x: panRef.current.x - e.deltaX * unit,
+          y: panRef.current.y - e.deltaY * unit,
         };
       }
       fullRedraw();
@@ -4628,6 +5087,16 @@ export default function Whiteboard({
           strokesRef.current = strokesRef.current.filter((x) => x.id !== hit.id);
           changed = true;
         }
+        // tape on a notebook's page comes off too
+        for (let guard = 0; guard < 20; guard++) {
+          const tape = tapeAt(imagesRef.current, p, tolerance);
+          if (!tape) break;
+          if (!session.tapes) session.tapes = [];
+          session.tapes.push(tape);
+          imagesRef.current = imagesRef.current.filter((x) => x.id !== tape.id);
+          const el = imageNodesRef.current[tape.id];
+          if (el) el.style.display = "none";
+        }
       }
       if (changed) fullRedraw();
     }
@@ -4635,10 +5104,65 @@ export default function Whiteboard({
     function finishStrokeErase() {
       const session = strokeEraseRef.current;
       strokeEraseRef.current = null;
-      if (!session || !session.removed.length) return;
+      const tapes = (session && session.tapes) || [];
+      if (!session || (!session.removed.length && !tapes.length)) return;
       const ids = session.removed.map((x) => x.id);
-      applyRemove({ strokes: ids, texts: [], images: [] });
-      pushUndo({ op: "remove", data: { strokes: session.removed, texts: [], images: [] } });
+      applyRemove({ strokes: ids, texts: [], images: tapes.map((t) => t.id) });
+      pushUndo({ op: "remove", data: { strokes: session.removed, texts: [], images: tapes } });
+    }
+
+    // ---------- tape (a notebook's) ----------
+
+    // A press on a piece of tape: if it turns out to be a quick, still tap,
+    // the tape is lifted or put back (see takeTapeTap). Not with Select
+    // (that picks the tape up, to move or delete it) or the eraser.
+    function noteTapeTap(e, pos) {
+      tapeTapRef.current = null;
+      if (!notebookRef.current || touchPoints.current.size > 1) return null;
+      const t = toolRef.current;
+      // (with the tape tool, a pen or mouse tap is handled with the tape
+      // being pulled out; a finger that doesn't draw, here)
+      const fingerOnly = e.pointerType === "touch" && getPencilOnly();
+      if (!panToolActiveRef.current && (t === "select" || t === "eraser" || (t === "tape" && !fingerOnly))) return null;
+      const hit = tapeAt(imagesRef.current, screenToWorld(pos), 2 / scaleRef.current);
+      if (!hit) return null;
+      tapeTapRef.current = { pointerId: e.pointerId, id: hit.id, x: pos.x, y: pos.y, t: performanceNow() };
+      return hit;
+    }
+
+    // The tape that was tapped (null if the press moved, or took too long).
+    function takeTapeTap(e) {
+      const tap = tapeTapRef.current;
+      if (!tap || tap.pointerId !== e.pointerId) return null;
+      tapeTapRef.current = null;
+      if (e.type === "pointercancel") return null;
+      if (performanceNow() - tap.t > 450 || distance(getPos(e), tap) > 8) return null;
+      return tap.id;
+    }
+
+    function showTapeDraft() {
+      const d = tapeDraftRef.current;
+      const el = tapeDraftElRef.current;
+      if (!el) return;
+      if (!d) {
+        el.style.display = "none";
+        return;
+      }
+      const r = d.rect;
+      const clampX = (x) => (r ? Math.max(r.x, Math.min(r.x + r.w, x)) : x);
+      const clampY = (y) => (r ? Math.max(r.y, Math.min(r.y + r.h, y)) : y);
+      const a = worldToScreen({ x: clampX(Math.min(d.start.x, d.end.x)), y: clampY(Math.min(d.start.y, d.end.y)) });
+      const b = worldToScreen({ x: clampX(Math.max(d.start.x, d.end.x)), y: clampY(Math.max(d.start.y, d.end.y)) });
+      el.style.display = "block";
+      el.style.left = a.x + "px";
+      el.style.top = a.y + "px";
+      el.style.width = Math.max(0, b.x - a.x) + "px";
+      el.style.height = Math.max(0, b.y - a.y) + "px";
+    }
+
+    function cancelTapeDraft() {
+      tapeDraftRef.current = null;
+      showTapeDraft();
     }
 
     // ---------- snapping to a graph's grid ----------
@@ -4834,6 +5358,8 @@ export default function Whiteboard({
         cancelActiveDrawing();
         cancelSelectionDrag();
         finishStrokeErase();
+        cancelTapeDraft();
+        tapeTapRef.current = null;
         movingTextRef.current = null;
         if (panDragActive.current) {
           panDragActive.current = false;
@@ -4848,6 +5374,9 @@ export default function Whiteboard({
         beginPanZoom();
         return;
       }
+
+      // (a quick tap on a notebook's tape lifts it or puts it back)
+      const onTape = isDrawing.current ? null : noteTapeTap(e, pos);
 
       if (panToolActiveRef.current) {
         panDragActive.current = true;
@@ -4974,6 +5503,15 @@ export default function Whiteboard({
           return;
         }
 
+        // Tape sits on top of the writing on a notebook's page: it's what a
+        // tap there picks up (to move, resize or delete it).
+        const hitTape = notebookRef.current ? tapeAt(imagesRef.current, worldPos) : null;
+        if (hitTape && !inSelection) {
+          setSelection({ strokes: [], texts: [], images: [hitTape.id] });
+          startGroupMove(pos, e.pointerId);
+          return;
+        }
+
         // Writing, lines and pictures come before a graph under them.
         const hitStroke = hit ? null : hitTestStrokes(strokesRef.current, worldPos, 10 / scaleRef.current);
         const hitImage = hit || hitStroke ? null : hitTestImages(imagesRef.current, worldPos);
@@ -5031,6 +5569,8 @@ export default function Whiteboard({
           textEditorRef.current?.commit();
           return;
         }
+        // (a tap on tape: see handlePointerUp)
+        if (onTape) return;
         openTextEditor(screenToWorld(pos));
         return;
       }
@@ -5062,6 +5602,21 @@ export default function Whiteboard({
         return;
       }
 
+      // (a notebook's pages are being changed: writing waits a moment)
+      if (nbBusyRef.current) return;
+      // a notebook is written on its pages, not on the desk around them
+      if (notebookRef.current && !compassActiveRef.current && !pageRectAt(nbLayoutRef.current, screenToWorld(pos), 4)) return;
+
+      // Tape: dragged out over what it's to hide (a tap lifts or puts back
+      // the tape under it instead). Notebooks only.
+      if (toolRef.current === "tape") {
+        if (!notebookRef.current) return;
+        const at = screenToWorld(pos);
+        tapeDraftRef.current = { pointerId: e.pointerId, start: at, end: at, startPos: pos, rect: pageRectAt(nbLayoutRef.current, at, 0) };
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+        showTapeDraft();
+        return;
+      }
       clearHoldStraight();
       isDrawing.current = true;
       activePointerId.current = e.pointerId;
@@ -5155,6 +5710,17 @@ export default function Whiteboard({
 
       if (panZoomState.current && touchPoints.current.size >= 2) {
         updatePanZoom();
+        return;
+      }
+
+      // a press on tape that moves is a drag (or writing), not a tap
+      const tap = tapeTapRef.current;
+      if (tap && tap.pointerId === e.pointerId && distance(getPos(e), tap) > 8) tapeTapRef.current = null;
+
+      const draft = tapeDraftRef.current;
+      if (draft && draft.pointerId === e.pointerId) {
+        draft.end = screenToWorld(getPos(e));
+        showTapeDraft();
         return;
       }
 
@@ -5399,13 +5965,34 @@ export default function Whiteboard({
         return;
       }
 
+      // a quick, still tap on a notebook's tape (see noteTapeTap)
+      const tappedTape = takeTapeTap(e);
+
+      const draft = tapeDraftRef.current;
+      if (draft && draft.pointerId === e.pointerId) {
+        cancelTapeDraft();
+        try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (e.type === "pointercancel") return;
+        const endPos = getPos(e);
+        if (distance(endPos, draft.startPos) <= 8) {
+          // a tap with the tape tool: lift or put back the tape under it
+          const under = tapeAt(imagesRef.current, draft.start, 2 / scaleRef.current);
+          if (under) toggleTape(under.id);
+          return;
+        }
+        const piece = tapeFromCorners(newId(), draft.start, screenToWorld(endPos), draft.rect);
+        if (piece) addTape(piece);
+        return;
+      }
+
       if (panDragActive.current) {
         panDragActive.current = false;
         panDragStart.current = null;
         try { canvas.releasePointerCapture(e.pointerId); } catch (err) {}
+        if (tappedTape) toggleTape(tappedTape);
         // One drag, then back to the tool you had (unless Settings says the
         // Move tool stays on).
-        if (getSetting("moveReturns") && !holdMoveRef.current) {
+        if (getSetting("moveReturns") && !holdMoveRef.current && !tappedTape) {
           setPanToolActive(false);
           setTool(toolBeforePanRef.current || "pen");
         }
@@ -5522,6 +6109,13 @@ export default function Whiteboard({
         return;
       }
 
+      // a tap on tape that started nothing else (a finger with Pencil-only
+      // on, or the text tool)
+      if (tappedTape && !(isDrawing.current && e.pointerId === activePointerId.current)) {
+        toggleTape(tappedTape);
+        return;
+      }
+
       if (e.pointerId !== activePointerId.current) return;
       if (!isDrawing.current) return;
       clearHoldStraight();
@@ -5535,6 +6129,26 @@ export default function Whiteboard({
       const strokeId = currentStrokeId.current;
       currentStroke.current = null;
       currentStrokeId.current = null;
+
+      // a tap on tape with the pen: the tape is lifted or put back, and the
+      // dot the tap made is dropped (for anyone watching too)
+      if (tappedTape) {
+        finalizeStroke(strokeId, null);
+        if (finished && finished.id) {
+          channelRef.current?.send({ type: "broadcast", event: "objects-remove", payload: { strokes: [finished.id], texts: [], images: [] } });
+        }
+        fullRedraw();
+        toggleTape(tappedTape);
+        return;
+      }
+      // in a notebook, ink stays on the page it started on
+      if (notebookRef.current && finished) {
+        const trimmed = trimStrokeToPage(finished, nbLayoutRef.current);
+        if (trimmed !== finished) {
+          finished = trimmed;
+          fullRedraw();
+        }
+      }
 
       // a point or ruler line that snaps to a graph's grid goes out (and is
       // kept) where it snapped to
@@ -6070,6 +6684,15 @@ export default function Whiteboard({
   else if (pointerStyle === "size" && isInkTool(tool) && !compassActive) boardCursor = "none";
   else if (pointerStyle === "icon") boardCursor = iconCursor(tool, inkOn(color, isDarkBackground(boardBackground))) || "default";
   else if (tool === "text") boardCursor = "text";
+  if (tool === "tape" && !panToolActive) boardCursor = "crosshair";
+
+  // Study (a notebook's tape): the quiz as it stands (pieces of tape that
+  // have gone are skipped), and whether the page on screen has any tape.
+  const tapeIds = new Set();
+  for (const img of images) if (isTape(img)) tapeIds.add(img.id);
+  const shownQuiz = quiz ? dropMissing(quiz, tapeIds) : null;
+  const nbRect = notebook && tapeIds.size ? layoutPages(notebook)[nbPage] : null;
+  const pageHasTape = !!nbRect && tapesInReadingOrder(images, nbRect).length > 0;
 
   const showReferencePane = canUseReferencePane && !!referenceDoc;
   // phones: the document full screen, switched with the board
@@ -6103,6 +6726,362 @@ export default function Whiteboard({
 
   // Keeps both panes usable: the document never gets narrower/shorter than
   // a readable minimum, and neither does the board.
+  // ---------- a notebook's pages ----------
+
+  // Changes the notebook's pages (owner only): here first, then for
+  // everyone watching, then in the database in one go. Writing waits
+  // meanwhile, so nothing lands in the old place.
+  // Changes the notebook's pages (owner only): in the database first, in
+  // one go, and only then here and for everyone watching. Writing waits
+  // meanwhile, so nothing lands in the old place.
+  async function changeNotebook(after) {
+    const before = notebookRef.current;
+    if (!before || !boardId || nbBusyRef.current || student || demo) return false;
+    if (!isOwner) {
+      flashNotice("Only the notebook's owner can change its pages.", 3000);
+      return false;
+    }
+    if (!after || !Array.isArray(after.pages) || after.pages.length > MAX_PAGES) {
+      flashNotice(`A notebook can have up to ${MAX_PAGES} pages.`, 4000);
+      return false;
+    }
+    if (unsavedCount(sync) > 0) {
+      flashNotice("Some writing hasn't saved yet. Try again in a moment.", 3500);
+      return false;
+    }
+    nbBusyRef.current = true;
+    setNbBusy(true);
+    // saves already on their way land first
+    for (let i = 0; i < 50 && sync.pending.size > 0; i++) await new Promise((r) => setTimeout(r, 100));
+    if (sync.pending.size > 0 || unsavedCount(sync) > 0) {
+      nbBusyRef.current = false;
+      setNbBusy(false);
+      flashNotice("Some writing is still saving. Try again in a moment.", 3500);
+      return false;
+    }
+    const rev = before.rev || 0;
+    const next = { ...normalizeNotebook(after), rev: rev + 1 };
+    const bands = planRelayout(before, next);
+    const wire = bandsToJson(bands);
+    let failure = null; // null | "stale" | "unsure" | "failed"
+    if (isRealBackend(db)) {
+      flashNotice("Changing the pages…", 20000);
+      const call = Promise.resolve(db.rpc("notebook_relayout", { p_board: boardId, p_notebook: next, p_bands: wire, p_rev: rev })).then(
+        (res) => res,
+        (err) => ({ error: err || new Error("failed") })
+      );
+      const timeout = new Promise((resolve) => setTimeout(() => resolve({ error: { code: "TIMEOUT", message: "timed out" } }), 20000));
+      const { error } = await Promise.race([call, timeout]);
+      if (error) {
+        console.error("Couldn't change the notebook's pages:", error);
+        const code = String(error.code || "");
+        failure = code === "40001" || /stale/i.test(String(error.message || "")) ? "stale" : code === "TIMEOUT" || !code ? "unsure" : "failed";
+      }
+    }
+    if (!failure) {
+      const graphsBefore = graphsRef.current;
+      const simsBefore = simsRef.current;
+      applyNotebookChange(next, bands);
+      channelRef.current?.send({ type: "broadcast", event: "notebook-layout", payload: { notebook: next, bands: wire, from: rev } });
+      if (graphsRef.current !== graphsBefore && graphsBefore.length) saveGridSoon();
+      if (simsRef.current !== simsBefore && simsBefore.length) {
+        channelRef.current?.send({ type: "broadcast", event: "sim-embeds-set", payload: { sims: simsRef.current } });
+        saveSimEmbeds();
+      }
+      flashNotice("", 1);
+    }
+    nbBusyRef.current = false;
+    setNbBusy(false);
+    if (failure === "failed") flashNotice("The pages couldn't be changed just now. Nothing was moved: please try again.", 4500);
+    else if (failure) {
+      // (it may have gone through, or the pages were changed elsewhere)
+      flashNotice("The pages couldn't be changed just now. Showing them as they're saved…", 4500);
+      reloadNotebook();
+    }
+    return !failure;
+  }
+
+  function nbPaperAt(index) {
+    const nb = notebookRef.current;
+    const page = nb && nb.pages[index];
+    return page && !page.bg ? page.paper : "lined";
+  }
+
+  // Shows a page: its top just under the top of the screen, the zoom as it is.
+  function goToPage(index) {
+    const rect = nbLayoutRef.current[index];
+    if (!rect) return;
+    const { width: paneW } = getPaneSize();
+    const scale = scaleRef.current;
+    const fits = rect.w * scale <= paneW;
+    panRef.current = {
+      x: fits ? paneW / 2 - (rect.x + rect.w / 2) * scale : panRef.current.x,
+      y: 16 - rect.y * scale,
+    };
+    fullRedraw();
+  }
+
+  async function handleAddPageAfter(index, extra = null) {
+    const nb = notebookRef.current;
+    if (!nb) return;
+    if (nb.pages.length >= MAX_PAGES) {
+      flashNotice(`A notebook can have up to ${MAX_PAGES} pages. Start a new notebook for more.`, 4000);
+      return;
+    }
+    const page = newPage(nbPaperAt(index), extra || {});
+    const pages = [...nb.pages];
+    pages.splice(index + 1, 0, page);
+    if (await changeNotebook({ ...nb, pages })) {
+      goToPage(index + 1);
+      track("notebook_page_added");
+    }
+  }
+
+  async function handleDeletePage(index) {
+    const nb = notebookRef.current;
+    if (!nb || nb.pages.length <= 1) return;
+    if (!window.confirm(`Delete page ${index + 1} and everything on it? This can't be undone.`)) return;
+    const pages = nb.pages.filter((_, i) => i !== index);
+    await changeNotebook({ ...nb, pages });
+  }
+
+  async function handleMovePage(from, to) {
+    const nb = notebookRef.current;
+    if (!nb || to < 0 || to >= nb.pages.length || from === to) return;
+    const pages = [...nb.pages];
+    const [page] = pages.splice(from, 1);
+    pages.splice(to, 0, page);
+    if (await changeNotebook({ ...nb, pages })) goToPage(to);
+  }
+
+  async function handleTurnPage(index) {
+    const nb = notebookRef.current;
+    if (!nb || !nb.pages[index] || nb.pages[index].bg) return;
+    const pages = nb.pages.map((p, i) => (i === index ? { ...p, landscape: !p.landscape } : p));
+    // turning it sideways makes it shorter: nothing may be left below the
+    // new bottom (it would end up on the next page)
+    const rect = nbLayoutRef.current[index];
+    const newH = pageSize(nb, pages[index]).h;
+    if (rect && newH < rect.h) {
+      const own = contentsByPage(nb, { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, graphs: graphsRef.current })[index];
+      const limit = rect.y + newH;
+      const below =
+        own.strokes.some((st) => st.points.some((pt) => pt.y > limit)) ||
+        own.texts.some((t) => t.y > limit - 10) ||
+        own.images.some((im) => im.y + im.height > limit) ||
+        own.graphs.some((g) => graphBox(g).maxY > limit);
+      if (below) {
+        flashNotice("Something on this page is too low to fit when it's turned sideways. Move it up first.", 4500);
+        return;
+      }
+    }
+    await changeNotebook({ ...nb, pages });
+  }
+
+  async function handleSetPagePaper(index, paper) {
+    const nb = notebookRef.current;
+    if (!nb || !nb.pages[index] || nb.pages[index].paper === paper) return;
+    const pages = nb.pages.map((p, i) => (i === index ? { ...p, paper } : p));
+    await changeNotebook({ ...nb, pages });
+  }
+
+  // A copy of a page, with what's on it, straight after it.
+  async function handleDuplicatePage(index) {
+    const nb = notebookRef.current;
+    if (!nb) return;
+    const src = nb.pages[index];
+    const byPage = contentsByPage(nb, { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, graphs: graphsRef.current });
+    const own = byPage[index];
+    const extra = { landscape: !!src.landscape };
+    if (src.w && src.h) {
+      extra.w = src.w;
+      extra.h = src.h;
+    }
+    if (src.bg) extra.bg = src.bg;
+    const page = newPage(src.bg ? "blank" : src.paper, extra);
+    const pages = [...nb.pages];
+    pages.splice(index + 1, 0, page);
+    if (!(await changeNotebook({ ...nb, pages }))) return;
+    const layout = nbLayoutRef.current;
+    const dy = layout[index + 1].y - layout[index].y;
+    const data = { strokes: own.strokes, texts: own.texts, images: own.images, graphs: own.graphs };
+    if (data.strokes.length || data.texts.length || data.images.length || data.graphs.length) {
+      // (added as they are: the tool in hand stays)
+      applyAdd(cloneObjects(data, 0, dy));
+    }
+    goToPage(index + 1);
+  }
+
+  function handleExportNotebook({ indices, job, onProgress, tape }) {
+    const nb = notebookRef.current;
+    if (!nb) return Promise.resolve(null);
+    track("notebook_exported", { pages: indices ? indices.length : nb.pages.length, tape: tape === "cover" });
+    return exportNotebookPdf({
+      nb,
+      indices,
+      tape: tape === "cover" ? "cover" : "hide",
+      contents: { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, graphs: graphsRef.current },
+      color: parseBackground(backgroundRef.current).color,
+      onProgress,
+      job,
+    });
+  }
+
+  // ---------- pages from a PDF ----------
+
+  function handleImportPdfClick(afterIndex) {
+    nbImportAfterRef.current = afterIndex;
+    nbImportInputRef.current?.click();
+  }
+
+  function handleNbImportFile(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name || "")) {
+      alert("Please choose a PDF.");
+      return;
+    }
+    if (!browserCanOpenPdfs()) {
+      alert(PDF_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    if (file.size > REF_MAX_READ_BYTES) {
+      alert("That PDF is too large to open here (over 200MB). Try saving just the pages you need as their own PDF.");
+      return;
+    }
+    const nb = notebookRef.current;
+    const room = Math.min(REF_MAX_PICK, MAX_PAGES - (nb ? nb.pages.length : 0));
+    if (room <= 0) {
+      alert(`This notebook already has ${MAX_PAGES} pages, the most it can hold.`);
+      return;
+    }
+    setNbPicker({ file, url: URL.createObjectURL(file), fileName: file.name, max: room });
+  }
+
+  function closeNbPicker() {
+    if (nbPicker && nbPicker.url) URL.revokeObjectURL(nbPicker.url);
+    setNbPicker(null);
+  }
+
+  // One page of a PDF as a JPEG, about twice as wide as a page on screen
+  // (so it stays sharp zoomed in): { blob, w, h, baseW, baseH } or null.
+  async function pdfPagePicture(pdfDoc, pageNumber) {
+    const entry = { kind: "pdf", src: pageNumber };
+    const base = await pageBaseSize(pdfDoc, entry, null).catch(() => null);
+    if (!base) return null;
+    const scale = Math.min(1600 / base.w, Math.sqrt(4200000 / (base.w * base.h)));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(base.w * scale);
+    canvas.height = Math.round(base.h * scale);
+    const drawn = await drawPage(canvas.getContext("2d"), { pdfDoc, entry, image: null }, scale).then(() => true, () => false);
+    const blob = drawn ? await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85)) : null;
+    const out = blob ? { blob, w: canvas.width, h: canvas.height, baseW: base.w, baseH: base.h } : null;
+    canvas.width = 0;
+    canvas.height = 0;
+    return out;
+  }
+
+  // The picked pages become notebook pages: each one's picture is the
+  // page, to write straight over.
+  async function handleNbPagesPicked(picked) {
+    const pick = nbPicker;
+    setNbPicker(null);
+    if (!pick || !picked.length) {
+      if (pick) URL.revokeObjectURL(pick.url);
+      return;
+    }
+    setNbImportStatus("Preparing pages…");
+    const pages = [];
+    let failure = null; // "open" | "upload"
+    const bytes = await readFileBytes(pick.file);
+    let pdfDoc = null;
+    if (bytes) pdfDoc = await openPdfBytes(bytes).catch(() => null);
+    if (!pdfDoc) failure = "open";
+    const width = pageSize(notebookRef.current, { paper: "blank" }).w;
+    for (let k = 0; !failure && k < picked.length; k++) {
+      setNbImportStatus(`Preparing page ${k + 1} of ${picked.length}…`);
+      const made = await pdfPagePicture(pdfDoc, picked[k]);
+      if (!made) continue;
+      const id = newPage("blank").id;
+      setNbImportStatus(`Uploading page ${k + 1} of ${picked.length}…`);
+      const url = await uploadBoardImage({ blob: made.blob, type: "image/jpeg" }, `nb-${id}`);
+      if (!url) {
+        failure = "upload";
+        break;
+      }
+      // (a page much taller or wider than paper is kept to a sensible size)
+      let pw = width;
+      let ph = Math.round((width * made.baseH) / made.baseW);
+      if (ph > 4000) {
+        pw = Math.max(200, Math.round((width * 4000) / ph));
+        ph = 4000;
+      } else if (ph < 200) {
+        ph = 200;
+      }
+      pages.push({ id, paper: "blank", w: pw, h: ph, bg: { url, path: `${boardId}/nb-${id}.jpg`, w: made.w, h: made.h } });
+    }
+    if (failure) {
+      alert(failure === "upload" ? "The pages couldn't be uploaded. Check your connection and try again." : "That PDF couldn't be opened. It may be locked or damaged.");
+    }
+    if (pdfDoc) closePdf(pdfDoc);
+    URL.revokeObjectURL(pick.url);
+    setNbImportStatus("");
+    if (!pages.length) return;
+    const nb = notebookRef.current;
+    const at = Math.min(nbImportAfterRef.current ?? nb.pages.length - 1, nb.pages.length - 1);
+    const all = [...nb.pages];
+    all.splice(at + 1, 0, ...pages);
+    if (await changeNotebook({ ...nb, pages: all })) {
+      goToPage(at + 1);
+      track("notebook_pdf_imported", { pages: pages.length });
+    }
+  }
+
+  // An imported page's picture arrived: draw the pages again.
+  useEffect(() => {
+    if (nbImageTick) fullRedraw();
+  }, [nbImageTick]);
+
+  // The pages panel's small pictures, made while it's open (each page only
+  // when what's on it changed).
+  useEffect(() => {
+    if (!pagesPanelOpen || !notebook) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const nb = notebookRef.current;
+      const layout = nbLayoutRef.current;
+      if (!nb) return;
+      const byPage = contentsByPage(nb, { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, graphs: graphsRef.current });
+      const color = parseBackground(backgroundRef.current).color;
+      const cache = nbThumbCacheRef.current;
+      const out = {};
+      for (let i = 0; i < layout.length; i++) {
+        if (cancelled) return;
+        const rect = layout[i];
+        const own = byPage[i];
+        const last = (list) => (list.length ? list[list.length - 1].id + ":" + list.length : "0");
+        const key = [rect.page.paper, rect.page.landscape ? 1 : 0, rect.page.bg ? rect.page.bg.url : "", color, rect.y, last(own.strokes), last(own.texts), last(own.images), own.graphs.length].join("|");
+        const hit = cache.get(rect.id);
+        if (hit && hit.key === key) {
+          out[rect.id] = hit.url;
+          continue;
+        }
+        const pictures = await loadPagePictures(rect, own);
+        if (cancelled) return;
+        const url = pageThumbnail({ rect, color, contents: own, pictures, width: 240 });
+        cache.set(rect.id, { key, url });
+        out[rect.id] = url;
+        if (i % 8 === 7) setNbThumbs({ ...out });
+      }
+      if (!cancelled) setNbThumbs(out);
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pagesPanelOpen, notebook, strokes, texts, images, boardBackground]);
+
   function clampRefFraction(fraction, totalPx) {
     const minPane = refStacked ? 160 : 260;
     const minBoard = (refStacked ? 220 : 320) + 14; // + the divider's width
@@ -6213,6 +7192,26 @@ export default function Whiteboard({
         pencilOnly={pencilOnly}
         onSetPencilOnly={setPencilOnly}
         zoomPercent={zoomPercent}
+        notebookPage={
+          notebook
+            ? {
+                index: nbPage,
+                count: notebook.pages.length,
+                paper: notebook.pages[nbPage] ? notebook.pages[nbPage].paper : "lined",
+                isImported: !!(notebook.pages[nbPage] && notebook.pages[nbPage].bg),
+                canEdit: isOwner && !student && !demo,
+                busy: nbBusy,
+                onSetPaper: (paper) => handleSetPagePaper(nbPage, paper),
+                onOpenPages: () => setPagesPanelOpen(true),
+                onAddPage: () => handleAddPageAfter(nbPage),
+                onImport: () => handleImportPdfClick(nbPage),
+                onExport: () => setNbExportOpen(true),
+                onQuiz: () => handleQuizStart(nbPage),
+                onCoverAll: (cover) => handleCoverPage(nbPage, cover),
+                onShare: isOwner && !student && !demo && isRealBackend(db) ? () => setNbShareOpen(true) : null,
+              }
+            : null
+        }
         onResetView={handleResetView}
       />
       {phoneReference && (
@@ -6433,10 +7432,20 @@ export default function Whiteboard({
           aria-hidden="true"
           style={{ position: "absolute", inset: 0, zIndex: -1, backgroundColor: "#ffffff", pointerEvents: "none" }}
         />
+        {/* A notebook's pages: the desk and each page's paper (drawn by
+            paintNotebookPages), under the pictures and the ink. */}
+        {notebook && (
+          <canvas
+            ref={pagesCanvasRef}
+            aria-hidden="true"
+            data-notebook-pages="true"
+            style={{ position: "absolute", left: 0, top: 0, zIndex: -1, pointerEvents: "none" }}
+          />
+        )}
         {/* Pictures sit on the page, under the ink, so you can write on
             top of them and the eraser never rubs them out. Positioned by
             repositionImages() as the board pans and zooms. */}
-        {images.map((img) => (
+        {images.filter((img) => !isTape(img)).map((img) => (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={img.id}
@@ -6508,6 +7517,111 @@ export default function Whiteboard({
             cursor: boardCursor,
           }}
         />
+        {/* Tape (a notebook's): over the writing, so it hides it. Taps go
+            to the board underneath (see noteTapeTap). Positioned with the
+            pictures (repositionImages). */}
+        {images.filter(isTape).map((t) => {
+          const shown = revealedTapes.has(t.id);
+          const asked = !!shownQuiz && !shownQuiz.done && currentTape(shownQuiz) === t.id;
+          return (
+            <span
+              key={t.id}
+              ref={(el) => {
+                if (el) imageNodesRef.current[t.id] = el;
+                else delete imageNodesRef.current[t.id];
+              }}
+              aria-hidden="true"
+              data-tape={shown ? "shown" : "covered"}
+              data-tape-id={t.id}
+              className={`${nbStyles.tape} ${shown ? nbStyles.tapeShown : ""} ${asked ? nbStyles.tapeAsk : ""}`}
+            />
+          );
+        })}
+        {notebook && <span ref={tapeDraftElRef} aria-hidden="true" className={nbStyles.tapeDraft} style={{ display: "none" }} />}
+        {notebook && (
+          <>
+            {!pagesPanelOpen && (
+            <button
+              type="button"
+              className={nbStyles.pill}
+              onClick={() => setPagesPanelOpen((v) => !v)}
+              aria-label={`Page ${nbPage + 1} of ${notebook.pages.length}. Show all pages`}
+              aria-expanded={pagesPanelOpen}
+              data-notebook-pill="true"
+            >
+              Page {nbPage + 1} / {notebook.pages.length}
+            </button>
+            )}
+            {/* "Quiz me" on the page on screen, once it has tape on it */}
+            {!pagesPanelOpen && !shownQuiz && pageHasTape && (
+              <button
+                type="button"
+                className={nbStyles.studyChip}
+                style={{ left: 12, top: 56 }}
+                onClick={() => handleQuizStart(nbPage)}
+                data-quiz-start="true"
+              >
+                <GraduationCap size={16} aria-hidden="true" /> Quiz me
+              </button>
+            )}
+            {shownQuiz && (
+              <QuizBar
+                quiz={shownQuiz}
+                tally={quizTally}
+                onShow={handleQuizShow}
+                onMark={handleQuizMark}
+                onAgain={handleQuizAgain}
+                onClose={() => setQuiz(null)}
+              />
+            )}
+            {isOwner && !student && !demo && (
+              <button
+                ref={nbAddRef}
+                type="button"
+                className={nbStyles.addPage}
+                onClick={() => handleAddPageAfter(notebook.pages.length - 1)}
+                disabled={nbBusy}
+                data-notebook-add="true"
+              >
+                <Plus size={18} aria-hidden="true" /> Add a page
+              </button>
+            )}
+            {pagesPanelOpen && (
+              <NotebookPagesPanel
+                notebook={notebook}
+                current={nbPage}
+                canEdit={isOwner && !student && !demo}
+                busy={nbBusy}
+                thumbs={nbThumbs}
+                onJump={(i) => {
+                  goToPage(i);
+                  if (getPaneSize().width < 700) setPagesPanelOpen(false);
+                }}
+                onAddAfter={handleAddPageAfter}
+                onDuplicate={handleDuplicatePage}
+                onDelete={handleDeletePage}
+                onMove={handleMovePage}
+                onTurn={handleTurnPage}
+                onExport={() => setNbExportOpen(true)}
+                onImport={() => handleImportPdfClick(nbPage)}
+                onClose={() => setPagesPanelOpen(false)}
+              />
+            )}
+            {nbImportStatus && (
+              <div role="status" className={chrome.boardNotice} style={{ position: "absolute", top: 56, left: "50%", transform: "translateX(-50%)", zIndex: 30 }}>
+                {nbImportStatus}
+              </div>
+            )}
+            <input
+              ref={nbImportInputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={handleNbImportFile}
+              style={{ display: "none" }}
+              data-notebook-import="true"
+            />
+          </>
+        )}
         {/* A student's board: what the teacher has put on it (the class
             question, their own writing). Above the student's ink, so the
             student's eraser can't touch it; it never takes a tap. */}
@@ -6739,6 +7853,35 @@ export default function Whiteboard({
             onShowInPdf={referenceDoc ? handleShowClipInPdf : null}
           />
         )}
+        {nbPicker && typeof document !== "undefined" &&
+          createPortal(
+            <RefPagePicker
+              url={nbPicker.url}
+              fileName={nbPicker.fileName}
+              max={nbPicker.max}
+              adding
+              onCancel={closeNbPicker}
+              onDone={handleNbPagesPicked}
+            />,
+            document.body
+          )}
+        {nbExportOpen && notebook && typeof document !== "undefined" &&
+          createPortal(
+            <NotebookExportDialog
+              name={boardName}
+              count={notebook.pages.length}
+              current={nbPage}
+              hasTape={tapeIds.size > 0}
+              onExport={handleExportNotebook}
+              onClose={() => setNbExportOpen(false)}
+            />,
+            document.body
+          )}
+        {nbShareOpen && notebook && typeof document !== "undefined" &&
+          createPortal(
+            <NotebookShare boardId={boardId} name={boardName} onClose={() => setNbShareOpen(false)} />,
+            document.body
+          )}
         {refPicker && typeof document !== "undefined" &&
           createPortal(
             <RefPagePicker

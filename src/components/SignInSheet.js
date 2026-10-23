@@ -34,7 +34,23 @@ const COPY = {
     title: "Keep your board",
     lead: "Sign in free and this board is saved to your account. Open it on any device, and run a live class with your students.",
   },
+  // a student keeping a lesson when their class ends (lessonKeep.js)
+  lesson: {
+    title: "Keep this lesson",
+    lead: "Sign in free and this lesson goes into a notebook of your own, ready to revise from on any device.",
+    keeps: [
+      "Your teacher's board and your own work",
+      "In a notebook that's kept for good",
+      "Notebooks on your laptop, tablet and phone, free",
+    ],
+  },
 };
+
+const BOARD_KEEPS = [
+  "This board, with everything you wrote on it",
+  "On your laptop, iPad and phone",
+  "Live classes: students join with a code, no accounts",
+];
 
 function leaveForApp() {
   window.location.assign("/");
@@ -56,8 +72,10 @@ function leftBehindNote(pictures, worksheet) {
   return "";
 }
 
-export default function SignInSheet({ trigger = "toolbar", next = null, pictures = 0, worksheet = false, onClose }) {
-  const copy = next === "class" ? COPY.class : trigger === "phone" ? COPY.phone : COPY.keep;
+// `onKeep`: what to keep before signing in, instead of the demo board (a
+// student keeping their lesson passes it, with trigger "lesson").
+export default function SignInSheet({ trigger = "toolbar", next = null, pictures = 0, worksheet = false, onClose, onKeep = null }) {
+  const copy = trigger === "lesson" ? COPY.lesson : next === "class" ? COPY.class : trigger === "phone" ? COPY.phone : COPY.keep;
   const [emailReady, setEmailReady] = useState(false);
   const [googleDirect, setGoogleDirect] = useState(Boolean(GOOGLE_CLIENT_ID));
   const client = lazyClient;
@@ -81,24 +99,24 @@ export default function SignInSheet({ trigger = "toolbar", next = null, pictures
   }, []);
 
   // keep the board (as one they asked to keep) before signing in
-  const keep = () => stashDemoBoard({ next });
+  const keep = () => (onKeep ? onKeep() : stashDemoBoard({ next }));
 
   async function googleRedirect() {
     keep();
     track("signin_started", { method: "google", trigger });
-    noteSignInStarted("google", "demo_sheet");
+    noteSignInStarted("google", trigger === "lesson" ? "lesson_sheet" : "demo_sheet");
     await client.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
   }
 
   const google = googleDirect ? (
-    <GoogleSignInButton client={client} from="demo_sheet" onBefore={keep} onSignedIn={leaveForApp} onUnavailable={() => setGoogleDirect(false)} />
+    <GoogleSignInButton client={client} from={trigger === "lesson" ? "lesson_sheet" : "demo_sheet"} onBefore={keep} onSignedIn={leaveForApp} onUnavailable={() => setGoogleDirect(false)} />
   ) : (
     <button type="button" className={`${d.btn} ${emailFirst ? "" : d.btnPrimary} ${o.wide}`} onClick={googleRedirect}>
       Continue with Google
     </button>
   );
   const email = emailReady ? (
-    <EmailCodeSignIn client={client} from="demo_sheet" onBefore={keep} onSignedIn={leaveForApp} primary={emailFirst} />
+    <EmailCodeSignIn client={client} from={trigger === "lesson" ? "lesson_sheet" : "demo_sheet"} onBefore={keep} onSignedIn={leaveForApp} primary={emailFirst} />
   ) : null;
 
   return (
@@ -122,9 +140,12 @@ export default function SignInSheet({ trigger = "toolbar", next = null, pictures
         </div>
         <p className={o.sheetLead}>{copy.lead}</p>
         <ul className={o.keeps}>
-          <li><Check size={15} strokeWidth={2.6} aria-hidden="true" />This board, with everything you wrote on it</li>
-          <li><Check size={15} strokeWidth={2.6} aria-hidden="true" />On your laptop, iPad and phone</li>
-          <li><Check size={15} strokeWidth={2.6} aria-hidden="true" />Live classes: students join with a code, no accounts</li>
+          {(copy.keeps || BOARD_KEEPS).map((line) => (
+            <li key={line}>
+              <Check size={15} strokeWidth={2.6} aria-hidden="true" />
+              {line}
+            </li>
+          ))}
         </ul>
         {emailFirst && email}
         {emailFirst && email && <div className={o.or}>or</div>}

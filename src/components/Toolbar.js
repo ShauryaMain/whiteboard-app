@@ -7,7 +7,7 @@ import {
   MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
   Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
   Check, ChevronDown, Maximize, RotateCw, NotebookText, ImagePlus, ClipboardPaste, BoxSelect, Shapes,
-  LayoutGrid, Pause, Play, Send, Download, Settings,
+  LayoutGrid, Pause, Play, Send, Download, Settings, RectangleHorizontal, Share2,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, PAGE_COLORS, backgroundCss, parseBackground, withPaper, withPageColor, isDarkBackground } from "@/lib/boardBackground";
@@ -16,6 +16,7 @@ import { stashDemoBoard } from "@/lib/demoCarry";
 import { askDemoGuide, DEMO_LEAVE_EVENT, DEMO_SIGNIN_EVENT } from "@/lib/demoEvents";
 import { useSetting } from "@/lib/settings";
 import { keysWith, keyLabel, isMacLike } from "@/lib/shortcuts";
+import { PaperChoices } from "./NotebookBits";
 import s from "./StudioChrome.module.css";
 
 const INK_COLORS = [
@@ -37,6 +38,7 @@ const TOOL_HINTS = {
   highlighter: ["Highlight", "See-through ink for marking things up."],
   eraser: ["Eraser", "Precise rubs out only where you drag."],
   text: ["Text", "Tap the board where you want to type."],
+  tape: ["Tape", "Drag over an answer to hide it. Tap tape to peek under it, tap again to cover it. To take tape off, use Select and Delete, or the whole-stroke eraser."],
 };
 const RULER_HINT = ["Ruler", "Draw along either edge for a straight line. Drag it to move; turn it with its round handle, two fingers or the mouse wheel."];
 const COMPASS_HINT = ["Compass", "Drag the pin to set the centre and the pencil end to set the size, then draw to trace the circle."];
@@ -105,6 +107,7 @@ export default function Toolbar(props) {
     onFindPerson,
     penSeen, pencilOnly, onSetPencilOnly,
     zoomPercent, onResetView,
+    notebookPage,
   } = props;
 
   // menu: null | { id: "maths" | "insert" | "page" | "roster", left, top, hasGrid }
@@ -310,9 +313,57 @@ export default function Toolbar(props) {
                 )}
               </>
             )}
+            {menu.id === "page" && notebookPage && (
+              <>
+                <div className={s.menuHeading}>
+                  Page {notebookPage.index + 1} of {notebookPage.count}
+                </div>
+                {notebookPage.canEdit && !notebookPage.isImported && (
+                  <PaperChoices
+                    value={notebookPage.paper}
+                    color={parseBackground(background).color}
+                    onPick={(paper) => {
+                      setMenu(null);
+                      notebookPage.onSetPaper(paper);
+                    }}
+                  />
+                )}
+                <div className={s.nbMenuActions}>
+                  {notebookPage.canEdit && (
+                    <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(notebookPage.onAddPage)} disabled={notebookPage.busy}>
+                      Add a page after this one
+                    </PalmSafeButton>
+                  )}
+                  <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(notebookPage.onOpenPages)}>
+                    All pages…
+                  </PalmSafeButton>
+                  {notebookPage.canEdit && (
+                    <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(notebookPage.onImport)} disabled={notebookPage.busy}>
+                      Add pages from a PDF…
+                    </PalmSafeButton>
+                  )}
+                  <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(notebookPage.onExport)}>
+                    Export as a PDF…
+                  </PalmSafeButton>
+                </div>
+                <div className={s.menuHeading}>Study this page</div>
+                <div className={s.nbMenuActions}>
+                  <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(notebookPage.onQuiz)} data-menu-quiz="true">
+                    Quiz me on this page
+                  </PalmSafeButton>
+                  <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(() => notebookPage.onCoverAll(true))}>
+                    Cover all the tape
+                  </PalmSafeButton>
+                  <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(() => notebookPage.onCoverAll(false))}>
+                    Show what&apos;s under the tape
+                  </PalmSafeButton>
+                </div>
+              </>
+            )}
             {menu.id === "page" && (
               <>
-                <div className={s.menuHeading}>Page background</div>
+                {!notebookPage && <div className={s.menuHeading}>Page background</div>}
+                {!notebookPage && (
                 <div className={s.pageGrid}>
                   {BOARD_BACKGROUNDS.map((bg) => {
                     const on = parseBackground(background).paper === bg.id;
@@ -334,7 +385,8 @@ export default function Toolbar(props) {
                     );
                   })}
                 </div>
-                <div className={s.menuHeading}>Page colour</div>
+                )}
+                <div className={s.menuHeading}>{notebookPage ? "Colour of every page" : "Page colour"}</div>
                 <div className={s.pageColors} role="radiogroup" aria-label="Page colour">
                   {PAGE_COLORS.map(([name, hex]) => {
                     const on = parseBackground(background).color === hex;
@@ -358,7 +410,9 @@ export default function Toolbar(props) {
                 </div>
                 {pageDark && <div className={s.menuFootnote}>On a dark page, black writing shows up white.</div>}
                 <div className={s.menuFootnote}>
-                  {student
+                  {notebookPage
+                    ? "Changes the colour of every page in this notebook. Your writing stays put."
+                    : student
                     ? "Changes the page on your board. Your drawings stay put."
                     : "Changes the page for everyone on this board. Your drawings stay put."}
                 </div>
@@ -585,11 +639,19 @@ export default function Toolbar(props) {
 
         {isOwner && !demo && (
           <>
-            <PalmSafeButton className={s.appBtn} onPress={onCopyLink}>
-              <Link2 size={16} strokeWidth={1.8} />
-              <span className={s.longLabel}>Copy student link</span>
-              <span className={s.shortLabel}>Link</span>
-            </PalmSafeButton>
+            {notebookPage && notebookPage.onShare ? (
+              <PalmSafeButton className={s.appBtn} onPress={notebookPage.onShare} data-notebook-share="true">
+                <Share2 size={16} strokeWidth={1.8} />
+                <span className={s.longLabel}>Share</span>
+                <span className={s.shortLabel}>Share</span>
+              </PalmSafeButton>
+            ) : (
+              <PalmSafeButton className={s.appBtn} onPress={onCopyLink}>
+                <Link2 size={16} strokeWidth={1.8} />
+                <span className={s.longLabel}>Copy student link</span>
+                <span className={s.shortLabel}>Link</span>
+              </PalmSafeButton>
+            )}
             {!liveClassCode && (
               <PalmSafeButton className={s.appBtn} data-tour="start-live" onPress={onStartLiveClass}>
                 <Users size={16} strokeWidth={1.8} />
@@ -650,6 +712,11 @@ export default function Toolbar(props) {
         <ToolButton label="Text" hint={keyHint("text")} active={activeTool === "text"} onPress={() => onSelectTool("text")}>
           <Type {...ICON} />
         </ToolButton>
+        {notebookPage && (
+          <ToolButton label="Tape" hint="" active={activeTool === "tape"} onPress={() => onSelectTool("tape")} tour="tape-tool">
+            <RectangleHorizontal {...ICON} />
+          </ToolButton>
+        )}
 
         <div className={s.divider} />
 

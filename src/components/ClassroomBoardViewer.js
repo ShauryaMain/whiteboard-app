@@ -130,6 +130,7 @@ export default function ClassroomBoardViewer({
   const strokesRef = useRef([]);
   const textsRef = useRef([]);
   const gridConfigRef = useRef(null);
+  const boardNameRef = useRef(""); // the board's name, when it says
   const backgroundRef = useRef("blank");
   const backgroundCssKeyRef = useRef("");
   const pageBgRef = useRef(null);
@@ -325,6 +326,18 @@ export default function ClassroomBoardViewer({
   }
 
   useImperativeHandle(ref, () => ({
+    // What's on the board right now (a student keeping the lesson when the
+    // class ends: see src/lib/lessonKeep.js).
+    contents() {
+      return {
+        name: boardNameRef.current,
+        strokes: strokesRef.current,
+        texts: textsRef.current,
+        images: imagesRef.current,
+        grid: gridConfigRef.current,
+        background: backgroundRef.current,
+      };
+    },
     // Sends a message on this board's live channel (the teacher's comments
     // on a student's board go this way).
     send(event, payload) {
@@ -595,6 +608,7 @@ export default function ClassroomBoardViewer({
       editionRef.current = payload.edition || null;
       gridConfigRef.current = payload.grid || null;
       backgroundRef.current = normalizeBackground(payload.background);
+      if (typeof payload.name === "string") boardNameRef.current = payload.name.slice(0, 80);
       const refDoc = normalizeDoc(payload.referenceDoc);
       referenceKeyRef.current = refDoc ? (refDoc.pdf && refDoc.pdf.path) || refDoc.path || refDoc.url : null;
       setReferenceDoc(refDoc);

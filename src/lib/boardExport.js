@@ -257,7 +257,9 @@ function joinBytes(parts) {
 
 // pages: [{ jpeg (bytes), width, height }] with the picture's size in
 // pixels. Each page is A4, turned whichever way suits the picture, with the
-// picture as large as fits inside a small margin.
+// picture as large as fits inside a small margin. A page with `media`
+// ({ w, h } in points) is that size instead, filled edge to edge (a
+// notebook's pages: notebookRender.js).
 export function makePdf(pages) {
   const A4 = { short: 595.28, long: 841.89 };
   const MARGIN = 24;
@@ -289,13 +291,15 @@ export function makePdf(pages) {
 
   pages.forEach((page, i) => {
     const landscape = page.width >= page.height;
-    const pw = landscape ? A4.long : A4.short;
-    const ph = landscape ? A4.short : A4.long;
-    const fit = Math.min((pw - MARGIN * 2) / page.width, (ph - MARGIN * 2) / page.height);
+    const media = page.media && page.media.w > 0 && page.media.h > 0 ? page.media : null;
+    const pw = media ? media.w : landscape ? A4.long : A4.short;
+    const ph = media ? media.h : landscape ? A4.short : A4.long;
+    const margin = media ? 0 : MARGIN;
+    const fit = Math.min((pw - margin * 2) / page.width, (ph - margin * 2) / page.height);
     const w = page.width * fit;
     const h = page.height * fit;
     const x = (pw - w) / 2;
-    const y = ph - MARGIN - h; // from the top
+    const y = ph - margin - h; // from the top
     const n = pageObject(i);
     const draw = `q ${w.toFixed(2)} 0 0 ${h.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm /Im0 Do Q`;
 
