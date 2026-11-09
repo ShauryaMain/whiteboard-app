@@ -60,7 +60,132 @@ const LIVE = {
   tools: '[data-tour="tool-row"]',
 };
 
+// Notebooks (the November update): pages, paper, tape and Quiz me, and
+// sharing. Runs on a new, empty notebook ("Show me the update").
+const NB = {
+  pill: '[data-notebook-pill="true"]',
+  pageMenu: '[data-tour="page-menu"]',
+  tapeTool: '[data-tour="tape-tool"]',
+  tape: "[data-tape-id]",
+  shown: '[data-tape="shown"]',
+  quizStart: "[data-quiz-start]",
+  quiz: "[data-quiz]",
+  quizDone: '[data-quiz="done"]',
+  share: '[data-notebook-share="true"]',
+  signIn: '[data-tour="demo-signin"]',
+};
+
 export const TOURS = {
+  notebooks: {
+    id: "notebooks",
+    name: "Notebooks",
+    steps: [
+      {
+        id: "pages",
+        title: "This is a notebook",
+        body: "Paper pages, one under another: scroll to move through them. Tap here to see every page, and to move, copy or add pages.",
+        target: NB.pill,
+        place: "below",
+        next: "paper",
+      },
+      {
+        id: "paper",
+        title: "Each page has its own paper",
+        body: "Lined, squared, dots, Cornell and more. The Page menu also adds pages from a PDF, and exports the notebook as a PDF.",
+        target: NB.pageMenu,
+        place: "below",
+        next: "tape",
+      },
+      {
+        id: "tape",
+        title: "New: tape",
+        body: "Write something on the page, then pick Tape and drag it over what you wrote to hide it.",
+        target: NB.tapeTool,
+        place: "below",
+        watch: () => (has(NB.tape) ? "peek" : null),
+      },
+      {
+        id: "peek",
+        title: "Tap the tape to peek",
+        body: "The answer's underneath. Tap again to cover it.",
+        target: NB.tape,
+        place: "below",
+        watch: () => (has(NB.quiz) ? "answer" : has(NB.shown) ? "quiz" : has(NB.tape) ? null : "tape"),
+      },
+      {
+        id: "quiz",
+        title: "Quiz me",
+        body: "Covers every piece of tape on the page, then asks them one at a time. How you did stays on this device.",
+        target: NB.quizStart,
+        place: "right",
+        watch: () => (has(NB.quiz) ? "answer" : null),
+      },
+      {
+        id: "answer",
+        title: "Say it, then check",
+        body: "Press Show it, then say whether you knew it. At the end you can try just the ones you missed.",
+        target: NB.quiz,
+        place: "above",
+        watch: () => (has(NB.quizDone) || !has(NB.quiz) ? "share" : null),
+      },
+      {
+        id: "share",
+        title: "Share it with a link",
+        body: "Anyone with the link can read your notebook and quiz themselves, with no account. Or let them write on it with you.",
+        target: NB.share,
+        place: "below",
+        last: true,
+      },
+    ],
+  },
+  // The demo notebook (/demo?start=notebook): its tape is already down.
+  demoNotebook: {
+    id: "demoNotebook",
+    name: "A revision notebook",
+    steps: [
+      {
+        id: "peek",
+        title: "Tap the yellow tape",
+        body: "The answer's underneath. Tap again to cover it.",
+        target: NB.tape,
+        place: "below",
+        watch: () => (has(NB.quiz) ? "answer" : has(NB.shown) ? "quiz" : null),
+      },
+      {
+        id: "quiz",
+        title: "Now test yourself",
+        body: "Quiz me covers every piece of tape on the page, then asks them one at a time.",
+        target: NB.quizStart,
+        place: "right",
+        watch: () => (has(NB.quiz) ? "answer" : null),
+      },
+      {
+        id: "answer",
+        title: "Say it, then check",
+        body: "Press Show it, then say whether you knew it. At the end you can try just the ones you missed.",
+        target: NB.quiz,
+        place: "above",
+        watch: () => (has(NB.quizDone) || !has(NB.quiz) ? "pages" : null),
+      },
+      {
+        id: "pages",
+        title: "More pages",
+        body: "Tap here to see every page. Add a page, or change its paper, from the Page menu. Your own tape: pick Tape and drag it over anything you write.",
+        target: NB.pill,
+        place: "below",
+        next: "keep",
+      },
+      {
+        id: "keep",
+        title: "Keep it, free",
+        body: "Sign in to keep this notebook and make as many more as you like, on your laptop, tablet and phone.",
+        target: NB.signIn,
+        place: "below",
+        last: true,
+      },
+    ],
+  },
+
   liveBoards: {
     id: "liveBoards",
     name: "Live class boards",

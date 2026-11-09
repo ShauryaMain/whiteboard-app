@@ -12,7 +12,6 @@ import SignInSheet from "@/components/SignInSheet";
 import { contentsFromRows } from "@/lib/boardSync";
 import { graphsOf } from "@/lib/graphList";
 import { lessonHasWork, stashLesson } from "@/lib/lessonKeep";
-import { track } from "@/lib/track";
 import {
   myClassBoard, markCommentsSeen, studentBoardId, NO_COMMENTS, noComments, NO_TEACHER_LAYER, noTeacherLayer,
 } from "@/lib/localBoard";
@@ -371,7 +370,6 @@ function JoinCodeViewInner() {
       setKeepNote("This device couldn't keep a copy (its storage is full or switched off).");
       return;
     }
-    track("lesson_keep_pressed", {});
     // already signed in with an account of their own: straight there
     const u = await signedInUser();
     if (u && !u.is_anonymous) {

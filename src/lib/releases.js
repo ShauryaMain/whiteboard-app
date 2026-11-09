@@ -28,10 +28,52 @@
 //             a new board and guides the person through it. Leave it out
 //             and that button isn't shown.
 //   tourBoardName  (optional) what that new board is called
+//   tourNotebook   (optional) true: the walkthrough opens on a new notebook
+//                  instead of a board
 //
 // Newest first.
 
 export const RELEASES = [
+  {
+    id: "2026-11-notebooks",
+    // (change to the day this goes out)
+    date: "2026-11-01",
+    title: "Notebooks",
+    headline: "Notebooks: pages, subjects, and tape to test yourself",
+    intro:
+      "Take notes the way you would on paper, with every board tool on every page. Keep as many notebooks as you like, sorted into subjects. They're kept for good, and they're free.",
+    slides: [
+      {
+        src: "/whats-new/notebooks/shelf.png",
+        alt: "The home screen's notebook shelf: coloured covers with names and stickers, and subject chips (All, Maths, Physics, Lessons) along the top.",
+        caption: "Your notebooks, on a shelf, sorted into subjects",
+      },
+      {
+        src: "/whats-new/notebooks/pages.png",
+        alt: "A notebook with Cornell paper and the pages panel open down the left, showing small pictures of three pages.",
+        caption: "Real pages: lined, squared, dots, Cornell and more",
+      },
+      {
+        src: "/whats-new/notebooks/quiz.png",
+        alt: "A page of notes with yellow tape over the answers, one of them outlined in blue, and a bar at the bottom reading '2 of 5' with a Show it button.",
+        caption: "Tape over answers, then Quiz me",
+      },
+      {
+        src: "/whats-new/notebooks/share.png",
+        alt: "The Share window: 'Anyone with the link can look' is chosen, with the notebook's link and a Copy button.",
+        caption: "Share a notebook with a link: no account needed to read it",
+      },
+    ],
+    points: [
+      "New notebook on your home screen: pick a cover, a subject and the first page's paper. Every page can have its own paper.",
+      "All pages: jump, move, copy, turn or delete pages. Add pages from a PDF to write on, and export the notebook (or some pages) as one PDF.",
+      "Tape hides an answer until you tap it. Quiz me covers every piece on a page and asks them one at a time.",
+      "Share with a link, so anyone can read it (and quiz themselves), or let them write on it too. Your students can keep a live lesson in a notebook of their own.",
+    ],
+    tour: "notebooks",
+    tourBoardName: "My first notebook",
+    tourNotebook: true,
+  },
   {
     id: "2026-10-documents",
     date: "2026-10-18",

@@ -4,8 +4,9 @@
 // - Only switched on when NEXT_PUBLIC_POSTHOG_KEY is set (PostHog project
 //   settings → Project API key). Without it, nothing loads and track()
 //   does nothing.
-// - Never on student pages (joining a class, a student's board): those
-//   pages don't load it at all, and nothing is sent from them.
+// - Never on student pages (joining a class, a student's board), nor on a
+//   notebook opened from its link (/n/…, read by people with no account):
+//   those pages don't load it at all, and nothing is sent from them.
 // - No cookies: PostHog keeps its random visitor id in this browser's
 //   local storage. A signed-in teacher is known by their account id only
 //   (never their name or email).
@@ -37,6 +38,16 @@ export const EVENTS = [
   "live_class_ended", // ...and how many students joined ({ students })
   "phone_link_copied", // a phone visitor copied the demo's link
   "share_link_copied", // a teacher copied a link to pass on to a colleague ({ from })
+  "notebook_created", // a new notebook from the shelf ({ paper, size })
+  "notebook_page_added", // a page added to a notebook
+  "notebook_pdf_imported", // pages added to a notebook from a PDF
+  "notebook_exported", // a notebook (or some pages) exported as a PDF ({ pages, tape })
+  "notebook_quiz_started", // Quiz me ({ tapes, again })
+  "notebook_quiz_finished", // ...to the end ({ tapes, right })
+  "notebook_link_changed", // a notebook's link turned on, off or replaced ({ mode, fresh })
+  "notebook_link_copied", // ...and copied ({ mode })
+  "lesson_kept", // a student's kept lesson became a notebook
+  "demo_notebook_step", // a step of the demo notebook's walkthrough ({ step })
 ];
 
 // ?ref=... on the link that brought the visitor (e.g. ?ref=mswb-reply for
@@ -72,7 +83,7 @@ const queue = [];
 
 function blocked(pathname) {
   const path = String(pathname || "");
-  return path.startsWith("/join");
+  return path.startsWith("/join") || path.startsWith("/n/");
 }
 
 function currentPath() {

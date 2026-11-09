@@ -141,11 +141,17 @@ export default function Toolbar(props) {
     function handleKey(e) {
       if (e.key === "Escape") setMenu(null);
     }
+    // (turning a tablet round: the menu's room has changed, so it closes)
+    function handleResize() {
+      setMenu(null);
+    }
     document.addEventListener("pointerdown", handleOutside);
     document.addEventListener("keydown", handleKey);
+    window.addEventListener("orientationchange", handleResize);
     return () => {
       document.removeEventListener("pointerdown", handleOutside);
       document.removeEventListener("keydown", handleKey);
+      window.removeEventListener("orientationchange", handleResize);
     };
   }, [menu]);
 
@@ -172,7 +178,13 @@ export default function Toolbar(props) {
     }
     const rect = e.currentTarget.getBoundingClientRect();
     const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-    setMenu({ id, left, top: rect.bottom + 6, graphId: getSelectedGraphId ? getSelectedGraphId() : null });
+    const top = rect.bottom + 6;
+    // A long menu (a notebook's Page menu, a big class) scrolls inside the
+    // room below its button, rather than running off the bottom of the
+    // screen. (The window's own height: older iPads don't know "dvh".)
+    const viewH = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+    const maxHeight = Math.max(160, Math.round(viewH - top - 12));
+    setMenu({ id, left, top, maxHeight, graphId: getSelectedGraphId ? getSelectedGraphId() : null });
   }
 
   function runAndClose(fn) {
@@ -206,12 +218,9 @@ export default function Toolbar(props) {
           <div
             ref={menuRef}
             className={s.menu}
-            style={
-              menu.id === "roster"
-                ? // a big class is a long list: it scrolls rather than running off the screen
-                  { left: menu.left, top: menu.top, width: 300, maxHeight: `calc(100dvh - ${Math.round(menu.top) + 12}px)`, overflowY: "auto" }
-                : { left: menu.left, top: menu.top, width: 320 }
-            }
+            // (any menu taller than the room below its button scrolls)
+            style={{ left: menu.left, top: menu.top, width: menu.id === "roster" ? 300 : 320, maxHeight: menu.maxHeight, overflowY: "auto" }}
+            data-menu={menu.id}
             role="menu"
           >
             {menu.id === "people" &&
@@ -320,6 +329,7 @@ export default function Toolbar(props) {
                 </div>
                 {notebookPage.canEdit && !notebookPage.isImported && (
                   <PaperChoices
+                    compact
                     value={notebookPage.paper}
                     color={parseBackground(background).color}
                     onPick={(paper) => {
@@ -621,7 +631,7 @@ export default function Toolbar(props) {
 
         {/* The demo has nobody else in it, so its live class is run with
             pretend students (see src/lib/demoClassroom.js). */}
-        {demo && !liveClassCode && (
+        {demo && !liveClassCode && !notebookPage && (
           <PalmSafeButton className={s.appBtn} data-tour="demo-live" onPress={onStartLiveClass}>
             <Users size={16} strokeWidth={1.8} />
             <span className={s.longLabel}>Try a live class</span>
@@ -734,7 +744,7 @@ export default function Toolbar(props) {
           <SquarePlus {...ICON} />
         </ToolButton>
         {onSetBackground && (
-          <ToolButton wide menu label="Page" open={menu?.id === "page"} onPress={(e) => toggleMenu("page", e)}>
+          <ToolButton wide menu label="Page" tour="page-menu" open={menu?.id === "page"} onPress={(e) => toggleMenu("page", e)}>
             <NotebookText {...ICON} />
           </ToolButton>
         )}

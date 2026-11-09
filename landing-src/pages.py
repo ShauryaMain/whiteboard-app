@@ -25,6 +25,19 @@
 # (it is not a protractor) and lines snap to its edge. Keyboard shortcuts
 # (changeable) and two/three-finger taps for undo/redo. Shared boards show
 # who else is there; tap an initial to go to what they're looking at.
+# Notebooks (Nov 2026): A4 or US Letter pages, paper per page (lined,
+# squared, dot grid, blank, Cornell, maths, isometric), one page colour for
+# the whole notebook; pages panel (jump, move, copy, add, turn sideways,
+# delete); export all/one/some pages as one PDF; add pages from a PDF (up to
+# 30 picked at a time; 500 pages a notebook). Shelf with covers, stickers and
+# subjects; notebooks are never deleted for being unused (boards are, after
+# 30 days). Every board tool works on the pages. Tape hides an answer until
+# tapped; Quiz me asks each piece on a page in turn; scores stay on that
+# device. Share by email, or by a link that anyone can read (no account,
+# they can peek under tape, quiz themselves, download a PDF) or that lets
+# signed-in people write too; links can be turned off or replaced. A student
+# can "Keep this lesson" when a live class ends (signs in, gets a notebook).
+# No handwriting search, no audio recording, no offline mode.
 #
 # Links to other pages on this site are written [[url:page-name]].
 # {fig:name:caption} drops in one of the screenshots listed in IMG.
@@ -79,6 +92,16 @@ IMG = {
                  "A text box on the Clean Slate whiteboard where x^2 + 6x + 5 = 0 shows a raised 2 and 3/4 shows as a stacked fraction"),
     "chalk": ("clean-slate-chalkboard-page-colour", [700, 1200], 1200, 750,
               "A chalkboard-green squared page on the Clean Slate whiteboard with a white parabola, and the Page menu open showing page colours"),
+    "nbquiz": ("clean-slate-notebook-tape-quiz", [700, 1200], 1200, 750,
+               "A Cornell notes page on quadratics in a Clean Slate notebook, with yellow tape over the answers, one answer showing, and a Quiz me bar reading 2 of 5"),
+    "nbshelf": ("clean-slate-notebook-shelf-subjects", [700, 1200], 1200, 750,
+                "The Clean Slate notebook shelf: coloured notebook covers with names and stickers, sorted into Maths, Physics, English, Science and Lessons"),
+    "nbshare": ("clean-slate-notebook-share-link", [700, 1200], 1200, 750,
+                "The Share window for a Clean Slate notebook, with Anyone with the link can look chosen and the notebook's link ready to copy"),
+    "nbpages": ("clean-slate-notebook-pages-panel", [700, 1200], 1200, 750,
+                "A Clean Slate notebook with the pages panel open, showing small pictures of each page beside a Cornell notes page"),
+    "nbphone": ("clean-slate-notebook-link-on-phone", [390, 780], 780, 1040,
+                "A shared Clean Slate notebook opened from its link on a phone, with tape over the answers and Quiz me and PDF buttons"),
 }
 
 # slug -> short label (used in the nav, footer and related links)
@@ -91,9 +114,72 @@ LABELS = {
     "whiteboard-for-ipad": ("Whiteboard for iPad", "Made for Apple Pencil, with palm rejection, in Safari."),
     "microsoft-whiteboard-alternative": ("Microsoft Whiteboard alternative", "Free, sign in with Google or any email, on any device."),
     "jamboard-alternative": ("Jamboard alternative", "A free replacement for teachers, with no student sign-in."),
+    "free-notes-app-for-students": ("Notes app for students", "Free notebooks on any device, with tape to quiz yourself."),
 }
 
 PAGES = [
+    {
+        "slug": "free-notes-app-for-students",
+        "title": "Free Note-Taking App for Students: Notebooks on Any Device | Clean Slate",
+        "desc": "Clean Slate notebooks are free for students: paper pages, any device, subjects to keep them tidy, and tape over the answers to quiz yourself. Try one with no sign-up.",
+        "kicker": "free notebooks · any device",
+        "h1": "A free notes app for students",
+        "lede": "Clean Slate notebooks are paper pages you write on with a pen, a finger or a mouse, in the browser on a Chromebook, a Windows laptop, an iPad or an Android tablet. Keep as many as you like, sorted into subjects, and cover the answers with tape to test yourself. It's free.",
+        "hero": "nbquiz",
+        "cta_primary": ("Try a notebook, no sign-in", "/demo?start=notebook"),
+        "sections": [
+            ("Notebooks that feel like paper", """
+<p>A notebook is a stack of real pages, A4 or US Letter, that you scroll through. Ink stays on the page you start it on, the way it does on paper.</p>
+<ul class="ticks">
+  <li><b>Pick the paper for each page:</b> lined, squared, dot grid, blank, Cornell notes, maths paper with a margin, or isometric dots.</li>
+  <li><b>All your pages at a glance.</b> Jump to any page, move pages up or down, copy one, turn it sideways, or add a page anywhere.</li>
+  <li><b>Hand it in as a PDF.</b> Export the whole notebook, one page or a few, each on a real A4 or Letter page, ready to print or upload.</li>
+  <li><b>Write over your slides.</b> Add pages from a PDF, like lecture slides or a worksheet, and write straight over them.</li>
+</ul>
+{fig:nbpages:Every page at a glance, with the paper you chose for each.}"""),
+            ("Revise with tape and Quiz me", """
+<p>Drag tape over an answer, a definition or a key word, and it stays hidden until you tap it. Tap again to cover it back up.</p>
+<ul class="ticks">
+  <li><b>Quiz me</b> covers every piece of tape on a page and asks them one at a time. Say the answer, check it, and say whether you knew it.</li>
+  <li><b>Try the ones you missed</b> straight away, or start again. How you did last time is kept on your device.</li>
+  <li><b>Printing a test for yourself?</b> Export with the tape on, and the answers stay covered on paper.</li>
+</ul>
+<p>It works on flashcard-style notes, Cornell notes, vocabulary lists and worked examples alike.</p>"""),
+            ("Maths and science, built in", """
+<p>A notebook has every tool of the Clean Slate whiteboard on every page: graphs that plot the equations you type, statistics charts, exact shapes with the angles and lengths marked, a ruler, a compass and a scientific calculator. Type x^2 or 3/4 in a text box and it turns into real maths. Hold the pen still at the end of a line and it straightens.</p>
+<p>Open your textbook as a PDF beside your notes, and clip a diagram or a question from it onto the page.</p>"""),
+            ("Tidy, and kept for good", """
+<p>Your notebooks sit on a shelf on your home screen, most recently used first. Give each one a cover colour and a sticker, and sort them into subjects like Maths, Physics or English. Search finds them by name.</p>
+<p>Notebooks are never deleted for being left alone, so last term's notes are still there at exam time.</p>
+{fig:nbshelf:Your notebooks, sorted into subjects.}"""),
+            ("Share notes with your class", """
+<p>Share a notebook by email, or with a link. Choose who the link works for:</p>
+<ul class="ticks">
+  <li><b>Anyone with the link can look.</b> They don't need an account. They can read it, peek under the tape, quiz themselves and download it as a PDF.</li>
+  <li><b>Anyone with the link can write on it too.</b> They sign in first, then you write on it together, live.</li>
+</ul>
+<p>Turn the link off, or swap it for a new one, whenever you like.</p>
+{fig:nbshare:Turn on a link to share a notebook.}"""),
+            ("Keep every lesson", """
+<p>If your teacher or tutor runs live classes on Clean Slate, press Keep this lesson when the class ends. Their board and your own working go into a notebook of your own, in a subject called Lessons, ready to revise from.</p>"""),
+            ("On the devices students actually have", """
+<p>Clean Slate runs in the browser on Chromebooks, Windows laptops, Macs, iPads and Android tablets, and the same notebook is on all of them. On an iPad it's made for Apple Pencil: rest your palm on the screen and it leaves no marks. A shared notebook opens on a phone too, for reading and quizzing on the bus.</p>
+{fig:nbphone:A shared notebook opened from its link on a phone.}
+<p>It's free, with no limit on notebooks and no ads. It does need an internet connection.</p>"""),
+        ],
+        "faq": [
+            ("Is it really free?", "Yes. There is no paid plan, no limit on how many notebooks you make, and no ads. You sign in with Google, or with a code sent to any email address."),
+            ("Does it work on a Chromebook, Windows laptop or Android tablet?", "Yes. It runs in the browser, so it works on Chromebooks, Windows, Mac, Linux, iPads and Android tablets, with nothing to install."),
+            ("Can I write with Apple Pencil?", 'Yes. On an iPad (iPadOS 15 and newer), once you write with the Pencil only the Pencil draws, and your palm leaves no marks. See <a href="[[url:whiteboard-for-ipad]]">Clean Slate on iPad</a>.'),
+            ("Can I import a PDF and write on it?", "Yes. Add pages from a PDF (pick up to 30 at a time) and write straight over them. A notebook can have up to 500 pages."),
+            ("Can I export my notes?", "Yes. Export the whole notebook, one page or a range of pages as a single PDF."),
+            ("Is it an alternative to Goodnotes or Notability?", "For many students, yes: Clean Slate notebooks are free and run in any browser, including on Chromebooks and Windows laptops. It doesn't search handwriting, record audio or work offline."),
+            ("Who can see my notebooks?", "Only you, until you share one by email or turn on its link. You can turn a link off or replace it at any time."),
+            ("Will my notes be deleted if I don't open them?", "No. Notebooks are kept until you delete them."),
+            ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo?start=notebook">demo notebook</a> opens with no sign-up: a page of revision notes with the answers under tape. It is kept in your browser, and moves into your account if you sign in.'),
+        ],
+        "related": ["whiteboard-for-ipad", "online-whiteboard-for-math", "free-online-whiteboard-no-sign-up", "online-whiteboard-for-tutoring"],
+    },
     {
         "slug": "online-whiteboard-for-teaching",
         "title": "Free Online Whiteboard for Teaching | Clean Slate",
@@ -501,6 +587,7 @@ HOME_FAQ = [
     ("Does it work on an iPad with Apple Pencil?", 'Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See <a href="[[url:whiteboard-for-ipad]]">the whiteboard for iPad</a>.'),
     ("Can I open a PDF on the whiteboard?", "Yes. Open a PDF or an image in a pane beside the board. From a long PDF, pick up to 30 pages. Write, highlight, type and cover answers with tape, clip any question onto the board, and it's all saved with the board."),
     ("Is it a replacement for Microsoft Whiteboard or Jamboard?", 'Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works in any browser, and you sign in with Google or any email address. See <a href="[[url:microsoft-whiteboard-alternative]]">the Microsoft Whiteboard alternative</a> and <a href="[[url:jamboard-alternative]]">the Jamboard alternative</a>.'),
+    ("Does it have notebooks for students?", 'Yes. Students (and teachers) can keep notebooks: paper pages in any style, sorted into subjects, with tape over the answers and a Quiz me button for revision. Share one with a link that needs no account to read. See <a href="[[url:free-notes-app-for-students]]">the free notes app for students</a>.'),
     ("Can it plot graphs?", 'Yes. Type an equation and it is drawn on the board, with sliders for letters like a, b and c. It also draws bar charts, histograms, scatter graphs and box plots. See <a href="[[url:online-whiteboard-for-math]]">the whiteboard for math</a>.'),
     ("Can I style text and type maths?", "Yes. Text boxes have fonts (or upload your own), sizes, bold, colours and highlights, and x^2, x_2 and 3/4 turn into real maths as you type."),
     ("Can it draw accurate shapes for maths?", 'Yes. Insert, then Shape draws polygons, triangles, quadrilaterals, circles and 3D solids to the sides and angles you set, with the measurements labelled. See <a href="[[url:online-whiteboard-for-math]]">the whiteboard for math</a>.'),

@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { track } from "@/lib/track";
 import { takeReturn } from "@/lib/returnTo";
 import d from "@/components/Dialog.module.css";
 import p from "@/components/Paper.module.css";
@@ -25,7 +24,6 @@ export default function WriteOnSharedNotebook() {
       .then(({ data, error }) => {
         if (!live) return;
         if (!error && data && data.board) {
-          track("notebook_link_joined", {});
           router.replace(`/board/${data.board}`);
           return;
         }

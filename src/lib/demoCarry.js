@@ -18,6 +18,9 @@
 // at all, nothing is kept and nothing is created.
 
 import { supabase } from "./supabaseClient";
+import { TAPE_SRC } from "./tape";
+import { normalizeNotebook } from "./notebook";
+import { packStroke, isPacked } from "./inkPack";
 import {
   DEMO_STASH_KEY,
   clearDemoStash,
@@ -185,12 +188,22 @@ async function insertInBatches(table, rows) {
 
 async function saveAsBoard(snapshot, userId) {
   const row = { name: snapshot.name || "My demo board", owner_id: userId };
+  // the demo notebook comes across as a notebook, with its pages and tape
+  const notebook = snapshot.notebook ? normalizeNotebook(snapshot.notebook) : null;
+  if (notebook) {
+    const made = await supabase.from("boards").insert({ ...row, kind: "notebook", notebook: { ...notebook, rev: 0 }, background: snapshot.background || "blank" }).select().single();
+    if (made.error || !made.data) return { error: made.error || new Error("no notebook") };
+    return saveContents(made.data.id, snapshot, true);
+  }
   let made = await supabase.from("boards").insert({ ...row, background: snapshot.background || "blank" }).select().single();
   // Project without the background column yet: create it plain.
   if (made.error) made = await supabase.from("boards").insert(row).select().single();
   if (made.error || !made.data) return { error: made.error || new Error("no board") };
-  const boardId = made.data.id;
+  return saveContents(made.data.id, snapshot, false);
+}
 
+// What's on the kept board, saved onto the new one.
+async function saveContents(boardId, snapshot, isNotebook) {
   // The graph and simulations sit on the board itself. Each is optional,
   // so a problem with one never stops the rest.
   if (snapshot.grid_config) {
@@ -204,13 +217,18 @@ async function saveAsBoard(snapshot, userId) {
 
   // Each row gets its own moment in time, a millisecond apart, so the ink
   // loads back in the order it was drawn (what's on top stays on top).
-  const total = snapshot.strokes.length + snapshot.texts.length;
+  const tapes = isNotebook && Array.isArray(snapshot.tapes) ? snapshot.tapes : [];
+  const total = snapshot.strokes.length + snapshot.texts.length + tapes.length;
   const start = Date.now() - total - 1000;
   let n = 0;
   const stamp = () => new Date(start + n++).toISOString();
-  const strokes = snapshot.strokes.map((data) => ({ id: newId(), board_id: boardId, data, created_at: stamp() }));
+  // (a notebook's ink is saved packed: inkPack.js)
+  const strokes = snapshot.strokes.map((data) => ({
+    id: newId(), board_id: boardId, data: isNotebook && !isPacked(data) ? packStroke(data) : data, created_at: stamp(),
+  }));
   const texts = snapshot.texts.map((t) => ({ id: newId(), board_id: boardId, ...t, created_at: stamp() }));
-  const failed = (await insertInBatches("strokes", strokes)) + (await insertInBatches("texts", texts));
+  const images = tapes.map((t) => ({ id: newId(), board_id: boardId, x: t.x, y: t.y, width: t.width, height: t.height, src: TAPE_SRC, created_at: stamp() }));
+  const failed = (await insertInBatches("strokes", strokes)) + (await insertInBatches("texts", texts)) + (await insertInBatches("images", images));
   if (failed && failed === total) {
     // Nothing made it: remove the empty board rather than leave it behind.
     await supabase.from("boards").delete().eq("id", boardId);

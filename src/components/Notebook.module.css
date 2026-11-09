@@ -206,6 +206,20 @@
   gap: 8px;
 }
 
+/* in the toolbar's Page menu: four small tiles to a row */
+.papersCompact {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.papersCompact .paperTile {
+  padding: 4px;
+  gap: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
 .paperTile {
   display: flex;
   flex-direction: column;

@@ -682,6 +682,10 @@
   z-index: 1000;
   width: 320px;
   max-width: calc(100vw - 16px);
+  /* (a long menu scrolls: its height is set from the room below its button) */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
   background: var(--surface);
   border: 2px solid var(--ink-line);
   border-radius: 16px;
@@ -839,7 +843,7 @@
 
 .nbMenuBtn {
   width: 100%;
-  min-height: 42px;
+  min-height: 38px;
   padding: 0 12px;
   border: 1.5px solid #D6D2C8;
   border-radius: 10px;
@@ -1746,4 +1750,9 @@
   height: 100%;
   opacity: 0;
   cursor: pointer;
+}
+
+/* a menu that scrolls keeps its rows their own size */
+.menu > * {
+  flex-shrink: 0;
 }

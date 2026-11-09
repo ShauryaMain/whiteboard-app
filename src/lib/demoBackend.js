@@ -16,6 +16,8 @@
 
 import { createDemoClassroom } from "./demoClassroom";
 import { clearDemoStash, readDemoStash, stashKeepAt, stashStartedAt, wasCarried, writeDemoStash } from "./demoStash";
+import { TAPE_SRC, isTape } from "./tape";
+import { normalizeNotebook } from "./notebook";
 
 export const DEMO_BOARD_ID = "demo";
 const DEMO_USER = { id: "demo-user", email: "", user_metadata: { full_name: "Demo visitor" } };
@@ -23,11 +25,12 @@ const DEMO_SESSION = { user: DEMO_USER, access_token: "demo", expires_at: 410244
 
 // The boards a visitor can start from (the answers to "What are you
 // planning?"), and what each is called once it's kept in an account.
-export const DEMO_KINDS = ["class", "tutor", "explore"];
+export const DEMO_KINDS = ["class", "tutor", "explore", "notebook"];
 const BOARD_NAMES = {
   class: "Solving linear equations",
   tutor: "Straight-line graphs",
   explore: "My demo board",
+  notebook: "Maths revision: quadratics",
 };
 
 // The worksheet shown beside the class lesson board (a picture, so it
@@ -246,7 +249,116 @@ function tutorBoard(narrow) {
   };
 }
 
-const STARTERS = { class: classBoard, tutor: tutorBoard, explore: exploreBoard };
+// "Notes for my own studying": a revision notebook (three pages: Cornell
+// notes with the answers under tape, a graph, and a page to write on), for
+// trying notebooks, tape and Quiz me. A notebook fits its page to the
+// screen itself, so there's no phone layout.
+const TAPE_COVER = (id, x, y, width) => ({ id, board_id: DEMO_BOARD_ID, x, y, width, height: 34, src: TAPE_SRC });
+
+function notebookBoard() {
+  const P2 = 1171; // where page 2 starts (an A4 page, then the gap)
+  const P3 = 2342;
+  const cue = (n, value) => text(`lesson-t-c${n}`, -380, 119 + 96 * n, 17, 200, "#1E88E5", value);
+  const ask = (n, value, width) => text(`lesson-t-q${n}`, -140, 119 + 96 * n, 19, width, "#1a1a1a", value);
+  const answer = (n, value, width) => text(`lesson-t-a${n}`, 76, 119 + 96 * n, 19, width, "#1a1a1a", value);
+  const cover = (n, width) => TAPE_COVER(`lesson-tape-${n}`, 68, 114 + 96 * n, width);
+  const grid = {
+    id: "graph-first",
+    type: "cartesian",
+    x: -356,
+    y: P2 + 96,
+    size: 44 * 8,
+    cols: 8,
+    rows: 11,
+    showAxes: true,
+    showNumbers: true,
+    showUnitCircle: false,
+    arrows: true,
+    minor: 0,
+    snap: true,
+    color: "#cfd8e3",
+    unitsPerCell: 1,
+    trig: false,
+    trigStep: { num: 1, den: 2 },
+    axes: {
+      x: { min: -3, max: 5, step: 1, label: "number", piStep: { num: 1, den: 2 }, log: false, perDecade: 3, name: "" },
+      y: { min: -5, max: 6, step: 1, label: "number", piStep: { num: 1, den: 2 }, log: false, perDecade: 3, name: "" },
+    },
+    plot: { fns: [{ id: "demo-fn-1", latex: "y=x^2-2x-3", color: "#1E88E5" }], points: [], params: {}, features: {}, pins: [], angle: "rad", equations: true },
+  };
+  const side = (n, value) => text(`lesson-t-s${n}`, 44, P2 + 104 + 86 * n, 18, 330, "#1a1a1a", value);
+  const sideAnswer = (n, value, width) => text(`lesson-t-sa${n}`, 52, P2 + 138 + 86 * n, 19, width, "#1a1a1a", value);
+  const sideCover = (n, width) => TAPE_COVER(`lesson-tape-s${n}`, 44, P2 + 133 + 86 * n, width);
+  return {
+    background: "blank",
+    grid,
+    notebook: {
+      v: 1,
+      size: "a4",
+      cover: { color: "#2F5BEA", emoji: "📐" },
+      pages: [
+        { id: "demo-p1", paper: "cornell", title: "Key facts" },
+        { id: "demo-p2", paper: "graph", title: "Sketching" },
+        { id: "demo-p3", paper: "lined", title: "Your turn" },
+      ],
+    },
+    strokes: [
+      // underline the title, a star by the formula, a tick by the summary
+      inkStroke("lesson-s1", "#1E88E5", 3.5, linePoints(-372, 62, -150, 60, 18)),
+      inkStroke("lesson-s2", "#E53935", 2.5, [[-170, 312], [-163, 328], [-146, 330], [-159, 340], [-155, 357], [-170, 347], [-185, 357], [-181, 340], [-194, 330], [-177, 328], [-170, 312]]),
+      inkStroke("lesson-s3", "#43A047", 3, [[-386, 940], [-379, 949], [-364, 928]]),
+      inkStroke("lesson-s4", "#1E88E5", 3.5, linePoints(-372, P2 + 60, -40, P2 + 58, 20)),
+    ],
+    texts: [
+      text("lesson-t1", -372, 16, 32, 300, "#1a1a1a", "Quadratics"),
+      text("lesson-t2", 96, 30, 15, 290, "#1E88E5", "Revision notes · Cornell page"),
+      cue(0, "Factorise"),
+      ask(0, "x² + 5x + 6 =", 170),
+      answer(0, "(x + 2)(x + 3)", 210),
+      cue(1, "Solve"),
+      ask(1, "x² + 5x + 6 = 0", 180),
+      answer(1, "x = −2 or x = −3", 230),
+      cue(2, "The formula"),
+      ask(2, "ax² + bx + c = 0", 180),
+      answer(2, "x = (−b ± √(b² − 4ac)) ÷ 2a", 330),
+      cue(3, "Discriminant"),
+      ask(3, "b² − 4ac < 0 means", 180),
+      answer(3, "no real roots", 200),
+      cue(4, "Completing the square"),
+      ask(4, "x² − 6x + 2 =", 170),
+      answer(4, "(x − 3)² − 7", 200),
+      text(`${TIP}1`, -140, 640, 17, 500, "#8E24AA", "Tap the yellow tape to peek at an answer, and tap again to cover it. Or press Quiz me, top left, to test yourself on the whole page."),
+      text("lesson-t-sum", -380, 910, 17, 330, "#1a1a1a", "Summary"),
+      text("lesson-t-sum2", -360, 944, 17, 720, "#1a1a1a", "A quadratic has at most two roots. Factorise if you can, otherwise use the formula. The discriminant b² − 4ac says how many roots there are."),
+      text("lesson-t-p2", -372, P2 + 16, 28, 400, "#1a1a1a", "Sketching y = x² − 2x − 3"),
+      side(0, "Where it crosses the x-axis:"),
+      sideAnswer(0, "x = −1 and x = 3", 230),
+      side(1, "Where it crosses the y-axis:"),
+      sideAnswer(1, "(0, −3)", 120),
+      side(2, "Turning point:"),
+      sideAnswer(2, "(1, −4), a minimum", 240),
+      side(3, "Line of symmetry:"),
+      sideAnswer(3, "x = 1", 100),
+      text(`${TIP}2`, -356, P2 + 620, 17, 700, "#8E24AA", "Every board tool works in a notebook. Double-tap the graph to plot another equation, or open the Maths menu for the ruler, compass and calculator."),
+      text("lesson-t-p3", -300, P3 + 30, 28, 400, "#1a1a1a", "Your turn"),
+      text("lesson-t-p3q", -300, P3 + 96, 20, 600, "#1a1a1a", "Solve x² − x − 12 = 0, then sketch y = x² − x − 12."),
+      text(`${TIP}3`, -300, P3 + 160, 17, 640, "#8E24AA", "Write with the Pen, then put Tape over your answer to quiz yourself later. Add more pages from the Page menu, or export the notebook as a PDF."),
+    ],
+    images: [
+      cover(0, 186),
+      cover(1, 206),
+      cover(2, 312),
+      cover(3, 150),
+      cover(4, 150),
+      sideCover(0, 200),
+      sideCover(1, 90),
+      sideCover(2, 210),
+      sideCover(3, 76),
+    ],
+  };
+}
+
+const STARTERS = { class: classBoard, tutor: tutorBoard, explore: exploreBoard, notebook: notebookBoard };
 
 // The starter boards are laid out for a tablet-sized screen (about 720px
 // wide). The lesson boards also have a phone layout (about 380px wide).
@@ -301,8 +413,8 @@ const stamp = (rows) => {
   return rows.map((r, i) => ({ ...r, created_at: new Date(now + i).toISOString() }));
 };
 
-function boardRow(kind, background, grid, sims) {
-  return {
+function boardRow(kind, background, grid, sims, notebook = null) {
+  const row = {
     id: DEMO_BOARD_ID,
     owner_id: DEMO_USER.id,
     name: kind === "explore" ? "Demo board" : BOARD_NAMES[kind],
@@ -311,16 +423,32 @@ function boardRow(kind, background, grid, sims) {
     sim_embeds: sims || [],
     thumbnail: null,
   };
+  // a notebook (see src/lib/notebook.js)
+  if (notebook) {
+    row.kind = "notebook";
+    row.notebook = notebook;
+  }
+  return row;
 }
 
 function starterTables(kind) {
+  const board = (STARTERS[kind] || exploreBoard)(false);
+  if (board.notebook) {
+    // (a notebook fits its pages to the screen itself)
+    return {
+      boards: stamp([boardRow(kind, board.background, board.grid, [], board.notebook)]),
+      strokes: stamp(board.strokes),
+      texts: stamp(board.texts),
+      images: stamp(board.images || []),
+    };
+  }
   const phoneLayout = isNarrow() && kind !== "explore";
   const fit = starterFit(phoneLayout ? 380 : 720);
-  const board = (STARTERS[kind] || exploreBoard)(phoneLayout);
+  const laid = phoneLayout ? (STARTERS[kind] || exploreBoard)(true) : board;
   return {
-    boards: stamp([boardRow(kind, board.background, fitGrid(board.grid, fit), [])]),
-    strokes: stamp(board.strokes.map((r) => fitStroke(r, fit))),
-    texts: stamp(board.texts.map((r) => fitText(r, fit))),
+    boards: stamp([boardRow(kind, laid.background, fitGrid(laid.grid, fit), [])]),
+    strokes: stamp(laid.strokes.map((r) => fitStroke(r, fit))),
+    texts: stamp(laid.texts.map((r) => fitText(r, fit))),
     images: [],
   };
 }
@@ -329,8 +457,13 @@ function starterTables(kind) {
 function restoredTables(stash) {
   const kind = DEMO_KINDS.includes(stash.kind) ? stash.kind : "explore";
   let n = 0;
+  const notebook = stash.notebook ? normalizeNotebook(stash.notebook) : null;
+  const tapes = Array.isArray(stash.tapes) ? stash.tapes : [];
   return {
-    boards: stamp([boardRow(kind, stash.background, stash.grid_config, Array.isArray(stash.sim_embeds) ? stash.sim_embeds : [])]),
+    boards: stamp([boardRow(kind, stash.background, stash.grid_config, Array.isArray(stash.sim_embeds) ? stash.sim_embeds : [], notebook)]),
+    images: stamp(
+      tapes.map((t) => ({ id: `kept-i${n++}`, board_id: DEMO_BOARD_ID, x: t.x, y: t.y, width: t.width, height: t.height, src: TAPE_SRC }))
+    ),
     strokes: stamp(stash.strokes.map((data) => ({ id: `kept-s${n++}`, board_id: DEMO_BOARD_ID, data }))),
     texts: stamp(
       stash.texts.map((t) => ({
@@ -338,7 +471,6 @@ function restoredTables(stash) {
         font_size: t.font_size, width: t.width, rotation: t.rotation || 0,
       }))
     ),
-    images: [],
   };
 }
 
@@ -565,10 +697,11 @@ function boardKey(tables) {
   return JSON.stringify({
     strokes: sorted(tables.strokes || []).map((r) => [r.id, r.data]),
     texts: sorted(tables.texts || []).map((r) => [r.id, r.x, r.y, r.text, r.color, r.font_size, r.width, r.rotation || 0]),
-    images: (tables.images || []).length,
+    images: (tables.images || []).map((r) => [r.id, r.x, r.y, r.width, r.height]),
     background: board.background || null,
     grid: board.grid_config || null,
     sims: board.sim_embeds || [],
+    notebook: board.notebook ? board.notebook.pages : null,
   });
 }
 
@@ -590,19 +723,28 @@ function carrySnapshot(tables, pristine, kind, force) {
   const strokes = sorted(tables.strokes || []);
   const texts = sorted(tables.texts || []);
   const keptTexts = texts.filter((r) => !(String(r.id).startsWith(TIP) && pristine.texts.get(r.id) === r.text));
-  return {
+  const images = tables.images || [];
+  const snapshot = {
     version: 1,
     kind,
     name: BOARD_NAMES[kind] || BOARD_NAMES.explore,
     background: board.background || null,
     grid_config: board.grid_config || null,
     sim_embeds: Array.isArray(board.sim_embeds) ? board.sim_embeds : [],
-    strokes: strokes.map((r) => r.data).filter((d) => d && Array.isArray(d.points) && d.points.length),
+    // (a notebook's ink is kept packed: inkPack.js)
+    strokes: strokes.map((r) => r.data).filter((d) => d && ((Array.isArray(d.points) && d.points.length) || (d.f === 1 && Array.isArray(d.o)))),
     texts: keptTexts.map((r) => ({
       x: r.x, y: r.y, text: r.text, color: r.color, font_size: r.font_size, width: r.width, rotation: r.rotation || 0,
     })),
-    leftBehind: { pictures: (tables.images || []).length },
+    leftBehind: { pictures: images.filter((r) => !isTape(r)).length },
   };
+  // a notebook comes with its pages, and its tape (tape is a small drawing,
+  // so unlike pictures it can come along)
+  if (board.kind === "notebook" && board.notebook) {
+    snapshot.notebook = board.notebook;
+    snapshot.tapes = sorted(images.filter(isTape)).map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height }));
+  }
+  return snapshot;
 }
 
 function pristineState(tables, restored) {
@@ -620,7 +762,10 @@ function workSummary(tables, pristine) {
   const texts = (tables.texts || []).filter((r) => !starter.has(r.id) || starter.get(r.id) !== r.text).length;
   // what was already theirs when the board was brought back from this browser
   const kept = (tables.strokes || []).filter((r) => String(r.id).startsWith("kept-")).length + (tables.texts || []).filter((r) => String(r.id).startsWith("kept-")).length;
-  return { strokes, texts, pictures: (tables.images || []).length, kept };
+  const images = tables.images || [];
+  // tape the visitor put down (the starter notebook's own is "lesson-tape-")
+  const tapes = images.filter((r) => isTape(r) && !String(r.id).startsWith("lesson-tape") && !String(r.id).startsWith("kept-")).length;
+  return { strokes, texts, tapes, pictures: images.filter((r) => !isTape(r)).length, kept };
 }
 
 function emit(detail) {

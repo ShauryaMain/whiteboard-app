@@ -14,7 +14,6 @@ import { isTape, tapesInReadingOrder } from "@/lib/tape";
 import { startQuiz, showAnswer, markAnswer, currentTape, readTally, saveTally } from "@/lib/quiz";
 import { rememberReturn } from "@/lib/returnTo";
 import { landingLink } from "@/lib/links";
-import { track } from "@/lib/track";
 import { QuizBar } from "./StudyBits";
 import d from "./Dialog.module.css";
 import n from "./Notebook.module.css";
@@ -336,7 +335,6 @@ export default function NotebookViewer({ token }) {
     setTally(readTally(state.id, layout[i].id));
     setQuiz({ ...startQuiz(layout[i].id, ids), whole: !only });
     scrollToTape(ids[0]);
-    track("notebook_quiz_started", { tapes: ids.length, via: "link" });
   }
 
   function mark(knew) {
@@ -368,7 +366,6 @@ export default function NotebookViewer({ token }) {
     }
     saveFile(blob, `${String(state.name).replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 80) || "Notebook"}.pdf`);
     setNote("");
-    track("notebook_exported", { via: "link", pages: state.nb.pages.length });
   }
 
   async function writeOnIt() {
@@ -379,7 +376,6 @@ export default function NotebookViewer({ token }) {
     if (!user) {
       // sign in first (the sign-in screen is on the next page), then back here
       rememberReturn(`/n/${token}/write`);
-      track("notebook_link_signin", {});
       window.location.assign(`/n/${token}/write`);
       return;
     }
@@ -391,7 +387,6 @@ export default function NotebookViewer({ token }) {
       if (data && data.reason === "view") load(true);
       return;
     }
-    track("notebook_link_joined", {});
     router.push(`/board/${data.board}`);
   }
 

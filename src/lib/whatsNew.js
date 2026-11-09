@@ -4,6 +4,7 @@
 // the moment either changes (and stays in step across tabs).
 
 import { supabase } from "./supabaseClient";
+import { newNotebook } from "./notebook";
 
 const SEEN_KEY = "cleanslate_whatsnew_seen"; // JSON list of release ids
 const QUIET_KEY = "cleanslate_whatsnew_quiet"; // "1" = don't pop up on startup
@@ -118,6 +119,13 @@ export async function openTourBoard(release, userId) {
       if (!found.error && found.data) return { id: found.data.id };
     }
     const row = { name: release.tourBoardName || `Trying out: ${release.title}`, owner_id: userId };
+    // an update about notebooks is tried out on a new notebook
+    if (release.tourNotebook) {
+      const nb = await supabase.from("boards").insert({ ...row, kind: "notebook", notebook: newNotebook({ paper: "lined" }), background: "blank" }).select().single();
+      if (nb.error || !nb.data) return { error: nb.error || new Error("no notebook") };
+      remember(key, nb.data.id);
+      return { id: nb.data.id };
+    }
     let made = await supabase.from("boards").insert({ ...row, background: "blank" }).select().single();
     // Project without the background column yet: create it plain.
     if (made.error) made = await supabase.from("boards").insert(row).select().single();

@@ -42,6 +42,7 @@ NAV = [
     ("online-whiteboard-for-math", "Maths"),
     ("online-whiteboard-for-classroom", "Classroom"),
     ("whiteboard-for-ipad", "iPad"),
+    ("free-notes-app-for-students", "Students"),
 ]
 FOOT_USES = [
     ("online-whiteboard-for-teaching", "Online whiteboard for teaching"),
@@ -49,13 +50,15 @@ FOOT_USES = [
     ("online-whiteboard-for-math", "Online whiteboard for math"),
     ("online-whiteboard-for-classroom", "Online whiteboard for the classroom"),
     ("whiteboard-for-ipad", "Whiteboard for iPad"),
+    ("free-notes-app-for-students", "Notes app for students"),
 ]
 FOOT_COMPARE = [
     ("free-online-whiteboard-no-sign-up", "Free whiteboard, no sign-up"),
     ("microsoft-whiteboard-alternative", "Microsoft Whiteboard alternative"),
     ("jamboard-alternative", "Jamboard alternative"),
 ]
-HOME_USES = [p["slug"] for p in PAGES]
+# (the students page has a section of its own on the home page)
+HOME_USES = [p["slug"] for p in PAGES if p["slug"] != "free-notes-app-for-students"]
 
 # How wide each kind of picture is shown, so phones download the small file.
 SIZES = {
@@ -208,7 +211,7 @@ class Site:
             "isAccessibleForFree": True,
             "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
             "image": SITE + "/" + OG_IMAGE,
-            "screenshot": [f"{SITE}/img/{IMG[k][0]}-{IMG[k][1][-1]}.webp" for k in ("worksheet", "clip", "plot", "overview", "shapes", "charts", "calculator")],
+            "screenshot": [f"{SITE}/img/{IMG[k][0]}-{IMG[k][1][-1]}.webp" for k in ("worksheet", "clip", "plot", "overview", "nbquiz", "shapes", "charts", "calculator")],
             "featureList": [
                 "Demo board with no sign-up, ready lesson boards and a pretend live class",
                 "Sign in with Google or with a code sent to your email",
@@ -229,6 +232,11 @@ class Site:
                 "See who else is on a shared board and go to what they're looking at",
                 "Keyboard shortcuts you can change, and two- and three-finger taps to undo and redo",
                 "Apple Pencil support with palm rejection",
+                "Notebooks: paper pages (lined, squared, dot grid, blank, Cornell, maths, isometric), sorted into subjects and kept for good",
+                "Tape over answers and Quiz me, for revision",
+                "Share a notebook with a link anyone can read, or let them write on it too",
+                "Students can keep a live lesson in a notebook of their own",
+                "Export a notebook, or some of its pages, as one PDF; add pages from a PDF",
             ],
         }
 

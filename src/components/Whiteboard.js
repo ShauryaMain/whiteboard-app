@@ -2418,6 +2418,19 @@ export default function Whiteboard({
     fullRedraw();
   }
 
+  // The demo notebook (its stand-in backend has no notebook_relayout): the
+  // pages, and everything on them where it is now, saved as they are.
+  function keepNotebookHere(next, idsBefore) {
+    db.from("boards").update({ notebook: next }).eq("id", boardId).then(() => {});
+    const now = { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current };
+    const left = (kind) => {
+      const have = new Set(now[kind].map((o) => o.id));
+      return idsBefore[kind].filter((id) => !have.has(id));
+    };
+    persistRemove({ strokes: left("strokes"), texts: left("texts"), images: left("images") });
+    persistAdd(now);
+  }
+
   // Everything again from the server: the notebook's pages and what's on
   // them (after a page change that couldn't be followed here).
   function reloadNotebook() {
@@ -6736,7 +6749,7 @@ export default function Whiteboard({
   // meanwhile, so nothing lands in the old place.
   async function changeNotebook(after) {
     const before = notebookRef.current;
-    if (!before || !boardId || nbBusyRef.current || student || demo) return false;
+    if (!before || !boardId || nbBusyRef.current || student) return false;
     if (!isOwner) {
       flashNotice("Only the notebook's owner can change its pages.", 3000);
       return false;
@@ -6781,7 +6794,9 @@ export default function Whiteboard({
     if (!failure) {
       const graphsBefore = graphsRef.current;
       const simsBefore = simsRef.current;
+      const idsBefore = { strokes: strokesRef.current.map((o) => o.id), texts: textsRef.current.map((o) => o.id), images: imagesRef.current.map((o) => o.id) };
       applyNotebookChange(next, bands);
+      if (!isRealBackend(db)) keepNotebookHere(next, idsBefore);
       channelRef.current?.send({ type: "broadcast", event: "notebook-layout", payload: { notebook: next, bands: wire, from: rev } });
       if (graphsRef.current !== graphsBefore && graphsBefore.length) saveGridSoon();
       if (simsRef.current !== simsBefore && simsBefore.length) {
@@ -6930,6 +6945,10 @@ export default function Whiteboard({
   // ---------- pages from a PDF ----------
 
   function handleImportPdfClick(afterIndex) {
+    if (demo) {
+      flashNotice("Adding pages from a PDF works once you've signed in (it's free).", 4000);
+      return;
+    }
     nbImportAfterRef.current = afterIndex;
     nbImportInputRef.current?.click();
   }
@@ -7199,7 +7218,7 @@ export default function Whiteboard({
                 count: notebook.pages.length,
                 paper: notebook.pages[nbPage] ? notebook.pages[nbPage].paper : "lined",
                 isImported: !!(notebook.pages[nbPage] && notebook.pages[nbPage].bg),
-                canEdit: isOwner && !student && !demo,
+                canEdit: isOwner && !student,
                 busy: nbBusy,
                 onSetPaper: (paper) => handleSetPagePaper(nbPage, paper),
                 onOpenPages: () => setPagesPanelOpen(true),
@@ -7574,7 +7593,7 @@ export default function Whiteboard({
                 onClose={() => setQuiz(null)}
               />
             )}
-            {isOwner && !student && !demo && (
+            {isOwner && !student && (
               <button
                 ref={nbAddRef}
                 type="button"
@@ -7590,7 +7609,7 @@ export default function Whiteboard({
               <NotebookPagesPanel
                 notebook={notebook}
                 current={nbPage}
-                canEdit={isOwner && !student && !demo}
+                canEdit={isOwner && !student}
                 busy={nbBusy}
                 thumbs={nbThumbs}
                 onJump={(i) => {

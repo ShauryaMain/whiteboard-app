@@ -34,6 +34,16 @@ const COPY = {
     title: "Keep your board",
     lead: "Sign in free and this board is saved to your account. Open it on any device, and run a live class with your students.",
   },
+  // the demo notebook
+  notebook: {
+    title: "Keep your notebook",
+    lead: "Sign in free and this notebook is saved to your account, with its pages and tape. Open it on any device.",
+    keeps: [
+      "This notebook, with your notes and tape",
+      "As many notebooks as you like, sorted into subjects",
+      "On your laptop, tablet and phone, free",
+    ],
+  },
   // a student keeping a lesson when their class ends (lessonKeep.js)
   lesson: {
     title: "Keep this lesson",
@@ -74,8 +84,10 @@ function leftBehindNote(pictures, worksheet) {
 
 // `onKeep`: what to keep before signing in, instead of the demo board (a
 // student keeping their lesson passes it, with trigger "lesson").
-export default function SignInSheet({ trigger = "toolbar", next = null, pictures = 0, worksheet = false, onClose, onKeep = null }) {
-  const copy = trigger === "lesson" ? COPY.lesson : next === "class" ? COPY.class : trigger === "phone" ? COPY.phone : COPY.keep;
+// `kind`: the demo board's kind ("notebook" for the demo notebook).
+export default function SignInSheet({ trigger = "toolbar", next = null, pictures = 0, worksheet = false, onClose, onKeep = null, kind = null }) {
+  const copy =
+    trigger === "lesson" ? COPY.lesson : kind === "notebook" ? COPY.notebook : next === "class" ? COPY.class : trigger === "phone" ? COPY.phone : COPY.keep;
   const [emailReady, setEmailReady] = useState(false);
   const [googleDirect, setGoogleDirect] = useState(Boolean(GOOGLE_CLIENT_ID));
   const client = lazyClient;

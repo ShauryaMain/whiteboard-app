@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Compass, Copy, GraduationCap, Laptop, Users, X } from "lucide-react";
+import { ArrowRight, Compass, Copy, GraduationCap, Laptop, NotebookPen, Users, X } from "lucide-react";
 import { DEMO_CHANGE_EVENT } from "@/lib/demoBackend";
 import { supabase } from "@/lib/supabaseClient";
 import { DEMO_SIGNIN_EVENT, DEMO_LEAVE_EVENT } from "@/lib/demoEvents";
@@ -28,6 +28,12 @@ const CHOICES = [
     sub: "Straight-line graphs, on axes that snap your points onto the grid.",
   },
   {
+    kind: "notebook",
+    Icon: NotebookPen,
+    title: "Notes for my own studying",
+    sub: "A revision notebook: pages, tape over the answers, and Quiz me.",
+  },
+  {
     kind: "explore",
     Icon: Compass,
     title: "Just looking around",
@@ -47,7 +53,7 @@ export function DemoOpener({ onChoose }) {
     <div className={o.openerScreen}>
       <section className={o.opener} aria-labelledby="demo-opener-title" data-demo-opener="true">
         <div className={o.openerHead}>
-          <span className={o.kicker}>Clean Slate · free whiteboard for teaching</span>
+          <span className={o.kicker}>Clean Slate · free whiteboard and notebooks</span>
           <h1 id="demo-opener-title" className={o.openerTitle}>What are you planning?</h1>
           <p className={o.openerText}>
             Pick one and you get a real board to try, ready to go. Nothing to install, no sign-in.
@@ -90,11 +96,13 @@ function describeWork(work) {
   const parts = [];
   if (work.strokes) parts.push(`${work.strokes} pen ${work.strokes === 1 ? "stroke" : "strokes"}`);
   if (work.texts) parts.push(`${work.texts} text ${work.texts === 1 ? "box" : "boxes"}`);
+  if (work.tapes) parts.push(`${work.tapes} ${work.tapes === 1 ? "piece" : "pieces"} of tape`);
   if (!parts.length) return "your work";
-  return parts.join(" and ");
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
-const amount = (work) => (work ? work.strokes + work.texts : 0);
+const amount = (work) => (work ? work.strokes + work.texts + (work.tapes || 0) : 0);
 
 // Whether the board is kept in this browser right now (storage can be full
 // or switched off, as in some private windows).
@@ -109,7 +117,11 @@ const IDLE_MS = 2500; // only once they've stopped writing for a moment
 const QUIET_AFTER_LATER_MS = 90 * 1000;
 
 export default function DemoGuide({ kind, restored, classTourRunning, classFinished }) {
-  const phone = isPhoneScreen();
+  // (reading and quizzing a notebook works on a phone, so the demo notebook
+  // doesn't say "made for a laptop" first: its walkthrough is showing)
+  const phone = isPhoneScreen() && kind !== "notebook";
+  // what they're keeping: the demo notebook, or a board
+  const thing = kind === "notebook" ? "notebook" : "board";
   // the note on show: { trigger } | null
   const [note, setNote] = useState(() => (restored ? { trigger: "return" } : phone ? { trigger: "phone" } : null));
   const [sheet, setSheet] = useState(null); // { trigger, next } | null
@@ -272,7 +284,7 @@ export default function DemoGuide({ kind, restored, classTourRunning, classFinis
         <div className={`${o.note} ${o.noteBlue}`} role="dialog" aria-labelledby="demo-note-title" data-demo-note={t}>
           {close}
           <h2 id="demo-note-title" className={o.noteTitle}>Welcome back</h2>
-          <p className={o.noteText}>Your board is just as you left it, kept in this browser. Sign in free to keep it on every device.</p>
+          <p className={o.noteText}>Your {thing} is just as you left it, kept in this browser. Sign in free to keep it on every device.</p>
           <div className={o.noteActions}>
             <button type="button" className={`${o.noteBtn} ${o.noteBtnPrimary}`} onClick={() => answer(t, "keep")}>
               Keep it, free
@@ -291,7 +303,7 @@ export default function DemoGuide({ kind, restored, classTourRunning, classFinis
         <div className={o.note} role="dialog" aria-labelledby="demo-note-title" data-demo-note={t}>
           {close}
           <h2 id="demo-note-title" className={o.noteTitle}>On a phone?</h2>
-          <p className={o.noteText}>Clean Slate is made for a laptop or an iPad, with a pen. Have a look here. To carry on there, keep this board, or copy the link to try the demo there.</p>
+          <p className={o.noteText}>Clean Slate is made for a laptop or an iPad, with a pen. Have a look here. To carry on there, keep this {thing}, or copy the link to try the demo there.</p>
           <div className={o.noteActions}>
             <button type="button" className={`${o.noteBtn} ${o.noteBtnPrimary}`} onClick={() => answer(t, "keep")}>
               <Laptop size={15} aria-hidden="true" /> Keep it for my laptop
@@ -309,8 +321,8 @@ export default function DemoGuide({ kind, restored, classTourRunning, classFinis
           <h2 id="demo-note-title" className={o.noteTitle}>Leaving the demo?</h2>
           <p className={o.noteText}>
             {keptHere()
-              ? "Your board is kept in this browser for now, so it should be here if you come back soon. Sign in free to keep it for good, on every device."
-              : "This browser isn't keeping your board, so it goes when you leave. Sign in free to keep it, on every device."}
+              ? `Your ${thing} is kept in this browser for now, so it should be here if you come back soon. Sign in free to keep it for good, on every device.`
+              : `This browser isn't keeping your ${thing}, so it goes when you leave. Sign in free to keep it, on every device.`}
           </p>
           <div className={o.noteActions}>
             <button type="button" className={`${o.noteBtn} ${o.noteBtnPrimary}`} onClick={() => answer(t, "keep")}>
@@ -326,7 +338,7 @@ export default function DemoGuide({ kind, restored, classTourRunning, classFinis
       card = (
         <div className={o.note} role="dialog" aria-labelledby="demo-note-title" data-demo-note={t}>
           {close}
-          <h2 id="demo-note-title" className={o.noteTitle}>Keep this board for your lesson?</h2>
+          <h2 id="demo-note-title" className={o.noteTitle}>{kind === "notebook" ? "Keep this notebook?" : "Keep this board for your lesson?"}</h2>
           <p className={o.noteText}>
             You&apos;ve added {describeWork(work || {})}.{keptHere() ? " It's kept in this browser for now." : ""} Sign in free to keep it on every device.
           </p>
@@ -350,6 +362,7 @@ export default function DemoGuide({ kind, restored, classTourRunning, classFinis
         <SignInSheet
           trigger={sheet.trigger}
           next={sheet.next}
+          kind={kind}
           pictures={work ? work.pictures : 0}
           worksheet={worksheet}
           onClose={() => {

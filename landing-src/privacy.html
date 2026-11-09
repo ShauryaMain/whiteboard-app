@@ -1,12 +1,12 @@
   <span class="tape-label">the plain-English version</span>
   <h1>Privacy</h1>
-  <p class="updated">Last updated 19 October 2026</p>
+  <p class="updated">Last updated 1 November 2026</p>
 
   <div class="summary">
     <h2>In short</h2>
     <ul>
       <li>We keep what the app needs to work, your sign-in details and your boards, and we count which steps people take in the app so we can see where it’s confusing. No cookies for that.</li>
-      <li>Students can join a class without an account. Their work in a live class isn’t saved to our database.</li>
+      <li>Students can join a class without an account. Their work in a live class isn’t saved to our database, unless they sign in and keep the lesson in a notebook of their own.</li>
       <li>No ads, no selling your data, no advertising cookies.</li>
       <li>Want your data or want it deleted? Email us and we’ll do it.</li>
     </ul>
@@ -19,7 +19,8 @@
   <h3>Teachers and anyone who signs in</h3>
   <ul>
     <li><b>Your sign-in details:</b> your email address. If you sign in with Google, also your name and profile picture, which Google shares when you sign in.</li>
-    <li><b>Your boards:</b> everything you put on them (drawing, text, images, PDFs and pictures you open beside the board and what you write on them, simulations you embed), the page style, a small preview picture of each board, and the list of people you’ve shared each board with.</li>
+    <li><b>Your boards and notebooks:</b> everything you put on them (drawing, text, images, tape, PDFs and pictures you open beside the board or add as pages, and what you write on them, simulations you embed), the page style, a small preview picture of each board, your notebooks’ covers and subjects, and the list of people you’ve shared each one with.</li>
+    <li><b>Notebook links:</b> if you turn on a notebook’s link, anyone who has the link can read that notebook and download it as a PDF, without an account. If you let the link write too, anyone who opens it and signs in is added to the notebook. You can turn the link off or replace it at any time, and the old link stops working.</li>
     <li><b>Fonts you upload:</b> stored so everyone on your boards sees text in that font.</li>
     <li><b>Your settings:</b> choices such as your pen colour, shortcuts and graph presets, kept with your account so they follow you to every device.</li>
     <li><b>Sharing suggestions:</b> when you share a board by email, Clean Slate can suggest people who already use it, showing their name and email.</li>
@@ -32,6 +33,7 @@
     <li>The student’s board is shared live with the teacher. Classmates only see it if the teacher chooses Show to class, which can hide the name. The teacher can also write on it and pin comments.</li>
     <li>Students’ boards aren’t saved to our database. Before ending the class, the teacher can download everyone’s board as a PDF or pictures (Save boards). That copy goes to the teacher’s own device, not to us.</li>
     <li>The student’s browser keeps a random ID, the name they typed and a copy of their board for up to a day, so a refresh or rejoining the same class brings their work back.</li>
+    <li>When the class ends, a student can press Keep this lesson. Then a copy of the teacher’s board (as it was at the end of the class) and the student’s own board is kept in their browser for up to three hours while they sign in, and is then saved as a notebook in the student’s own account. That copy belongs to the student, like any notebook.</li>
   </ul>
   <h3>Feedback you send us</h3>
   <ul>
@@ -42,6 +44,7 @@
   <ul>
     <li>Your sign-in session, and preferences such as pencil-only mode, the worksheet pane size, where you put the calculator and any clips you keep in view. These stay in your browser.</li>
     <li>If you try the demo board, a copy of it is kept in your browser, so it’s there when you come back and can be saved to your account when you sign in.</li>
+    <li>Which answers you uncovered under a notebook’s tape, and how you did with Quiz me. These are never sent to us.</li>
   </ul>
 
   <h2>What we don’t do</h2>
@@ -55,7 +58,7 @@
   <ul>
     <li><b>Supabase</b> stores accounts, boards and images, and carries the live sync between devices.</li>
     <li><b>Vercel</b> hosts the website and app. We use its visit counts (Vercel Web Analytics) to see which pages get visited and where visitors come from. They don’t use cookies and don’t identify you.</li>
-    <li><b>PostHog</b> counts the steps people take, from trying the demo board to running a first class, so we can see where Clean Slate is confusing. It uses no cookies: it keeps a random ID in your browser, and for teachers who sign in it uses the account’s ID, never your name or email. Board links and class codes are removed before anything is sent. If the link you followed had a short tag saying where it was posted (like <code>?ref=reddit</code>), that tag is kept with the steps too. On the demo board only, it may record the screen to show where people get stuck, with anything typed hidden. It never runs on student pages.</li>
+    <li><b>PostHog</b> counts the steps people take, from trying the demo board to running a first class, so we can see where Clean Slate is confusing. It uses no cookies: it keeps a random ID in your browser, and for teachers who sign in it uses the account’s ID, never your name or email. Board links and class codes are removed before anything is sent. If the link you followed had a short tag saying where it was posted (like <code>?ref=reddit</code>), that tag is kept with the steps too. On the demo board only, it may record the screen to show where people get stuck, with anything typed hidden. It never runs on student pages, or on a notebook opened from its link.</li>
     <li><b>Google</b> handles Google sign-in, and delivers our emails: sign-in codes, board clean-up reminders and feedback to our support inbox.</li>
   </ul>
   <p>Images you add to a board are stored so the board can show them. Anyone who has the direct link to one of those image files can open it, so avoid adding pictures you wouldn’t want shared.</p>
@@ -65,8 +68,8 @@
 
   <h2>Keeping and deleting your data</h2>
   <ul>
-    <li>You can delete any board from your boards page.</li>
-    <li>To keep things tidy, a board that nobody has opened for 30 days is deleted. We email the owner about a week before, with a button to keep the board.</li>
+    <li>You can delete any board or notebook from your home screen.</li>
+    <li>To keep things tidy, a board that nobody has opened for 30 days is deleted. We email the owner about a week before, with a button to keep the board. Notebooks are never deleted this way: they’re kept until you delete them.</li>
     <li>To get a copy of your data, or to delete your account and everything in it, email <span class="support">cleanslatesupportoffical@gmail.com</span> from the address you sign in with. We’ll reply within 21 days.</li>
   </ul>
 

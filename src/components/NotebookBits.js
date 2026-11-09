@@ -26,10 +26,11 @@ export function PaperPreview({ paper, color = "#ffffff", width = 72 }) {
   return <canvas ref={ref} aria-hidden="true" />;
 }
 
-// The choice of paper for a page.
-export function PaperChoices({ value, color, onPick }) {
+// The choice of paper for a page. `compact`: smaller, four to a row (in
+// the toolbar's Page menu, which has to fit on a phone).
+export function PaperChoices({ value, color, onPick, compact = false }) {
   return (
-    <div className={n.papers} role="radiogroup" aria-label="Paper">
+    <div className={`${n.papers} ${compact ? n.papersCompact : ""}`} role="radiogroup" aria-label="Paper">
       {NOTEBOOK_PAPERS.map((p) => (
         <button
           key={p.id}
@@ -40,7 +41,7 @@ export function PaperChoices({ value, color, onPick }) {
           className={`${n.paperTile} ${value === p.id ? n.paperOn : ""}`}
           onClick={() => onPick(p.id)}
         >
-          <PaperPreview paper={p.id} color={color} />
+          <PaperPreview paper={p.id} color={color} width={compact ? 56 : 72} />
           <span>{p.label}</span>
         </button>
       ))}
@@ -60,7 +61,9 @@ export function NotebookPagesPanel({ notebook, current, canEdit, thumbs, onJump,
     const body = bodyRef.current;
     if (!body) return;
     const el = body.querySelector('[data-current="true"]');
-    if (el && el.scrollIntoView) el.scrollIntoView({ block: "center" });
+    // (only the panel scrolls: scrollIntoView would also move the board
+    // underneath, and the panel's own heading off the top)
+    if (el) body.scrollTop = Math.max(0, el.offsetTop - body.offsetTop - (body.clientHeight - el.offsetHeight) / 2);
   }, []);
 
   return (

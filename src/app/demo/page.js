@@ -18,7 +18,8 @@ import p from "@/components/Paper.module.css";
 // It opens on "What are you planning?" (DemoGuide.js), unless:
 //   - the visitor has a board kept from an earlier visit (it opens again,
 //     with a "welcome back" note), or
-//   - the link says where to start: /demo?start=class | tutor | explore
+//   - the link says where to start: /demo?start=class | tutor | explore |
+//     notebook
 //     (this wins over a kept board; /demo?start=new always asks)
 
 const subscribe = () => () => {};
@@ -60,6 +61,8 @@ export default function DemoPage() {
   // as pinning a comment) or "short" (ended before that)
   const [classFinished, setClassFinished] = useState(null);
   const classStepRef = useRef(null);
+  // the demo notebook's walkthrough (tape, Quiz me, pages): once, at the start
+  const [nbTourDone, setNbTourDone] = useState(false);
 
   if (!ready) {
     return (
@@ -108,6 +111,13 @@ export default function DemoPage() {
           setClassFinished(classStepRef.current === "done" ? "full" : "short");
         }}
       />
+      {kind === "notebook" && !start.restored && !nbTourDone && (
+        <TourGuide
+          tour={TOURS.demoNotebook}
+          onEnd={() => setNbTourDone(true)}
+          onStep={(step) => track("demo_notebook_step", { step })}
+        />
+      )}
       {classTour > 0 && (
         <TourGuide
           key={classTour}
