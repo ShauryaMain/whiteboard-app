@@ -2,15 +2,18 @@
 // src/app/api/auth/email-code/route.js), so the form can't be used to
 // flood someone's inbox or the support Gmail account.
 //
-// Counted per server instance, like the feedback form's limit. A fresh
-// instance starts from zero, so these are a brake, not a wall; Gmail's own
-// daily sending cap is the last line.
+// Counted here per server instance (a quick first brake), and again in the
+// database across every instance (src/lib/rateLimit.js), so the limits
+// hold however many copies of the server are running. Gmail's own daily
+// sending cap (about 500) is the last line: allPerDay stays well under it,
+// leaving room for feedback and the clean-up emails.
 
 export const LIMITS = {
   perEmailGapMs: 45 * 1000, // one code per address every 45 seconds
   perEmailPerHour: 5,
   perIpPerHour: 12,
   perInstancePerDay: 100,
+  allPerDay: 300, // every sign-in code, all servers together
 };
 
 const HOUR = 60 * 60 * 1000;

@@ -68,10 +68,18 @@ export function rowToText(r) {
   };
 }
 
+// Who wrote it (`au`, from the author_id column: a teacher's marks on a
+// student's notebook are locked for the student, see 2026-11-clipping.sql).
+// "?" for things saved before the database kept that.
+function withAuthor(obj, r) {
+  if (r && "author_id" in r) obj.au = r.author_id || "?";
+  return obj;
+}
+
 const PARTS = {
   // (a notebook's strokes are saved packed: inkPack.js)
-  strokes: { columns: "id, data", map: (r) => ({ ...unpackStroke(r.data), id: r.id }), label: "strokes" },
-  texts: { columns: "id, x, y, text, color, font_size, width, rotation", map: rowToText, label: "texts" },
+  strokes: { columns: "id, data", map: (r) => withAuthor({ ...unpackStroke(r.data), id: r.id }, r), label: "strokes" },
+  texts: { columns: "id, x, y, text, color, font_size, width, rotation", map: (r) => withAuthor(rowToText(r), r), label: "texts" },
   images: {
     columns: "id, x, y, width, height, src, source",
     // (a database without the newer "source" column: clips from a reference
@@ -80,11 +88,14 @@ const PARTS = {
     map: (r) => {
       const img = { id: r.id, x: r.x, y: r.y, width: r.width, height: r.height, src: r.src };
       if (r.source) img.source = r.source;
-      return img;
+      return withAuthor(img, r);
     },
     label: "images",
   },
 };
+
+// (until the database has the author_id column, it isn't asked for)
+let authorsMissing = false;
 
 // One kind of board content (all of it). null when it couldn't be loaded,
 // so the caller leaves that part of the screen alone.
@@ -98,9 +109,15 @@ export async function fetchBoardPart(boardId, kind, client = supabase) {
     fetchAllRows((withCount) =>
       ordered(client.from(kind).select(columns, withCount ? { count: "exact" } : undefined).eq("board_id", boardId))
     );
-  let { rows, error } = await load(part.columns);
+  const authors = isRealBackend(client) && !authorsMissing ? ", author_id" : "";
+  let { rows, error } = await load(part.columns + authors);
+  if (error && authors && /author_id/i.test(String(error.message || "") + String(error.details || ""))) {
+    authorsMissing = true;
+    ({ rows, error } = await load(part.columns));
+  }
   if (error && part.fallbackColumns && /source|column|schema cache/i.test(String(error.message || "") + String(error.code || ""))) {
-    ({ rows, error } = await load(part.fallbackColumns));
+    ({ rows, error } = await load(part.fallbackColumns + (authorsMissing ? "" : authors)));
+    if (error && authors) ({ rows, error } = await load(part.fallbackColumns));
   }
   if (error) {
     if (kind === "images") console.warn("Could not load images (has the images table been created yet?):", error);

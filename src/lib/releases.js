@@ -35,6 +35,43 @@
 
 export const RELEASES = [
   {
+    id: "2026-11-classes",
+    // (change to the day this goes out)
+    date: "2026-11-12",
+    title: "Classes and homework",
+    headline: "Send homework straight into your students' notebooks",
+    intro:
+      "Make a class and your students join with a code. Each gets a notebook of their own that you can send work into. They hand it in, and you mark it right on the page.",
+    slides: [
+      {
+        src: "/whats-new/classes/class.png",
+        alt: "A class page: the join code in big letters, a Copy join link button, and a piece of homework listed with how many are waiting to be marked.",
+        caption: "Make a class: students join with a code",
+      },
+      {
+        src: "/whats-new/classes/homework.png",
+        alt: "A worksheet as a page in a student's notebook, with a strip above it reading Homework, Quadratics worksheet, due Mon, and a Hand in button.",
+        caption: "The work lands in their notebook, with its due date",
+      },
+      {
+        src: "/whats-new/classes/mark.png",
+        alt: "A teacher's red marks on a student's page, and a marking card with a score of 7 out of 10, a comment and a Return to student button.",
+        caption: "Mark it on the page, then hand it back",
+      },
+      {
+        src: "/whats-new/classes/by-question.png",
+        alt: "Question 1 from two students side by side, each with buttons for full marks or none and a running total.",
+        caption: "Or mark one question across the whole class",
+      },
+    ],
+    points: [
+      "Teaching on your home screen: make a class (students join with a code), or a notebook for one student you tutor.",
+      "Send a worksheet, a past paper, pages of your notebook or a board, as homework with a due date or as notes to keep.",
+      "Students see what's due on their home screen and hand it in from the page. You see who has, and who changed it since.",
+      "Mark in red on their page, give a score and a comment, or mark one question across everyone side by side.",
+    ],
+  },
+  {
     id: "2026-11-notebooks",
     // (change to the day this goes out)
     date: "2026-11-01",

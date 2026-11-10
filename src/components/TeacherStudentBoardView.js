@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Check, Hand, Maximize, MessageSquare, MonitorUp, Pencil, Trash2, Undo2 } from "lucide-react";
 import ClassroomBoardViewer from "./ClassroomBoardViewer";
 import { newId } from "@/lib/boardObjects";
@@ -39,9 +39,18 @@ const PEN_COLOURS = [
 const PEN_WIDTH = 4;
 
 export default function TeacherStudentBoardView({
-  code, student, question = null, spotlight = null, onBack, onLowerHand, onSpotlight, onStopSpotlight,
+  code, student, question = null, spotlight = null, onBack, onLowerHand, onSpotlight, onStopSpotlight, onRelay = null,
 }) {
   const viewerRef = useRef(null);
+  const studentId = student?.studentId || null;
+  // While this board is open, the class page can pass a classmate's "what's
+  // on it?" through here (classmates can only listen on a student's board).
+  useEffect(() => {
+    if (!onRelay || !studentId) return undefined;
+    const relay = { studentId, send: (event, payload) => viewerRef.current?.send(event, payload) };
+    onRelay(relay, true);
+    return () => onRelay(relay, false);
+  }, [onRelay, studentId]);
   const [comments, setComments] = useState([]);
   const [connected, setConnected] = useState(false);
   const [showComments, setShowComments] = useState(true);

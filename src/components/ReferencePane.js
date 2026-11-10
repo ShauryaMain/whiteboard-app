@@ -15,6 +15,7 @@ import {
   newRefId, pageNumberOf, rotateMarkClockwise, tapeAt, textAt, transformMark, unionMarkBounds,
 } from "@/lib/refDoc";
 import { closePdf, openPdfUrl, pageBaseSize, renderClip } from "@/lib/refPdf";
+import { fileUrl } from "@/lib/fileUrls";
 import RefPage from "./RefPage";
 import { RefPagesPanel, RefSearchPanel } from "./RefPanels";
 import PalmSafeButton from "./PalmSafeButton";
@@ -423,9 +424,14 @@ export default function ReferencePane({
         // (a picture whose server won't allow clipping still shows)
         const plain = new Image();
         plain.onload = () => done(url, plain);
-        plain.src = url;
+        fileUrl(url).then((real) => {
+          plain.src = real;
+        });
       };
-      img.src = url;
+      // (a stored picture opens through a short-lived link)
+      fileUrl(url).then((real) => {
+        img.src = real;
+      });
     });
   }, [pages]);
 

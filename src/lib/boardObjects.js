@@ -195,11 +195,18 @@ export function translateImage(img, dx, dy) {
 
 // Fresh copies with new ids, shifted by (dx, dy) — used by paste and
 // duplicate.
+// (a copy is the copier's own: it doesn't keep who wrote the original, `au`)
+function ownCopy(o, id) {
+  const out = { ...o, id };
+  delete out.au;
+  return out;
+}
+
 export function cloneObjects(data, dx, dy) {
   return {
-    strokes: (data.strokes || []).map((s) => ({ ...translateStroke(s, dx, dy), id: newId() })),
-    texts: (data.texts || []).map((t) => ({ ...translateText(t, dx, dy), id: newId() })),
-    images: (data.images || []).map((img) => ({ ...translateImage(img, dx, dy), id: newId() })),
+    strokes: (data.strokes || []).map((s) => ownCopy(translateStroke(s, dx, dy), newId())),
+    texts: (data.texts || []).map((t) => ownCopy(translateText(t, dx, dy), newId())),
+    images: (data.images || []).map((img) => ownCopy(translateImage(img, dx, dy), newId())),
     // a copied graph has none of the original's read-offs in progress
     graphs: (data.graphs || []).map((g) => {
       const copy = { ...g, x: g.x + dx, y: g.y + dy, id: newId() };

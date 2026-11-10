@@ -14,6 +14,7 @@ import { inkOn } from "./inkColor";
 import { drawText, textBoxHeight } from "./richText";
 import "./fonts";
 import { strokeDash, strokeBounds, textBounds, imageBounds, unionBounds } from "./boardObjects";
+import { fileUrl } from "./fileUrls";
 
 const FONT = "-apple-system, BlinkMacSystemFont, sans-serif";
 
@@ -183,7 +184,10 @@ export function loadBoardImages(images, timeoutMs = 6000) {
           el.onload = () => finish(true);
           el.onerror = () => finish(false);
           setTimeout(() => finish(false), timeoutMs);
-          el.src = img.src;
+          // (a stored picture opens through a short-lived link)
+          fileUrl(img.src).then((real) => {
+            el.src = real;
+          });
         })
     )
   ).then(() => out);

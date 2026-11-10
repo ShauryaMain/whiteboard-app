@@ -4,7 +4,7 @@ import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "rea
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { BookPlus, Check, Columns2, Hand, MonitorUp, Pause, Rows2, Send } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { readyStudent, liveChannel } from "@/lib/liveMode";
+import { readyStudent, liveChannel, teacherTopic, teacherOnlyNow, whenTopicsFree } from "@/lib/liveMode";
 import ClassroomBoardViewer from "@/components/ClassroomBoardViewer";
 import Whiteboard from "@/components/Whiteboard";
 import SplitDivider from "@/components/SplitDivider";
@@ -203,131 +203,166 @@ function JoinCodeViewInner() {
   const roomRef = useRef(null);
   useEffect(() => {
     if (!code || !studentId || ended || access !== "ok") return;
-    const joinedAt = Date.now();
-    const channel = liveChannel(`classroom-${classCode}`, { presence: { key: studentId } });
-    const room = { joined: false, tell: null };
+    const startRoom = () => {
+      const joinedAt = Date.now();
+      const channel = liveChannel(`classroom-${classCode}`, { presence: { key: studentId } });
+      // What the teacher says to the whole class comes on their own channel,
+      // which only the teacher can send on (before the November security
+      // update, on the class channel too).
+      const teacherChannel = liveChannel(teacherTopic(classCode), {});
+      const fromTeacher = teacherOnlyNow() ? [teacherChannel] : [teacherChannel, channel];
+      const onTeacher = (event, fn) => fromTeacher.forEach((ch) => ch.on("broadcast", { event }, fn));
+      const room = { joined: false, tell: null, send: (event, payload) => channel.send({ type: "broadcast", event, payload }) };
 
-    // Is the teacher here? Worked out from the "joined" and "left" events
-    // (see src/lib/classRoster.js for why not from the library's own list).
-    const attendance = createAttendance();
-    let awayTimer = null;
-    let closed = false; // this connection has been put away
-    const checkTeacher = () => {
-      if (closed) return;
-      if (attendanceHas(attendance, "teacher")) {
-        clearTimeout(awayTimer);
-        awayTimer = null;
-        setTeacherAway(false);
-      } else if (!awayTimer) {
-        awayTimer = setTimeout(() => setTeacherAway(true), TEACHER_AWAY_AFTER_MS);
-      }
-    };
-    channel.on("presence", { event: "join" }, ({ key, newPresences, currentPresences }) => {
-      attendanceJoin(attendance, key, newPresences, currentPresences);
-      checkTeacher();
-    });
-    channel.on("presence", { event: "leave" }, ({ key, leftPresences, currentPresences }) => {
-      attendanceLeave(attendance, key, leftPresences, currentPresences);
-      checkTeacher();
-    });
-    channel.on("presence", { event: "sync" }, () => {
-      attendanceSync(attendance, channel.presenceState());
-      checkTeacher();
-    });
-    // Tells the teacher whether this student's hand is up / they're done.
-    // (Sent as its own message rather than as part of the "I'm here"
-    // announcement: see src/lib/classRoster.js for why.)
-    room.tell = () => {
-      const now = statusRef.current;
-      return channel.send({
-        type: "broadcast",
-        event: "student-status",
-        payload: { studentId, hand: now.hand, handAt: now.handAt, done: now.done },
-      });
-    };
-    channel.on("broadcast", { event: "class-ended" }, () => {
-      // (the teacher's board is put away now: what was on it is kept, for
-      // "Keep this lesson")
-      const view = teacherViewRef.current;
-      if (view && view.contents) lessonTeacherRef.current = view.contents();
-      setClassStatus(classCode, { ended: true, hand: false, handAt: 0 });
-      setControl(NO_CONTROL);
-    });
-
-    // The question the teacher sends to everyone's board arrives in pieces.
-    const receiver = createQuestionReceiver((question) => {
-      const had = teacherStore.get().question;
-      teacherStore.setQuestion(question);
-      if (!had || had.id !== question.id) setNewQuestion(question.id);
-    });
-    channel.on("broadcast", { event: "class-question" }, ({ payload }) => receiver.header(payload));
-    channel.on("broadcast", { event: "class-question-piece" }, ({ payload }) => receiver.piece(payload));
-    channel.on("broadcast", { event: "class-question-done" }, ({ payload }) => receiver.done(payload));
-    // If the class has a question this board doesn't (it joined after the
-    // question went out, or a piece got lost on the way), ask for it: a
-    // moment later, in case it is arriving right now, then a few more times.
-    let wantTimer = null;
-    const wantQuestion = (id) => {
-      clearTimeout(wantTimer);
-      let tries = 0;
-      const check = () => {
-        wantTimer = null;
-        const have = teacherStore.get().question;
-        if (closed || (have && have.id === id)) return;
-        channel.send({ type: "broadcast", event: "class-question-request", payload: { id } });
-        tries += 1;
-        if (tries < 5) wantTimer = setTimeout(check, 4000);
-      };
-      wantTimer = setTimeout(check, 1200);
-    };
-    // What the teacher has switched on for the class (sent whenever it
-    // changes, and whenever a page asks).
-    channel.on("broadcast", { event: "class-state" }, ({ payload }) => {
-      const state = readClassState(payload);
-      setControl({ spotlight: state.spotlight, pensDown: state.pensDown });
-      if (!state.question) {
-        clearTimeout(wantTimer);
-        wantTimer = null;
-        // (and anything still on its way is dropped: it has been taken back)
-        receiver.reset();
-        teacherStore.setQuestion(null);
-      } else {
-        const have = teacherStore.get().question;
-        if (!have || have.id !== state.question) wantQuestion(state.question);
-      }
-    });
-    channel.on("broadcast", { event: "hand-lower" }, ({ payload }) => {
-      if (payload && payload.studentId === studentId) setClassStatus(classCode, { hand: false, handAt: 0 });
-    });
-    channel.on("broadcast", { event: "status-reset" }, () => {
-      setClassStatus(classCode, { hand: false, handAt: 0, done: false });
-    });
-    // The teacher's board has just (re)opened, or reconnected, and wants to
-    // know where everyone stands. Always answered, even with "nothing":
-    // a hand that came down while the teacher was offline has to be cleared
-    // on their side too.
-    channel.on("broadcast", { event: "status-request" }, () => {
-      room.tell();
-    });
-    channel.subscribe(async (state) => {
-      if (state === "SUBSCRIBED") {
-        room.joined = true;
-        await channel.track({ studentId, name: studentName, joinedAt });
+      // Is the teacher here? Worked out from the "joined" and "left" events
+      // (see src/lib/classRoster.js for why not from the library's own list).
+      const attendance = createAttendance();
+      let awayTimer = null;
+      let closed = false; // this connection has been put away
+      const checkTeacher = () => {
         if (closed) return;
-        room.tell();
+        if (attendanceHas(attendance, "teacher")) {
+          clearTimeout(awayTimer);
+          awayTimer = null;
+          setTeacherAway(false);
+        } else if (!awayTimer) {
+          awayTimer = setTimeout(() => setTeacherAway(true), TEACHER_AWAY_AFTER_MS);
+        }
+      };
+      channel.on("presence", { event: "join" }, ({ key, newPresences, currentPresences }) => {
+        attendanceJoin(attendance, key, newPresences, currentPresences);
         checkTeacher();
-        // "What is switched on?" (pens down, a board being shown, a question)
-        channel.send({ type: "broadcast", event: "class-state-request", payload: {} });
-      }
-    });
-    roomRef.current = room;
+      });
+      channel.on("presence", { event: "leave" }, ({ key, leftPresences, currentPresences }) => {
+        attendanceLeave(attendance, key, leftPresences, currentPresences);
+        checkTeacher();
+      });
+      channel.on("presence", { event: "sync" }, () => {
+        attendanceSync(attendance, channel.presenceState());
+        checkTeacher();
+      });
+      // Tells the teacher whether this student's hand is up / they're done.
+      // (Sent as its own message rather than as part of the "I'm here"
+      // announcement: see src/lib/classRoster.js for why.)
+      room.tell = () => {
+        const now = statusRef.current;
+        return channel.send({
+          type: "broadcast",
+          event: "student-status",
+          payload: { studentId, hand: now.hand, handAt: now.handAt, done: now.done },
+        });
+      };
+      onTeacher("class-ended", () => {
+        // (the teacher's board is put away now: what was on it is kept, for
+        // "Keep this lesson")
+        const view = teacherViewRef.current;
+        if (view && view.contents) lessonTeacherRef.current = view.contents();
+        setClassStatus(classCode, { ended: true, hand: false, handAt: 0 });
+        setControl(NO_CONTROL);
+      });
 
+      // The question the teacher sends to everyone's board arrives in pieces.
+      const receiver = createQuestionReceiver((question) => {
+        const had = teacherStore.get().question;
+        teacherStore.setQuestion(question);
+        if (!had || had.id !== question.id) setNewQuestion(question.id);
+      });
+      onTeacher("class-question", ({ payload }) => receiver.header(payload));
+      onTeacher("class-question-piece", ({ payload }) => receiver.piece(payload));
+      onTeacher("class-question-done", ({ payload }) => receiver.done(payload));
+      // If the class has a question this board doesn't (it joined after the
+      // question went out, or a piece got lost on the way), ask for it: a
+      // moment later, in case it is arriving right now, then a few more times.
+      let wantTimer = null;
+      const wantQuestion = (id) => {
+        clearTimeout(wantTimer);
+        let tries = 0;
+        const check = () => {
+          wantTimer = null;
+          const have = teacherStore.get().question;
+          if (closed || (have && have.id === id)) return;
+          channel.send({ type: "broadcast", event: "class-question-request", payload: { id } });
+          tries += 1;
+          if (tries < 5) wantTimer = setTimeout(check, 4000);
+        };
+        wantTimer = setTimeout(check, 1200);
+      };
+      // What the teacher has switched on for the class (sent whenever it
+      // changes, and whenever a page asks).
+      onTeacher("class-state", ({ payload }) => {
+        const state = readClassState(payload);
+        setControl({ spotlight: state.spotlight, pensDown: state.pensDown });
+        if (!state.question) {
+          clearTimeout(wantTimer);
+          wantTimer = null;
+          // (and anything still on its way is dropped: it has been taken back)
+          receiver.reset();
+          teacherStore.setQuestion(null);
+        } else {
+          const have = teacherStore.get().question;
+          if (!have || have.id !== state.question) wantQuestion(state.question);
+        }
+      });
+      onTeacher("hand-lower", ({ payload }) => {
+        if (payload && payload.studentId === studentId) setClassStatus(classCode, { hand: false, handAt: 0 });
+      });
+      onTeacher("status-reset", () => {
+        setClassStatus(classCode, { hand: false, handAt: 0, done: false });
+      });
+      // The teacher's board has just (re)opened, or reconnected, and wants to
+      // know where everyone stands. Always answered, even with "nothing":
+      // a hand that came down while the teacher was offline has to be cleared
+      // on their side too.
+      onTeacher("status-request", () => {
+        room.tell();
+      });
+      // "What is switched on?" (pens down, a board being shown, a question),
+      // once both channels are up, so the answer isn't missed.
+      let roomUp = false;
+      let teacherUp = false;
+      const askState = () => {
+        if (roomUp && teacherUp && !closed) channel.send({ type: "broadcast", event: "class-state-request", payload: {} });
+      };
+      teacherChannel.subscribe((state) => {
+        if (state === "SUBSCRIBED") {
+          teacherUp = true;
+          askState();
+        }
+      });
+      channel.subscribe(async (state) => {
+        if (state === "SUBSCRIBED") {
+          room.joined = true;
+          await channel.track({ studentId, name: studentName, joinedAt });
+          if (closed) return;
+          room.tell();
+          checkTeacher();
+          roomUp = true;
+          askState();
+        }
+      });
+      roomRef.current = room;
+
+      return () => {
+        roomRef.current = null;
+        closed = true;
+        clearTimeout(awayTimer);
+        clearTimeout(wantTimer);
+        supabase.removeChannel(channel);
+        supabase.removeChannel(teacherChannel);
+      };
+    };
+
+    // The waiting page had these channels open a moment ago. They're only
+    // started here once that page has let go of them (otherwise the
+    // library hands back the old ones, which are on their way out).
+    let gone = false;
+    let stop = null;
+    whenTopicsFree([`classroom-${classCode}`, teacherTopic(classCode)]).then(() => {
+      if (!gone) stop = startRoom();
+    });
     return () => {
-      roomRef.current = null;
-      closed = true;
-      clearTimeout(awayTimer);
-      clearTimeout(wantTimer);
-      supabase.removeChannel(channel);
+      gone = true;
+      if (stop) stop();
     };
   }, [code, classCode, studentId, studentName, ended, teacherStore, access]);
 
@@ -583,7 +618,14 @@ function JoinCodeViewInner() {
       >
         {/* Once the class has ended the teacher's board is disconnected. */}
         <div style={paneStyle("master")} inert={watchingSpot || (!both && view !== "master")}>
-          {!ended && <ClassroomBoardViewer ref={teacherViewRef} boardId={boardId} onLeave={leave} />}
+          {!ended && (
+            <ClassroomBoardViewer
+              ref={teacherViewRef}
+              boardId={boardId}
+              onLeave={leave}
+              askThrough={() => roomRef.current?.send("master-state-request", {})}
+            />
+          )}
         </div>
         {both && (
           <SplitDivider
@@ -643,6 +685,7 @@ function JoinCodeViewInner() {
               fitOnLoad
               question={teacherLayer.question}
               waitingText="Waiting for the board…"
+              askThrough={() => roomRef.current?.send("spot-state-request", { studentId: spot.studentId })}
             />
           </div>
         )}

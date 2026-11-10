@@ -15,6 +15,18 @@ import { X, Move } from "lucide-react";
 // simulations are) captures all pointer input over itself, so a plain
 // header bar + a small corner handle — both real DOM elements stacked
 // above the iframe — are what actually receive the drag.
+
+// Only an ordinary web address goes in the frame (a board shared with
+// others can carry anything in sim.url). The frame's sandbox above stops
+// the page inside from navigating the whole tab somewhere else.
+function simAddress(url) {
+  try {
+    const u = new URL(String(url || ""));
+    return u.protocol === "https:" || u.protocol === "http:" ? u.href : "about:blank";
+  } catch (err) {
+    return "about:blank";
+  }
+}
 export default function SimEmbed({ sim, scaleRef, onMove, onResize, onCommit, onRemove, registerNode }) {
   const dragRef = useRef(null); // { mode: "move" | "resize", startScreen: {x,y}, start: {...} }
 
@@ -111,7 +123,9 @@ export default function SimEmbed({ sim, scaleRef, onMove, onResize, onCommit, on
       </div>
       <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
         <iframe
-          src={sim.url}
+          src={simAddress(sim.url)}
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-pointer-lock allow-modals"
+          referrerPolicy="no-referrer"
           title={sim.title || "Embedded simulation"}
           style={{ width: "100%", height: "100%", border: "none", display: "block" }}
           allow="fullscreen; autoplay"

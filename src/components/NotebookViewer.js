@@ -13,6 +13,7 @@ import { parseBackground } from "@/lib/boardBackground";
 import { isTape, tapesInReadingOrder } from "@/lib/tape";
 import { startQuiz, showAnswer, markAnswer, currentTape, readTally, saveTally } from "@/lib/quiz";
 import { rememberReturn } from "@/lib/returnTo";
+import { setFileLinkToken } from "@/lib/fileUrls";
 import { landingLink } from "@/lib/links";
 import { QuizBar } from "./StudyBits";
 import d from "./Dialog.module.css";
@@ -84,6 +85,8 @@ async function fetchStamp(token) {
 // The notebook a link opens: { phase: "ready", ... }, or { phase: "gone" }
 // (the link is off or unknown), or { phase: "error" }.
 async function fetchShared(token) {
+  // its pictures open for whoever has the link (src/lib/fileUrls.js)
+  setFileLinkToken(token);
   try {
     const { data, error } = await supabase.rpc("open_shared_notebook", { p_token: token });
     if (error) return { phase: "error" };

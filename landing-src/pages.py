@@ -100,6 +100,10 @@ IMG = {
                 "The Share window for a Clean Slate notebook, with Anyone with the link can look chosen and the notebook's link ready to copy"),
     "nbpages": ("clean-slate-notebook-pages-panel", [700, 1200], 1200, 750,
                 "A Clean Slate notebook with the pages panel open, showing small pictures of each page beside a Cornell notes page"),
+    "hwmark": ("clean-slate-homework-marking-in-notebook", [700, 1200], 1200, 750,
+               "A teacher marking homework in a student's Clean Slate notebook: red ticks on the worksheet, and a marking card with a score of 7 out of 10, a comment and Return to student"),
+    "hwbyq": ("clean-slate-homework-mark-by-question", [700, 1200], 1200, 750,
+              "Marking one question across a class in Clean Slate: question 1 from two students side by side, with full-marks and no-marks buttons and running totals"),
     "nbphone": ("clean-slate-notebook-link-on-phone", [390, 780], 780, 1040,
                 "A shared Clean Slate notebook opened from its link on a phone, with tape over the answers and Quiz me and PDF buttons"),
 }
@@ -170,6 +174,7 @@ PAGES = [
         "faq": [
             ("Is it really free?", "Yes. There is no paid plan, no limit on how many notebooks you make, and no ads. You sign in with Google, or with a code sent to any email address."),
             ("Does it work on a Chromebook, Windows laptop or Android tablet?", "Yes. It runs in the browser, so it works on Chromebooks, Windows, Mac, Linux, iPads and Android tablets, with nothing to install."),
+            ("Can my teacher send me homework in it?", "Yes. If your teacher gives you a class code, join with it and you get a notebook for that class. Homework arrives in it with its due date: write on the pages, press Hand in, and see your teacher's marks and comments when it comes back. The notebook stays yours."),
             ("Can I write with Apple Pencil?", 'Yes. On an iPad (iPadOS 15 and newer), once you write with the Pencil only the Pencil draws, and your palm leaves no marks. See <a href="[[url:whiteboard-for-ipad]]">Clean Slate on iPad</a>.'),
             ("Can I import a PDF and write on it?", "Yes. Add pages from a PDF (pick up to 30 at a time) and write straight over them. A notebook can have up to 500 pages."),
             ("Can I export my notes?", "Yes. Export the whole notebook, one page or a range of pages as a single PDF."),
@@ -211,6 +216,15 @@ PAGES = [
 <p>Press Start live class and Clean Slate gives you a six-character code. Students type it on any device, add their first name, and they're in. They don't need an account or an email address.</p>
 <p>Each student sees your board and has a board of their own, with the same tools as yours. Class overview shows every student's board at once, live. Students can put a hand up when they're stuck, and you can open anyone's board to pin a comment or write on their work.</p>
 {fig:overview:Class overview: every student's board at once, with hands up and done.}"""),
+            ("Set homework in their notebooks", """
+<p>Make a class on your home screen and students join it with a code. Each student signs in and gets a notebook for your class, which is theirs to keep. Send work straight into it: a worksheet or past paper as a PDF or photos, pages of your own notebook, or a board.</p>
+<ul class="ticks">
+  <li><b>Homework or notes to keep.</b> Give homework a due date and the marks it's out of. Students see what's due on their home screen and hand it in from the page.</li>
+  <li><b>Mark it on the page.</b> Open a student's notebook and write on their work in red. Your marks are locked: the student can't rub them out, and you can't change their writing. Add a score and a comment, then return it.</li>
+  <li><b>Or one question at a time.</b> Draw a box round each question once, then see question 1 from every student side by side, give the marks, and return everyone together. Download the marks as a spreadsheet.</li>
+</ul>
+{fig:hwbyq:One question from every student, side by side.}
+<p>Tutoring one student? Make a notebook for them and send them the invite link instead of a class code.</p>"""),
             ("One board for every subject", """
 <p>Pick the paper that suits the lesson: blank, lined, squared, dot grid or isometric, on white or any page colour, chalkboard green included. Text boxes work like a document, with fonts, sizes, colours and highlights, and maths such as x² and ¾ sets itself as you type.</p>
 <ul class="ticks">
@@ -226,7 +240,8 @@ PAGES = [
         "faq": [
             ("Is Clean Slate free for teachers?", "Yes. There is no paid plan, no board limit and no ads. You sign in with Google, or with a code sent to your email, to save and share boards."),
             ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> opens straight away with every tool, a ready lesson and a pretend class to try. Your board is kept in your browser, and moves into your account if you sign in.'),
-            ("Do my students need accounts?", "No. Students join a live class with a six-character code and their first name."),
+            ("Do my students need accounts?", "Not for a live lesson: students join with a six-character code and their first name. To get homework in a notebook of their own, they join your class and sign in with Google or a code sent to their email."),
+            ("Can I set and mark homework?", "Yes. Make a class, send a worksheet, notebook pages or a board as homework with a due date, and students hand it in from their notebook. Mark on their page in red, give a score and a comment, or mark one question across the class side by side."),
             ("Can I use it with Zoom, Google Meet or Teams?", "Yes. Clean Slate has no video or audio of its own, so run it beside your call. Share your screen, or start a live class so students follow on their own devices."),
             ("Which devices does it work on?", "Any device with a modern browser: iPads (iPadOS 15 and newer), Android tablets, Chromebooks, Windows, Mac and Linux."),
         ],
@@ -248,6 +263,7 @@ PAGES = [
   <li><b>It feels like writing.</b> Pen, highlighter and eraser are made for a stylus. Scribble over something to rub it out.</li>
   <li><b>Your student can write as well.</b> Share a board by email and you both write on it at the same time.</li>
   <li><b>Next week is one tap away.</b> Every board saves automatically and shows a preview picture, so last lesson is easy to find.</li>
+  <li><b>A notebook for each student.</b> Make a notebook for your student and send them the invite link. It becomes theirs, and you can send homework into it, with a due date, and mark it on the page.</li>
 </ul>"""),
             ("Past papers, clipped onto the board", """
 <p>Open a whole past paper or textbook and pick just the pages you need. Highlight the key words, cover the answers with tape until your student has had a go, and draw a box round a question to put it on the board beside your working.</p>
@@ -583,7 +599,8 @@ PAGES = [
 HOME_FAQ = [
     ("Is Clean Slate really free?", "Yes. There is no paid plan, no board limit and no ads."),
     ("Can I try it without signing up?", f'Yes. The <a href="{APP}/demo">demo board</a> opens with no sign-up, no login and nothing to download, with a ready lesson and a pretend class to try. Your board is kept in your browser, and moves into your account when you sign in with Google or an email address.'),
-    ("Do my students need accounts?", "No. Students join a live class with a six-character code and their first name."),
+    ("Do my students need accounts?", "Not for a live lesson: students join with a six-character code and their first name. For homework in a notebook of their own, they join your class and sign in."),
+    ("Can I set homework?", 'Yes. Make a class, and students who join get a notebook for it. Send a worksheet, notebook pages or a board as homework with a due date, then mark it on their page and hand it back. See <a href="[[url:online-whiteboard-for-teaching]]">teaching with Clean Slate</a>.'),
     ("Does it work on an iPad with Apple Pencil?", 'Yes. It runs in Safari on iPadOS 15 and newer. Once you write with a Pencil, only the Pencil draws, and resting your palm on the screen leaves no marks. See <a href="[[url:whiteboard-for-ipad]]">the whiteboard for iPad</a>.'),
     ("Can I open a PDF on the whiteboard?", "Yes. Open a PDF or an image in a pane beside the board. From a long PDF, pick up to 30 pages. Write, highlight, type and cover answers with tape, clip any question onto the board, and it's all saved with the board."),
     ("Is it a replacement for Microsoft Whiteboard or Jamboard?", 'Yes. Microsoft Whiteboard no longer works with personal accounts and Google shut Jamboard down in 2024. Clean Slate works in any browser, and you sign in with Google or any email address. See <a href="[[url:microsoft-whiteboard-alternative]]">the Microsoft Whiteboard alternative</a> and <a href="[[url:jamboard-alternative]]">the Jamboard alternative</a>.'),

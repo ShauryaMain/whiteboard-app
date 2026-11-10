@@ -11,6 +11,7 @@
 
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
+import { takeRate } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,8 @@ const MAX_MESSAGE = 5000;
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 4.2 * 1024 * 1024; // Vercel caps a request at 4.5MB
-const RATE_LIMIT = 5; // messages per person per 10 minutes (per server instance)
+const RATE_LIMIT = 5; // messages per person per 10 minutes (per server instance, and in the database)
+const DAILY_LIMIT = 100; // feedback emails a day, everyone together
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const recentByUser = new Map();
 
@@ -69,6 +71,19 @@ async function verifyUser(request) {
   return data.user;
 }
 
+// The same limits, counted across every copy of the server (needs the
+// service-role key; without it only the per-instance count applies).
+function countedInDatabase(userId) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return Promise.resolve({ ok: true, unchecked: true });
+  const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  return takeRate(admin, [
+    { key: `feedback-user:${userId}`, max: RATE_LIMIT, seconds: RATE_WINDOW_MS / 1000 },
+    { key: "feedback-all", max: DAILY_LIMIT, seconds: 86400 },
+  ]);
+}
+
 function transport(user, pass) {
   // FEEDBACK_SMTP_HOST / _PORT let another mail provider be used instead of Gmail.
   if (process.env.FEEDBACK_SMTP_HOST) {
@@ -105,7 +120,7 @@ export async function POST(request) {
 
   const user = await verifyUser(request);
   if (!user) return json({ error: "unauthorized", message: "Please sign in again, then send your feedback." }, 401);
-  if (tooMany(user.id)) {
+  if (tooMany(user.id) || !(await countedInDatabase(user.id)).ok) {
     return json({ error: "rate_limited", message: "That's a lot of feedback in a short time — please try again in a few minutes." }, 429);
   }
 

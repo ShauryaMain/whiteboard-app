@@ -85,9 +85,12 @@ function leftBehindNote(pictures, worksheet) {
 // `onKeep`: what to keep before signing in, instead of the demo board (a
 // student keeping their lesson passes it, with trigger "lesson").
 // `kind`: the demo board's kind ("notebook" for the demo notebook).
-export default function SignInSheet({ trigger = "toolbar", next = null, pictures = 0, worksheet = false, onClose, onKeep = null, kind = null }) {
+// `custom`: { title, lead, keeps } for a sheet that isn't about keeping a
+// board (joining a class, opening a notebook a teacher made: src/app/c, src/app/s).
+export default function SignInSheet({ trigger = "toolbar", next = null, pictures = 0, worksheet = false, onClose, onKeep = null, kind = null, custom = null }) {
   const copy =
-    trigger === "lesson" ? COPY.lesson : kind === "notebook" ? COPY.notebook : next === "class" ? COPY.class : trigger === "phone" ? COPY.phone : COPY.keep;
+    custom ||
+    (trigger === "lesson" ? COPY.lesson : kind === "notebook" ? COPY.notebook : next === "class" ? COPY.class : trigger === "phone" ? COPY.phone : COPY.keep);
   const [emailReady, setEmailReady] = useState(false);
   const [googleDirect, setGoogleDirect] = useState(Boolean(GOOGLE_CLIENT_ID));
   const client = lazyClient;
@@ -166,7 +169,7 @@ export default function SignInSheet({ trigger = "toolbar", next = null, pictures
         {!emailFirst && email}
         <p className={o.sheetFoot}>
           Free, with no card and no ads.
-          {leftBehindNote(pictures, worksheet)}
+          {custom ? "" : leftBehindNote(pictures, worksheet)}
         </p>
       </div>
     </div>

@@ -29,6 +29,7 @@ export const PDF_UNSUPPORTED_MESSAGE =
 
 export async function loadPdfjs() {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.min.mjs`;
+  // served by the app itself (scripts/copy-vendor.mjs copies it into public/vendor)
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `/vendor/pdfjs/${pdfjsLib.version}/pdf.worker.min.mjs`;
   return pdfjsLib;
 }

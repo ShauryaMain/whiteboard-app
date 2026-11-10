@@ -14,9 +14,13 @@ import { useEffect, useSyncExternalStore } from "react";
 import { supabase } from "./supabaseClient";
 
 const KEY = "cleanslate_live_private";
-const PUBLIC = { ready: true, private: false };
-const PRIVATE = { ready: true, private: true };
-const NOT_READY = { ready: false, private: false };
+// teacherOnly: the database lets only the teacher send on the class's
+// teacher channel (supabase/2026-11-security.sql, live_config version 2),
+// so students take the teacher's class messages from there alone.
+const PUBLIC = { ready: true, private: false, teacherOnly: false };
+const PRIVATE = { ready: true, private: true, teacherOnly: false };
+const PRIVATE2 = { ready: true, private: true, teacherOnly: true };
+const NOT_READY = { ready: false, private: false, teacherOnly: false };
 
 let known = null; // { ready: true, private } once asked this visit
 let asking = null;
@@ -25,6 +29,7 @@ const listeners = new Set();
 function remembered() {
   try {
     const v = window.localStorage.getItem(KEY);
+    if (v === "2") return PRIVATE2;
     if (v === "1") return PRIVATE;
     if (v === "0") return PUBLIC;
   } catch (err) {
@@ -35,7 +40,7 @@ function remembered() {
 
 function remember(mode) {
   try {
-    window.localStorage.setItem(KEY, mode.private ? "1" : "0");
+    window.localStorage.setItem(KEY, mode.teacherOnly ? "2" : mode.private ? "1" : "0");
   } catch (err) {
     // as above
   }
@@ -55,7 +60,7 @@ export function checkLiveMode() {
     for (let attempt = 0; attempt < 3 && !mode; attempt++) {
       try {
         const { data, error } = await supabase.rpc("live_config");
-        if (!error) mode = data && data.private ? PRIVATE : PUBLIC;
+        if (!error) mode = data && data.private ? (Number(data.version) >= 2 ? PRIVATE2 : PRIVATE) : PUBLIC;
         // "no such function": the file hasn't been run yet
         else if (error.code === "PGRST202" || error.code === "42883" || /function/i.test(error.message || "")) mode = PUBLIC;
       } catch (err) {
@@ -122,6 +127,45 @@ export function useLiveMode() {
 export function liveChannel(name, config = {}, mode = known) {
   const priv = !!(mode && mode.private);
   return supabase.channel(name, { config: priv ? { ...config, private: true } : config });
+}
+
+// The class's teacher channel: the teacher's messages to the whole class
+// (the class has started or ended, what's switched on, the question, a
+// hand lowered). Only the teacher can send on it. Students still talk to
+// the teacher on classroom-<code>.
+export function teacherTopic(code) {
+  return `classroom-${code}-teacher`;
+}
+
+// Whether the teacher's class messages can only come from the teacher
+// channel (known once checkLiveMode has answered). Until then, and before
+// the November security update, they're taken from the class channel too.
+export function teacherOnlyNow() {
+  return !!(known && known.teacherOnly);
+}
+
+// Resolves once none of these channels is still open in this tab (or
+// after a while regardless). A page that has just closed a channel takes a
+// moment to let go of it, and asking for the same channel meanwhile hands
+// back the old one, which is then torn down with everything on it.
+export function whenTopicsFree(names, ms = 3000) {
+  const topics = names.map((n) => `realtime:${n}`);
+  const busy = () => {
+    try {
+      return supabase.getChannels().some((c) => topics.includes(c.topic));
+    } catch (err) {
+      return false;
+    }
+  };
+  if (!busy()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const tick = () => {
+      if (!busy() || Date.now() - started > ms) resolve();
+      else setTimeout(tick, 50);
+    };
+    setTimeout(tick, 50);
+  });
 }
 
 // ---------- students ----------

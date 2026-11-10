@@ -4,8 +4,9 @@
 // - Only switched on when NEXT_PUBLIC_POSTHOG_KEY is set (PostHog project
 //   settings → Project API key). Without it, nothing loads and track()
 //   does nothing.
-// - Never on student pages (joining a class, a student's board), nor on a
-//   notebook opened from its link (/n/…, read by people with no account):
+// - Never on student pages (joining a class, a student's board, joining a
+//   class's notebooks at /c/…, opening a notebook a teacher made at /s/…),
+//   nor on a notebook opened from its link (/n/…, read by people with no account):
 //   those pages don't load it at all, and nothing is sent from them.
 // - No cookies: PostHog keeps its random visitor id in this browser's
 //   local storage. A signed-in teacher is known by their account id only
@@ -48,6 +49,10 @@ export const EVENTS = [
   "notebook_link_copied", // ...and copied ({ mode })
   "lesson_kept", // a student's kept lesson became a notebook
   "demo_notebook_step", // a step of the demo notebook's walkthrough ({ step })
+  "class_created", // a teacher made a class
+  "student_notebook_created", // a teacher made a notebook for one student
+  "clip_sent", // a teacher sent pages into notebooks ({ kind, pages, notebooks, from })
+  "submission_returned", // a teacher marked and returned homework
 ];
 
 // ?ref=... on the link that brought the visitor (e.g. ?ref=mswb-reply for
@@ -83,7 +88,7 @@ const queue = [];
 
 function blocked(pathname) {
   const path = String(pathname || "");
-  return path.startsWith("/join") || path.startsWith("/n/");
+  return path.startsWith("/join") || path.startsWith("/n/") || path.startsWith("/c/") || path.startsWith("/s/");
 }
 
 function currentPath() {
@@ -96,7 +101,8 @@ export function safeAddress(value) {
   let out = value
     .replace(/\/board\/[^/?#\s]+/g, "/board/[id]")
     .replace(/\/join\/[^/?#\s]+/g, "/join/[code]")
-    .replace(/([?&])(code|token|email|board|access_token|refresh_token)=[^&#\s]*/gi, "$1$2=[hidden]");
+    .replace(/\/(class|mark|c|s|n|b)\/[^/?#\s]+/g, "/$1/[id]")
+    .replace(/([?&])(code|token|email|board|access_token|refresh_token|page|mark)=[^&#\s]*/gi, "$1$2=[hidden]");
   // the part after # (a sign-in can briefly put tokens there)
   if (/^(https?:\/\/|\/)/i.test(out)) out = out.replace(/#.*$/, "");
   return out;

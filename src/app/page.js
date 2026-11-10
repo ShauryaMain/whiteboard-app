@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { BOARD_BACKGROUNDS, backgroundCss, parseBackground } from "@/lib/boardBackground";
 import NewBoardModal from "@/components/NewBoardModal";
 import ShareModal from "@/components/ShareModal";
+import StoredImg from "@/components/StoredImg";
 import FeedbackModal from "@/components/FeedbackModal";
 import WhatsNew from "@/components/WhatsNew";
 import DemoCarryOver from "@/components/DemoCarryOver";
@@ -16,6 +17,9 @@ import SettingsPanel from "@/components/SettingsPanel";
 import NotebookShelf from "@/components/NotebookShelf";
 import NotebookShare from "@/components/NotebookShare";
 import LessonCarryOver from "@/components/LessonCarryOver";
+import TeachingShelf from "@/components/TeachingShelf";
+import HomeworkPanel from "@/components/HomeworkPanel";
+import { call } from "@/lib/teaching";
 import { takeReturn } from "@/lib/returnTo";
 import { displayNameFor, subscribeSettings } from "@/lib/settings";
 import { track } from "@/lib/track";
@@ -95,6 +99,18 @@ export default function Home() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [homework, setHomework] = useState(null); // student_homework()
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let live = true;
+    call("student_homework").then((res) => {
+      if (live && Array.isArray(res.data)) setHomework(res.data);
+    });
+    return () => {
+      live = false;
+    };
+  }, [user]);
 
   // The boards, a page at a time (more load as you scroll down), and
   // searched in the database rather than on this device.
@@ -296,8 +312,7 @@ export default function Home() {
 
   function renderThumb(b) {
     if (b.thumbnail) {
-      // eslint-disable-next-line @next/next/no-img-element
-      return <img src={b.thumbnail} alt="" loading="lazy" draggable={false} />;
+      return <StoredImg src={b.thumbnail} alt="" loading="lazy" draggable={false} />;
     }
     return (
       <span className={s.thumbEmpty} style={backgroundCss(b.background, 0.7, { x: 8, y: 8 })}>
@@ -443,8 +458,14 @@ export default function Home() {
       </header>
 
       <main className={s.main}>
+        {/* Homework teachers sent you (once the database has it: supabase/2026-11-clipping.sql) */}
+        <HomeworkPanel items={homework} />
+
         {/* Notebooks (once the database has them: supabase/2026-11-notebooks.sql) */}
-        <NotebookShelf user={user} query={query} onOpen={(id) => router.push(`/board/${id}`)} onShare={shareNotebook} />
+        <NotebookShelf user={user} query={query} onOpen={(id) => router.push(`/board/${id}`)} onShare={shareNotebook} homework={homework} />
+
+        {/* Classes and students' notebooks */}
+        <TeachingShelf user={user} onOpen={(id) => router.push(`/board/${id}`)} hideEmpty={!!(homework && homework.length)} />
 
         <div className={s.headRow}>
           <div>

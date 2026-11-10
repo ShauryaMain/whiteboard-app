@@ -352,6 +352,17 @@ export function createDemoClassroom() {
 
     // The channel has connected.
     attach(channel) {
+      // The teacher's channel to the whole class: what's said on it is
+      // taken like the same thing said on the class's own channel.
+      const teacher = /^classroom-(.+)-teacher$/.exec(channel.topic);
+      if (teacher) {
+        const code = teacher[1];
+        if (!classes.has(code)) classes.set(code, makeClass(code));
+        channel.__class = classes.get(code);
+        channel.__teacherChannel = true;
+        wake();
+        return;
+      }
       const roster = /^classroom-(.+)$/.exec(channel.topic);
       if (roster) {
         const code = roster[1];
@@ -387,7 +398,7 @@ export function createDemoClassroom() {
     },
 
     presenceState(channel) {
-      return channel.__class && !channel.__view ? presenceOf(channel.__class, Date.now()) : {};
+      return channel.__class && !channel.__view && !channel.__teacherChannel ? presenceOf(channel.__class, Date.now()) : {};
     },
 
     // Something the teacher's side sent.

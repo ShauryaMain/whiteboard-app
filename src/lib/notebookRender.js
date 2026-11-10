@@ -37,14 +37,20 @@ export function contentsByPage(nb, { strokes = [], texts = [], images = [], grap
 // background under the key "bg"). `tape`: "cover" draws the page's tape on
 // top of the writing (as it looks on screen), "hide" leaves it off (the
 // answers show). Returns a canvas (the caller releases it).
-export function renderPage({ rect, color, contents, pictures = null, scale = 1, tape = "cover" }) {
-  const width = Math.round(rect.w * scale);
-  const height = Math.round(rect.h * scale);
+// `region` (board units, optional): only that part of the page (marking
+// one question across a class). `marks`: a teacher's strokes, drawn on a
+// sheet of their own over the student's ink.
+export function renderPage({ rect, color, contents, pictures = null, scale = 1, tape = "cover", region = null, marks = null }) {
+  const box = region || rect;
+  const width = Math.round(box.w * scale);
+  const height = Math.round(box.h * scale);
+  const ox = box.x;
+  const oy = box.y;
   const dark = pageColorIsDark(color);
   const out = makeCanvas(width, height);
   const ctx = out.getContext("2d");
   // the paper (or the imported page)
-  ctx.setTransform(scale, 0, 0, scale, -rect.x * scale, -rect.y * scale);
+  ctx.setTransform(scale, 0, 0, scale, -ox * scale, -oy * scale);
   const bg = pictures && pictures.get("bg");
   paintPaper(ctx, rect, rect.page.paper, color, scale, bg || null);
   // pictures sit on the paper, under the ink
@@ -72,7 +78,7 @@ export function renderPage({ rect, color, contents, pictures = null, scale = 1, 
   // the ink, on a sheet of its own so rub-outs don't go through the paper
   const ink = makeCanvas(width, height);
   const ictx = ink.getContext("2d");
-  ictx.setTransform(scale, 0, 0, scale, -rect.x * scale, -rect.y * scale);
+  ictx.setTransform(scale, 0, 0, scale, -ox * scale, -oy * scale);
   for (const s of contents.strokes || []) drawInkStroke(ictx, s, dark);
   drawTextBoxes(ictx, contents.texts || [], dark);
   if ((contents.graphs || []).length) {
@@ -84,10 +90,17 @@ export function renderPage({ rect, color, contents, pictures = null, scale = 1, 
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(ink, 0, 0);
+  if (marks && marks.length) {
+    ictx.setTransform(1, 0, 0, 1, 0, 0);
+    ictx.clearRect(0, 0, width, height);
+    ictx.setTransform(scale, 0, 0, scale, -ox * scale, -oy * scale);
+    for (const s of marks) drawInkStroke(ictx, s, dark);
+    ctx.drawImage(ink, 0, 0);
+  }
   release(ink);
   // tape goes over the writing
   if (tape === "cover" && tapes.length) {
-    ctx.setTransform(scale, 0, 0, scale, -rect.x * scale, -rect.y * scale);
+    ctx.setTransform(scale, 0, 0, scale, -ox * scale, -oy * scale);
     for (const t of tapes) drawTapePiece(ctx, t, { scale });
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
@@ -188,4 +201,35 @@ export function pageThumbnail({ rect, color, contents, pictures = null, width = 
   }
   release(canvas);
   return url;
+}
+
+// Pages of a notebook as pictures to send into students' notebooks
+// (src/lib/teaching.js): [{ blob, w, h, pw, ph }], each page as it looks
+// (paper, ink, pictures), with any tape covering its answers.
+export async function notebookPagesForClip({ nb, indices, contents, color, onProgress }) {
+  const layout = layoutPages(nb);
+  const byPage = contentsByPage(nb, contents);
+  const out = [];
+  for (let n = 0; n < indices.length; n++) {
+    const i = indices[n];
+    const rect = layout[i];
+    if (!rect) continue;
+    if (onProgress) onProgress(n, indices.length);
+    const own = byPage[i];
+    const scale = Math.min(2, 1600 / Math.max(rect.w, rect.h));
+    let pictures = await loadPagePictures(rect, own);
+    let canvas = renderPage({ rect, color, contents: own, pictures, scale, tape: "cover" });
+    let blob = await canvasBytes(canvas, "image/jpeg", 0.86);
+    if (!blob) {
+      release(canvas);
+      pictures = new Map();
+      canvas = renderPage({ rect, color, contents: own, pictures, scale, tape: "cover" });
+      blob = await canvasBytes(canvas, "image/jpeg", 0.86);
+    }
+    const w = canvas.width;
+    const h = canvas.height;
+    release(canvas);
+    if (blob) out.push({ blob: blob instanceof Blob ? blob : new Blob([blob], { type: "image/jpeg" }), w, h, pw: Math.round(rect.w), ph: Math.round(rect.h) });
+  }
+  return out;
 }

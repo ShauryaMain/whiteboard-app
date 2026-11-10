@@ -446,7 +446,9 @@ export async function copyText(text) {
 export async function loadMathEngine() {
   try {
     const mathlive = await import("mathlive");
-    mathlive.MathfieldElement.fontsDirectory = "https://unpkg.com/mathlive@0.110.0/fonts";
+    // served by the app itself (scripts/copy-vendor.mjs)
+    mathlive.MathfieldElement.fontsDirectory = "/vendor/mathlive/fonts";
+    mathlive.MathfieldElement.soundsDirectory = null;
     const { ComputeEngine } = await import("@cortex-js/compute-engine");
     return { mathlive, ce: new ComputeEngine() };
   } catch (err) {

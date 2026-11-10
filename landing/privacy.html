@@ -59,13 +59,14 @@
 <main class="wrap policy">
   <span class="tape-label">the plain-English version</span>
   <h1>Privacy</h1>
-  <p class="updated">Last updated 1 November 2026</p>
+  <p class="updated">Last updated 12 November 2026</p>
 
   <div class="summary">
     <h2>In short</h2>
     <ul>
       <li>We keep what the app needs to work, your sign-in details and your boards, and we count which steps people take in the app so we can see where it’s confusing. No cookies for that.</li>
-      <li>Students can join a class without an account. Their work in a live class isn’t saved to our database, unless they sign in and keep the lesson in a notebook of their own.</li>
+      <li>Students can join a live class without an account. Their work in a live class isn’t saved to our database, unless they sign in and keep the lesson in a notebook of their own.</li>
+      <li>If a student signs in and joins a teacher’s class, that teacher can open the student’s notebook for the class, send work into it and mark it, until the student leaves the class.</li>
       <li>No ads, no selling your data, no advertising cookies.</li>
       <li>Want your data or want it deleted? Email us and we’ll do it.</li>
     </ul>
@@ -80,6 +81,7 @@
     <li><b>Your sign-in details:</b> your email address. If you sign in with Google, also your name and profile picture, which Google shares when you sign in.</li>
     <li><b>Your boards and notebooks:</b> everything you put on them (drawing, text, images, tape, PDFs and pictures you open beside the board or add as pages, and what you write on them, simulations you embed), the page style, a small preview picture of each board, your notebooks’ covers and subjects, and the list of people you’ve shared each one with.</li>
     <li><b>Notebook links:</b> if you turn on a notebook’s link, anyone who has the link can read that notebook and download it as a PDF, without an account. If you let the link write too, anyone who opens it and signs in is added to the notebook. You can turn the link off or replace it at any time, and the old link stops working.</li>
+    <li><b>Board links:</b> if you turn on a board’s link (copying the student link does this), anyone who opens it and signs in is added to the board. New boards start with the link off. You can turn it off or replace it in Share at any time, and the old link stops working.</li>
     <li><b>Fonts you upload:</b> stored so everyone on your boards sees text in that font.</li>
     <li><b>Your settings:</b> choices such as your pen colour, shortcuts and graph presets, kept with your account so they follow you to every device.</li>
     <li><b>Sharing suggestions:</b> when you share a board by email, Clean Slate can suggest people who already use it, showing their name and email.</li>
@@ -93,6 +95,14 @@
     <li>Students’ boards aren’t saved to our database. Before ending the class, the teacher can download everyone’s board as a PDF or pictures (Save boards). That copy goes to the teacher’s own device, not to us.</li>
     <li>The student’s browser keeps a random ID, the name they typed and a copy of their board for up to a day, so a refresh or rejoining the same class brings their work back.</li>
     <li>When the class ends, a student can press Keep this lesson. Then a copy of the teacher’s board (as it was at the end of the class) and the student’s own board is kept in their browser for up to three hours while they sign in, and is then saved as a notebook in the student’s own account. That copy belongs to the student, like any notebook.</li>
+  </ul>
+  <h3>Classes and homework</h3>
+  <ul>
+    <li><b>Classes:</b> a teacher’s class keeps its name, its join code, and for each student who joins, their name (from their account) and email address, which the teacher can see.</li>
+    <li><b>The class notebook belongs to the student.</b> While the student is in the class, the teacher can open it, see what’s in it, send pages into it and write on them. The teacher can’t change or delete the student’s own writing, and the student can’t rub out the teacher’s marks. If the student leaves, or the teacher removes them or deletes the class, the teacher can’t open it any more; the student keeps it.</li>
+    <li><b>A notebook for one student:</b> a teacher can make a notebook and send the student an invite link. The first person to open it and sign in gets the notebook, and the teacher stays linked to it.</li>
+    <li><b>Sharing with a teacher:</b> a student can ask a teacher (by email, or a class code) to look at one of their notebooks, or to look, send work and mark it. We keep that request until the teacher answers it, even if they sign up later with that email. The student can change it or remove the teacher at any time.</li>
+    <li><b>Homework:</b> the pages a teacher sends, its title, note, due date and the marks it’s out of; when each student handed it in and whether they changed it afterwards; and the teacher’s scores and comments.</li>
   </ul>
   <h3>Feedback you send us</h3>
   <ul>
@@ -117,13 +127,13 @@
   <ul>
     <li><b>Supabase</b> stores accounts, boards and images, and carries the live sync between devices.</li>
     <li><b>Vercel</b> hosts the website and app. We use its visit counts (Vercel Web Analytics) to see which pages get visited and where visitors come from. They don’t use cookies and don’t identify you.</li>
-    <li><b>PostHog</b> counts the steps people take, from trying the demo board to running a first class, so we can see where Clean Slate is confusing. It uses no cookies: it keeps a random ID in your browser, and for teachers who sign in it uses the account’s ID, never your name or email. Board links and class codes are removed before anything is sent. If the link you followed had a short tag saying where it was posted (like <code>?ref=reddit</code>), that tag is kept with the steps too. On the demo board only, it may record the screen to show where people get stuck, with anything typed hidden. It never runs on student pages, or on a notebook opened from its link.</li>
+    <li><b>PostHog</b> counts the steps people take, from trying the demo board to running a first class, so we can see where Clean Slate is confusing. It uses no cookies: it keeps a random ID in your browser, and for teachers who sign in it uses the account’s ID, never your name or email. Board links and class codes are removed before anything is sent. If the link you followed had a short tag saying where it was posted (like <code>?ref=reddit</code>), that tag is kept with the steps too. On the demo board only, it may record the screen to show where people get stuck, with anything typed hidden. It never runs on student pages (joining a lesson or a class, a student’s board, opening a notebook a teacher made), or on a notebook opened from its link.</li>
     <li><b>Google</b> handles Google sign-in, and delivers our emails: sign-in codes, board clean-up reminders and feedback to our support inbox.</li>
   </ul>
-  <p>Images you add to a board are stored so the board can show them. Anyone who has the direct link to one of those image files can open it, so avoid adding pictures you wouldn’t want shared.</p>
+  <p>Pictures, PDFs and fonts you add, homework pages and board previews are stored privately. They open only for people who can open the board or notebook they’re on (and, while a live class is running, for its students), through links that stop working after a few hours.</p>
 
   <h2>Children and schools</h2>
-  <p>Students, including children, can join a live class without giving us an email address or creating an account. Teachers who use Clean Slate with students are responsible for following their school’s rules on online tools. Parents and schools can contact us at any time about a student’s data.</p>
+  <p>Students, including children, can join a live class without giving us an email address or creating an account. Joining a teacher’s class for homework needs a sign-in (Google, or a code sent to an email address), so it’s for students who may use one under their school’s rules. Teachers who use Clean Slate with students are responsible for following their school’s rules on online tools. Parents and schools can contact us at any time about a student’s data.</p>
 
   <h2>Keeping and deleting your data</h2>
   <ul>

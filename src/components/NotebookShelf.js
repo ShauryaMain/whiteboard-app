@@ -10,6 +10,8 @@ import { track } from "@/lib/track";
 import h from "@/app/Home.module.css";
 import d from "./Dialog.module.css";
 import sh from "./Shelf.module.css";
+import tc from "./Teaching.module.css";
+import { badgeFor } from "./HomeworkPanel";
 
 const ALL = "all";
 const NONE = "none";
@@ -41,20 +43,28 @@ function coverOf(nb) {
 }
 
 // A notebook's cover (also the preview in the dialogs).
-export function Cover({ name, cover, small = false }) {
+export function Cover({ name, cover, small = false, badge = null }) {
   return (
-    <span className={sh.cover} style={{ background: cover.color, display: "block", ...(small ? { width: 96 } : null) }} aria-hidden="true">
-      <span className={sh.coverLabel} style={small ? { fontSize: 10.5, left: 18, right: 8, padding: "6px 6px 7px" } : undefined}>
+    <span className={sh.cover} style={{ background: cover.color, display: "block", ...(small ? { width: 96 } : null) }} aria-hidden={badge ? undefined : "true"}>
+      <span className={sh.coverLabel} style={small ? { fontSize: 10.5, left: 18, right: 8, padding: "6px 6px 7px" } : undefined} aria-hidden="true">
         {name || "Untitled notebook"}
       </span>
-      {cover.emoji && <span className={sh.emoji}>{cover.emoji}</span>}
+      {cover.emoji && <span className={sh.emoji} aria-hidden="true">{cover.emoji}</span>}
+      {badge && (
+        <span
+          className={`${tc.coverBadge} ${badge.tone === "red" ? tc.coverBadgeRed : badge.tone === "green" ? tc.coverBadgeGreen : ""}`}
+          data-cover-badge="true"
+        >
+          {badge.text}
+        </span>
+      )}
     </span>
   );
 }
 
 // The notebooks shelf on the home screen: subjects along the top, then
 // the notebooks (most recently used first).
-export default function NotebookShelf({ user, query, onOpen, onShare }) {
+export default function NotebookShelf({ user, query, onOpen, onShare, homework = null }) {
   const [shelf, setShelf] = useState(null); // { notebooks, subjects } | null (not set up)
   const [loaded, setLoaded] = useState(false);
   const [subject, setSubject] = useState(ALL);
@@ -293,7 +303,7 @@ export default function NotebookShelf({ user, query, onOpen, onShare }) {
             return (
               <div key={nb.id} className={sh.book}>
                 <Link href={`/board/${nb.id}`} className={sh.bookLink}>
-                  <Cover name={name} cover={cover} />
+                  <Cover name={name} cover={cover} badge={badgeFor(homework, nb.id)} />
                   <span className={sh.bookMeta}>
                     <span className={sh.bookTitle}>{name}</span>
                     <span className={sh.bookSub}>{[`${pages} page${pages === 1 ? "" : "s"}`, subj ? subj.name : ""].filter(Boolean).join(" · ")}</span>

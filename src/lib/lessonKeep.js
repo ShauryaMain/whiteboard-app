@@ -17,6 +17,7 @@
 // writing as it can (lessonPages).
 
 import { supabase } from "./supabaseClient";
+import { fileUrl } from "./fileUrls";
 import { packStroke, unpackStroke } from "./inkPack";
 import { strokeBounds, imageBounds, textBounds, unionBounds } from "./boardObjects";
 import { graphOuterBounds, graphsOf, packGraphs } from "./graphList";
@@ -304,7 +305,7 @@ async function lessonsSubject(userId) {
 async function copyPicture(img, boardId) {
   if (!/^https:\/\//.test(img.src)) return img;
   try {
-    const res = await fetch(img.src);
+    const res = await fetch(await fileUrl(img.src));
     if (!res.ok) return img;
     const blob = await res.blob();
     const ext = /png/.test(blob.type) ? "png" : /webp/.test(blob.type) ? "webp" : /gif/.test(blob.type) ? "gif" : "jpg";

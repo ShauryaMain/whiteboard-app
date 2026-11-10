@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import StoredImg from "./StoredImg";
 import { LocateFixed, X } from "lucide-react";
 import s from "./RefPane.module.css";
 
@@ -78,8 +79,7 @@ export default function ClipWindows({ windows, images, onChange, onClose, onShow
                 <X size={16} strokeWidth={2} />
               </button>
             </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className={s.floatImg} src={img.src} alt={label} draggable={false} />
+            <StoredImg className={s.floatImg} src={img.src} alt={label} draggable={false} />
             <span className={s.floatResize} onPointerDown={(e) => start(e, win, "resize")} onPointerMove={move} onPointerUp={end} onPointerCancel={end} />
           </div>
         );

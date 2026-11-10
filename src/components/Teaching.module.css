@@ -1,0 +1,718 @@
+/* Teaching: classes, students' notebooks, homework (src/lib/teaching.js). */
+
+/* ---------- home: the Teaching section ---------- */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.headRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.headText {
+  flex: 1;
+  min-width: 220px;
+}
+
+.heading {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.btnRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  height: 40px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 11px;
+  border: 2px solid var(--ink-line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-hard);
+  white-space: nowrap;
+  touch-action: manipulation;
+  text-decoration: none;
+}
+
+.btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink-line);
+}
+
+.btnPrimary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btnSmall {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  border-radius: 9px;
+  box-shadow: 2px 2px 0 var(--ink-line);
+}
+
+.btnQuiet {
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px 14px 20px;
+  border-radius: 14px;
+  border: 2px solid var(--ink-line);
+  background: var(--surface);
+  box-shadow: var(--shadow-card-hard);
+  color: var(--ink);
+  text-decoration: none;
+  overflow: hidden;
+  min-height: 112px;
+}
+
+.cardStripe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+}
+
+.cardTitle {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.cardMeta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cardFoot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+  padding: 2px 8px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-strong);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--surface-2);
+  border: 1.5px solid var(--border-strong);
+  color: var(--ink-2);
+}
+
+.pillBlue {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-ink);
+}
+
+.pillAmber {
+  background: #fff4d6;
+  border-color: #f0d48a;
+  color: #7a5200;
+}
+
+.pillRed {
+  background: #ffe6e3;
+  border-color: #f2b8b2;
+  color: #a1251b;
+}
+
+.pillGreen {
+  background: #e3f5ea;
+  border-color: #a9dcbc;
+  color: #1e6b3f;
+}
+
+.emptyCard {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 2px dashed var(--border-strong);
+  background: var(--surface-2);
+}
+
+.emptyText {
+  flex: 1;
+  min-width: 220px;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.requests {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.request {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--sticky-y);
+  border: 2px solid var(--ink-line);
+}
+
+.requestText {
+  flex: 1;
+  min-width: 200px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* ---------- home: the student's Homework panel ---------- */
+
+.hwList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hwGroup {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hwRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 2px solid var(--ink-line);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: var(--shadow-hard);
+}
+
+.hwRow:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink-line);
+}
+
+.hwMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hwTitle {
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hwMeta {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a badge on a notebook's cover */
+.coverBadge {
+  position: absolute;
+  left: 22px;
+  bottom: 10px;
+  z-index: 1;
+  height: 22px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  border: 1.5px solid var(--ink-line);
+  background: #fff4d6;
+  color: #7a5200;
+}
+
+.coverBadgeRed {
+  background: #ffe6e3;
+  color: #a1251b;
+}
+
+.coverBadgeGreen {
+  background: #e3f5ea;
+  color: #1e6b3f;
+}
+
+/* ---------- in a notebook: the strip above clipped pages ---------- */
+
+.strip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  max-width: min(760px, calc(100vw - 24px));
+  min-height: 40px;
+  padding: 5px 6px 5px 12px;
+  border-radius: 12px;
+  border: 2px solid var(--ink-line);
+  background: var(--surface);
+  box-shadow: var(--shadow-hard);
+  pointer-events: auto;
+  will-change: transform;
+}
+
+.stripKind {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.stripResource .stripKind {
+  color: var(--success-strong);
+}
+
+.stripMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.stripTitle {
+  font-weight: 700;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stripMeta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stripBtns {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.stripIcon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+/* ---------- in a notebook: the details card (note, feedback, marking) ---------- */
+
+.panel {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 40;
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 2px solid var(--ink-line);
+  background: var(--surface);
+  box-shadow: var(--shadow-card-hard);
+}
+
+.panelHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.panelTitle {
+  flex: 1;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.panelText {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.note {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sticky-y);
+  border: 1.5px solid #e8d77a;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.feedback {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ffe6e3;
+  border: 1.5px solid #f2b8b2;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bigScore {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 800;
+  color: #a1251b;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.input {
+  height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 15px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.textarea {
+  min-height: 74px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-strong);
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.grow {
+  flex: 1;
+}
+
+.small {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.warn {
+  font-size: 13px;
+  color: #a1251b;
+  line-height: 1.4;
+}
+
+/* ---------- class page ---------- */
+
+.pageWrap {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.pageTop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 2px solid var(--ink-line);
+  background: var(--surface);
+}
+
+.pageMain {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 26px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  border-bottom: 2px solid var(--border-strong);
+}
+
+.tab {
+  height: 40px;
+  padding: 0 14px;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tabOn {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.table {
+  display: flex;
+  flex-direction: column;
+  border: 2px solid var(--ink-line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.tr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-top: 1.5px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.tr:first-child {
+  border-top: none;
+}
+
+.trMain {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trTitle {
+  font-weight: 700;
+  font-size: 15px;
+  word-break: break-word;
+}
+
+.joinBox {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  border-radius: 14px;
+  border: 2px solid var(--ink-line);
+  background: var(--sticky-b);
+  box-shadow: var(--shadow-card-hard);
+}
+
+.bigCode {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+/* ---------- the send-a-clip dialog ---------- */
+
+.thumbs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 6px;
+}
+
+.thumb {
+  flex-shrink: 0;
+  height: 110px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border-strong);
+  background: #fff;
+}
+
+.targets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border-strong);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  min-height: 30px;
+}
+
+.segment {
+  display: inline-flex;
+  border: 2px solid var(--ink-line);
+  border-radius: 11px;
+  overflow: hidden;
+}
+
+.segment button {
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.segment button + button {
+  border-left: 2px solid var(--ink-line);
+}
+
+.segment .segOn {
+  background: var(--ink-line);
+  color: #fff;
+}
+
+@media (max-width: 560px) {
+  .heading {
+    font-size: 24px;
+  }
+  .strip {
+    gap: 6px;
+    padding-left: 9px;
+  }
+  .stripKind {
+    display: none;
+  }
+  .bigCode {
+    font-size: 28px;
+  }
+  .pageMain {
+    padding: 18px 14px 70px;
+  }
+}

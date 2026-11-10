@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { track } from "@/lib/track";
 import d from "./Dialog.module.css";
 import n from "./Notebook.module.css";
+import NotebookTeachers from "./NotebookTeachers";
 
 // The address of a notebook's link (src/app/n/[token]/page.js).
 export function notebookLinkUrl(token) {
@@ -198,6 +199,8 @@ export default function NotebookShare({ boardId, name, onClose }) {
                 </div>
               )}
             </div>
+
+            <NotebookTeachers boardId={boardId} />
 
             <form className={d.label} onSubmit={addPerson} style={{ gap: 8 }}>
               Add people by email

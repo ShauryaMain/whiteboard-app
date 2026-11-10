@@ -19,7 +19,8 @@ import { createClient } from "@supabase/supabase-js";
 import { createMailer, mailSettings } from "@/lib/mailer";
 import { BRAND_MARK_PNG_BASE64 } from "@/lib/emailBrandMark";
 import { signInCodeEmail } from "@/lib/codeEmail";
-import { cleanEmail, createLimiter } from "@/lib/emailCodeLimits";
+import { cleanEmail, createLimiter, LIMITS } from "@/lib/emailCodeLimits";
+import { rateKey, takeRate } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,6 +101,19 @@ export async function POST(request) {
   if (!allowed.ok) return json({ error: "rate_limited", reason: allowed.reason, retryAfter: allowed.retryAfter }, 429);
 
   const admin = createClient(config.url, config.serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  // …and counted in the database too, across every copy of the server
+  const rules = [
+    { key: rateKey("code-gap", email), max: 1, seconds: Math.round(LIMITS.perEmailGapMs / 1000) },
+    { key: rateKey("code-email", email), max: LIMITS.perEmailPerHour, seconds: 3600 },
+    { key: "code-all", max: LIMITS.allPerDay, seconds: 86400 },
+  ];
+  if (ip) rules.push({ key: rateKey("code-ip", ip), max: LIMITS.perIpPerHour, seconds: 3600 });
+  const counted = await takeRate(admin, rules);
+  if (!counted.ok) {
+    const reason = counted.key.startsWith("code-gap") ? "too_soon" : counted.key === "code-all" ? "busy" : "too_many";
+    return json({ error: "rate_limited", reason, retryAfter: counted.retryAfter }, 429);
+  }
+
   const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
   const code = data && data.properties ? data.properties.email_otp : null;
   if (error || !code) {

@@ -95,6 +95,8 @@ export function normalizePage(p) {
   const bg = cleanBg(p.bg);
   if (bg) page.bg = bg;
   if (typeof p.title === "string" && p.title.trim()) page.title = p.title.trim().slice(0, 80);
+  // a page a teacher clipped in (src/lib/teaching.js)
+  if (typeof p.clip === "string" && /^[0-9a-f-]{36}$/i.test(p.clip)) page.clip = p.clip;
   return page;
 }
 

@@ -8,6 +8,7 @@
 // is redrawn when it arrives (subscribeFonts).
 
 import { setFontHooks, isFontUrl } from "./richText";
+import { fileUrl } from "./fileUrls";
 
 // Popular, readable Google Fonts, in groups. Loaded only when used.
 export const GOOGLE_FONTS = [
@@ -66,9 +67,8 @@ export function ensureFont(family, url) {
   if (url && !GOOGLE_SET.has(family) && isFontUrl(url) && typeof FontFace !== "undefined") {
     state.set(family, "loading");
     try {
-      const face = new FontFace(family, `url("${url}")`);
-      face
-        .load()
+      fileUrl(url)
+        .then((real) => new FontFace(family, `url("${real}")`).load())
         .then((f) => {
           document.fonts.add(f);
           loaded(family);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import Toolbar from "./Toolbar";
@@ -16,6 +16,10 @@ import ClipWindows from "./ClipWindows";
 import refStyles from "./RefPane.module.css";
 import Calculator from "./Calculator";
 import { supabase } from "@/lib/supabaseClient";
+import { boardLink, boardLinkUrl, copyLater } from "@/lib/boardLink";
+import { fileUrl } from "@/lib/fileUrls";
+import StoredImg from "./StoredImg";
+import dlg from "./Dialog.module.css";
 import { useAuth } from "@/lib/AuthContext";
 import { getStoredClassCode, clearClassCode, generateClassCode, storeClassCode } from "@/lib/classroomCode";
 import {
@@ -32,7 +36,7 @@ import {
 } from "@/lib/classControl";
 import { NO_COMMENTS, noComments, NO_SAVE_PROBLEM, noSaveProblem, NO_TEACHER_LAYER, noTeacherLayer } from "@/lib/localBoard";
 import { createSendGate } from "@/lib/boardWatch";
-import { drawTeacherLayer, hasTeacherLayer } from "@/lib/boardRender";
+import { drawTeacherLayer, hasTeacherLayer, renderBoardPicture, loadBoardImages } from "@/lib/boardRender";
 import StudentComments from "./StudentComments";
 import GridToolModal from "./GridToolModal";
 import { GraphSliderPanels, GraphReadoutBar } from "./GraphBoardBits";
@@ -92,7 +96,7 @@ import {
   unsavedCount,
   reworkQueued,
 } from "@/lib/boardSync";
-import { useLiveMode, liveChannel, openClassReliably, closeClass } from "@/lib/liveMode";
+import { useLiveMode, liveChannel, openClassReliably, closeClass, teacherTopic } from "@/lib/liveMode";
 import { createSender, wholeStroke, cleanIncomingStroke } from "@/lib/liveSend";
 import { getServerIdlePaused, isIdlePaused, noteRemoteActivity, resumeFromIdle, startIdleWatch, subscribeIdle } from "@/lib/idleWatch";
 import {
@@ -113,12 +117,15 @@ import { packStroke, unpackStroke, isPacked } from "@/lib/inkPack";
 import {
   normalizeNotebook, layoutPages, pageInView, planRelayout, applyBands, bandsToJson, bandsFromJson,
   paintPages, clipToPages, viewForPage, newPage, pageSize, PAGE_GAP, DESK, DESK_DARK, pageColorIsDark, MAX_PAGES,
-  bandFor, pageRectAt, trimStrokeToPage,
+  bandFor, pageRectAt, trimStrokeToPage, pageIndexAt,
 } from "@/lib/notebook";
-import { contentsByPage, exportNotebookPdf, loadPagePictures, pageThumbnail } from "@/lib/notebookRender";
+import { contentsByPage, exportNotebookPdf, loadPagePictures, pageThumbnail, notebookPagesForClip } from "@/lib/notebookRender";
 import { NotebookPagesPanel, NotebookExportDialog } from "./NotebookBits";
 import { QuizBar } from "./StudyBits";
 import NotebookShare from "./NotebookShare";
+import { ClipsLayer, ClipPagesDialog } from "./NotebookClips";
+import ClipSend from "./ClipSend";
+import { call as callTeaching, canvasJpeg, pageSizeFor } from "@/lib/teaching";
 import { isTape, tapeFromCorners, tapeAt, tapesAlong, tapesInReadingOrder } from "@/lib/tape";
 import { startQuiz, showAnswer, markAnswer, currentTape, dropMissing, readTally, saveTally } from "@/lib/quiz";
 import nbStyles from "./Notebook.module.css";
@@ -309,6 +316,10 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
 //            shortcuts and paste leave the visible tab alone.
 //   compact  true when the board only has part of the screen (shown beside
 //            the teacher's board), so the toolbar packs itself tighter.
+// Live messages that add something to the board (they carry who wrote it
+// in a notebook a teacher is linked to).
+const AUTHOR_EVENTS = new Set(["stroke-end", "stroke-restore", "text-add", "objects-add"]);
+
 export default function Whiteboard({
   boardId, demo = false, onDemoClassStart, onDemoClassEnd, initialReferenceDoc = null,
   student = null, backend = null, active = true, compact = false,
@@ -323,8 +334,23 @@ export default function Whiteboard({
   const userId = student ? student.studentId : user ? user.id : null;
   const router = useRouter();
   const [isOwner, setIsOwner] = useState(false);
+  const [noAccess, setNoAccess] = useState(false);
   const [liveClassCode, setLiveClassCode] = useState(null);
   const liveClassChannelRef = useRef(null);
+  // The teacher's own channel to the class: only the teacher can send on it
+  // (see teacherTopic in liveMode.js), so students can trust what comes on it.
+  const liveClassTeacherChannelRef = useRef(null);
+  // A student asking for this board (they can't send on its channel):
+  // answered as if asked on it. Set by the board's live connection.
+  const snapshotAskRef = useRef(null);
+  // The teacher's view of one student's board, for passing on a classmate's
+  // "what's on it?" while that board is being shown to the class.
+  const spotRelayRef = useRef(null);
+  const spotRelayTimerRef = useRef(null);
+  const handleSpotRelay = useCallback((relay, open) => {
+    if (open) spotRelayRef.current = relay;
+    else if (spotRelayRef.current === relay) spotRelayRef.current = null;
+  }, []);
   const [classRoster, setClassRoster] = useState([]); // [{studentId, name, joinedAt, hand, handAt, done}]
   // What students have signalled (studentId -> { hand, handAt, done }), who
   // is here, and whose hands were already up (see src/lib/classRoster.js).
@@ -514,6 +540,17 @@ export default function Whiteboard({
   const [pagesPanelOpen, setPagesPanelOpen] = useState(false);
   const [nbThumbs, setNbThumbs] = useState({});
   const [nbExportOpen, setNbExportOpen] = useState(false);
+  // Work a teacher clipped into this notebook (notebook_clips(): who is
+  // looking, the clips, the teachers): src/lib/teaching.js
+  const [clipInfo, setClipInfo] = useState(null);
+  const clipInfoRef = useRef(null);
+  const [clipPanel, setClipPanel] = useState(null); // the clip whose card is open (id)
+  const [clipPick, setClipPick] = useState(null); // sending pages: { stage: "pick" | "busy" } | { pages, title }
+  const clipEditedRef = useRef(new Set()); // handed-in work already flagged as changed since
+  const marksCanvasRef = useRef(null); // teachers' marks are drawn on their own layer
+  const teacherPenSetRef = useRef(false);
+  const openedAtRef = useRef(false); // ?page= has been followed
+  const [canTeach, setCanTeach] = useState(false); // this teacher has classes or students (a board can be sent)
   const [nbImageTick, setNbImageTick] = useState(0); // an imported page's picture arrived
   const nbThumbCacheRef = useRef(new Map()); // page id -> { key, url }
   const [nbPicker, setNbPicker] = useState(null); // adding pages from a PDF: { file, url, fileName, max }
@@ -806,7 +843,7 @@ export default function Whiteboard({
 
   // Tells every student's page what is switched on for the class right now.
   function broadcastClassState() {
-    const channel = liveClassChannelRef.current;
+    const channel = liveClassTeacherChannelRef.current;
     if (!channel || !liveClassCode) return;
     channel.send({
       type: "broadcast",
@@ -818,7 +855,7 @@ export default function Whiteboard({
   // Puts the class question on the live connection (again, when a student
   // who joined late asks for it).
   function broadcastQuestion() {
-    const channel = liveClassChannelRef.current;
+    const channel = liveClassTeacherChannelRef.current;
     if (!channel || !liveClassCode) return Promise.resolve(false);
     return questionSender.run(
       (event, payload) => channel.send({ type: "broadcast", event, payload }),
@@ -861,8 +898,29 @@ export default function Whiteboard({
     let gone = false;
     const opening = demo ? Promise.resolve("ok") : openClassReliably(liveClassCode, boardId, () => gone);
     const channel = liveChannel(`classroom-${liveClassCode}`, { presence: { key: "teacher" } }, liveMode);
+    const teacherChannel = liveChannel(teacherTopic(liveClassCode), {}, liveMode);
     channel.on("broadcast", { event: "request-session-status" }, () => {
-      channel.send({ type: "broadcast", event: "session-started", payload: { boardId } });
+      teacherChannel.send({ type: "broadcast", event: "session-started", payload: { boardId } });
+    });
+
+    // A student's view of this board asking for what's on it (students can
+    // only listen on the board's own channel).
+    channel.on("broadcast", { event: "master-state-request" }, ({ payload }) => {
+      if (snapshotAskRef.current) snapshotAskRef.current(payload || {});
+    });
+
+    // A classmate being shown one student's board, asking for what's on it:
+    // passed on to that board through the teacher's view of it.
+    channel.on("broadcast", { event: "spot-state-request" }, ({ payload }) => {
+      const spot = getClassControl(liveClassCode).spotlight;
+      const relay = spotRelayRef.current;
+      if (!spot || !payload || payload.studentId !== spot.studentId || !relay || relay.studentId !== spot.studentId) return;
+      if (spotRelayTimerRef.current) return;
+      spotRelayTimerRef.current = setTimeout(() => {
+        spotRelayTimerRef.current = null;
+        const now = spotRelayRef.current;
+        if (now && now.studentId === spot.studentId) now.send("classroom-state-request", { v: 2 });
+      }, 300);
     });
 
     // Live roster: students track their own presence on this same
@@ -910,16 +968,20 @@ export default function Whiteboard({
       broadcastQuestion();
     });
 
-    const subscribeClass = () => channel.subscribe(async (status) => {
-      if (status === "SUBSCRIBED") {
-        await channel.track({ role: "teacher" });
-        // Hands may already be up (this board was reloaded mid-class):
-        // ask every student's page to say where it stands.
-        channel.send({ type: "broadcast", event: "status-request", payload: {} });
-        // …and say where the class stands (pens down, the question).
-        broadcastClassState();
-      }
-    });
+    const subscribeClass = () => {
+      channel.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") await channel.track({ role: "teacher" });
+      });
+      teacherChannel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          // Hands may already be up (this board was reloaded mid-class):
+          // ask every student's page to say where it stands.
+          teacherChannel.send({ type: "broadcast", event: "status-request", payload: {} });
+          // …and say where the class stands (pens down, the question).
+          broadcastClassState();
+        }
+      });
+    };
     opening.then((result) => {
       if (gone) return;
       // Someone else's class has this code: this class gets a new one.
@@ -932,11 +994,16 @@ export default function Whiteboard({
       subscribeClass();
     });
     liveClassChannelRef.current = channel;
+    liveClassTeacherChannelRef.current = teacherChannel;
 
     return () => {
       gone = true;
       supabase.removeChannel(channel);
+      supabase.removeChannel(teacherChannel);
       liveClassChannelRef.current = null;
+      liveClassTeacherChannelRef.current = null;
+      if (spotRelayTimerRef.current) clearTimeout(spotRelayTimerRef.current);
+      spotRelayTimerRef.current = null;
       if (classStateTimerRef.current) clearTimeout(classStateTimerRef.current);
       classStateTimerRef.current = null;
       // Leaving the board (to the boards list, say) closes whichever
@@ -1217,7 +1284,7 @@ export default function Whiteboard({
   function hitTestText(worldPos) {
     const ctx = ctxRef.current;
     if (!ctx) return null;
-    const arr = textsRef.current;
+    const arr = editable(textsRef.current);
     for (let i = arr.length - 1; i >= 0; i--) {
       const t = arr[i];
       const boxHeight = getTextBoxHeight(ctx, t);
@@ -1443,6 +1510,172 @@ export default function Whiteboard({
     setNotebook(nb);
   }
 
+  // ---------- work clipped in by a teacher ----------
+
+  // Who wrote what matters only in a notebook a teacher is linked to: a
+  // teacher's marks are on a layer of their own (on top, so the student's
+  // eraser never rubs them out) and locked for everyone else, and a
+  // teacher can only change what they wrote themselves.
+  function marksActive() {
+    const c = clipInfoRef.current;
+    return !!c && (c.role === "teacher" || (Array.isArray(c.teacher_ids) && c.teacher_ids.length > 0));
+  }
+
+  // `au`: who wrote it (undefined: this person, just now).
+  function isMarkObj(o) {
+    const c = clipInfoRef.current;
+    if (!c || !o) return false;
+    if (c.role === "teacher") return o.au === undefined || o.au === userId || (c.teacher_ids || []).includes(o.au);
+    return o.au !== undefined && o.au !== userId && (c.teacher_ids || []).includes(o.au);
+  }
+
+  function isLockedObj(o) {
+    const c = clipInfoRef.current;
+    if (!c || !o || !marksActive()) return false;
+    if (c.role === "teacher") return o.au !== undefined && o.au !== userId;
+    return isMarkObj(o);
+  }
+
+  function editable(list) {
+    return marksActive() ? list.filter((o) => !isLockedObj(o)) : list;
+  }
+
+  function goToPage(index) {
+    const rect = nbLayoutRef.current[index];
+    if (!rect) return;
+    const { width: paneW } = getPaneSize();
+    const scale = scaleRef.current;
+    const fits = rect.w * scale <= paneW;
+    panRef.current = {
+      x: fits ? paneW / 2 - (rect.x + rect.w / 2) * scale : panRef.current.x,
+      // (the first page of clipped-in work: room for its strip above it)
+      y: (rect.page.clip && (index === 0 || nbLayoutRef.current[index - 1].page.clip !== rect.page.clip) ? 104 : 16) - rect.y * scale,
+    };
+    fullRedraw();
+  }
+  // Opened at a page (?page=<id>, from the Homework list or marking): go
+  // there, with the card of the work on it open. Once.
+  function openAtFromLink(info) {
+    if (openedAtRef.current || typeof window === "undefined") return;
+    openedAtRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const pageId = params.get("page");
+    const nb = notebookRef.current;
+    if (!pageId || !nb) return;
+    const at = nb.pages.findIndex((p) => p.id === pageId);
+    if (at < 0) return;
+    requestAnimationFrame(() => goToPage(at));
+    const page = nb.pages[at];
+    if (page.clip && (info.clips || []).some((c) => c.id === page.clip)) setClipPanel(page.clip);
+  }
+
+  async function loadClips() {
+    if (!boardId || !isRealBackend(db) || student || demo) return;
+    const res = await callTeaching("notebook_clips", { p_board: boardId });
+    if (!res.data) return;
+    clipInfoRef.current = res.data;
+    setClipInfo(res.data);
+    openAtFromLink(res.data);
+    // a teacher marks in red (once, when they open a student's notebook)
+    if (res.data.role === "teacher" && !teacherPenSetRef.current) {
+      teacherPenSetRef.current = true;
+      setColor("#e0443a");
+    }
+    fullRedraw();
+  }
+
+  // Our own writing on handed-in work: the teacher sees it changed since.
+  function noteClipEdit(ys) {
+    const c = clipInfoRef.current;
+    const nb = notebookRef.current;
+    if (!c || c.role !== "owner" || !nb || !ys.length) return;
+    const layout = nbLayoutRef.current;
+    for (const y of ys) {
+      const page = layout[pageIndexAt(layout, y)];
+      const clipId = page && page.page && page.page.clip;
+      if (!clipId) continue;
+      const k = (c.clips || []).find((x) => x.id === clipId);
+      const sub = k && k.sub;
+      if (!sub || sub.status !== "handed_in" || sub.edited_after || clipEditedRef.current.has(sub.id)) continue;
+      clipEditedRef.current.add(sub.id);
+      callTeaching("submission_edited", { p_sub: sub.id });
+    }
+  }
+
+  async function handleClipHandIn(clip) {
+    const res = await callTeaching("submission_hand_in", { p_sub: clip.sub.id, p_undo: false });
+    if (!res.data) {
+      flashNotice("It couldn't be handed in. Check your connection and try again.", 4000);
+      return;
+    }
+    flashNotice(`Handed in: ${clip.title}`, 3000);
+    loadClips();
+  }
+
+  // Sending pages of this notebook to students: they're drawn as pictures
+  // first (paper, ink, pictures, tape).
+  async function handleClipPagesPicked(indices) {
+    const nb = notebookRef.current;
+    if (!nb) return;
+    setClipPick({ stage: "busy" });
+    const pages = await notebookPagesForClip({
+      nb,
+      indices,
+      contents: { strokes: strokesRef.current, texts: textsRef.current, images: imagesRef.current, graphs: graphsRef.current },
+      color: parseBackground(backgroundRef.current).color,
+    }).catch(() => []);
+    if (!pages.length) {
+      setClipPick(null);
+      flashNotice("Those pages couldn't be prepared. Try again.", 4000);
+      return;
+    }
+    setClipPick({ pages, title: boardName || "Notebook pages" });
+  }
+
+  // Sending a board (or what's selected on it) to students: one page, as
+  // a picture of what's on it.
+  async function handleSendBoard() {
+    setClipPick({ stage: "busy" });
+    const sel = selectionRef.current;
+    const picked = selectionCount(sel) > 0 ? getObjectsData(sel) : null;
+    const content = {
+      strokes: picked ? picked.strokes : strokesRef.current,
+      texts: picked ? picked.texts : textsRef.current,
+      images: picked ? picked.images : imagesRef.current,
+      grid: picked ? (picked.graphs.length ? packGraphs(picked.graphs.map(withoutTrace)) : null) : packedGraphs(),
+      background: backgroundRef.current,
+    };
+    const pictures = await loadBoardImages(content.images).catch(() => new Map());
+    let made = null;
+    try {
+      made = renderBoardPicture({ content, pictures });
+    } catch (err) {
+      made = null;
+    }
+    if (!made) {
+      setClipPick(null);
+      flashNotice("The board couldn't be made into a page. Try again.", 4000);
+      return;
+    }
+    // (without the title strip across the top)
+    const head = Math.round(Math.max(56, made.width * 0.045));
+    const crop = document.createElement("canvas");
+    crop.width = made.width;
+    crop.height = Math.max(1, made.height - head);
+    crop.getContext("2d").drawImage(made.canvas, 0, -head);
+    const blob = await canvasJpeg(crop);
+    const w = crop.width;
+    const h = crop.height;
+    crop.width = 0;
+    crop.height = 0;
+    if (!blob) {
+      setClipPick(null);
+      flashNotice("The board couldn't be made into a page. Try again.", 4000);
+      return;
+    }
+    setClipPick({ pages: [{ blob, w, h, ...pageSizeFor(w, h) }], title: boardName || "Board" });
+  }
+
   // An imported page's picture, fetched once (then the pages are drawn again).
   function loadNotebookImage(url) {
     const map = nbImagesRef.current;
@@ -1451,7 +1684,10 @@ export default function Whiteboard({
     if (!/^data:/i.test(url)) img.crossOrigin = "anonymous";
     img.onload = () => setNbImageTick((t) => t + 1);
     map.set(url, img);
-    img.src = url;
+    // (a stored picture opens through a short-lived link: fileUrls.js)
+    fileUrl(url).then((real) => {
+      img.src = real;
+    });
   }
 
   // The desk and the paper of every page on screen (a canvas of its own,
@@ -1497,6 +1733,29 @@ export default function Whiteboard({
     if (idx !== nbPageRef.current) {
       nbPageRef.current = idx;
       setNbPage(idx);
+    }
+    // the strip above each piece of clipped-in work
+    const strips = clipInfoRef.current && workAreaRef.current ? workAreaRef.current.querySelectorAll("[data-clip-strip]") : [];
+    for (const el of strips) {
+      const clipId = el.getAttribute("data-clip-strip");
+      const first = layout.findIndex((r) => r.page.clip === clipId);
+      const r = first >= 0 ? layout[first] : null;
+      if (!r) {
+        el.style.display = "none";
+        continue;
+      }
+      const x = pan.x + r.x * scale;
+      const top = pan.y + r.y * scale;
+      const h = el.offsetHeight || 44;
+      const y = top - h - Math.min(10, PAGE_GAP * scale * 0.2);
+      const shown = y > -h - 40 && y < paneH + 10;
+      el.style.display = shown ? "flex" : "none";
+      if (shown) {
+        el.style.maxWidth = `${Math.max(260, Math.min(760, r.w * scale))}px`;
+        // (clear of the page number and Quiz me at the top left)
+        const left = Math.max(8, x);
+        el.style.transform = `translate(${left.toFixed(1)}px, ${Math.max(left < 150 ? 98 : 54, y).toFixed(1)}px)`;
+      }
     }
     const add = nbAddRef.current;
     if (add) {
@@ -1558,10 +1817,34 @@ export default function Whiteboard({
       ctx.save();
       clipToPages(ctx, nbLayout, view.minY, view.maxY);
     }
-    for (const stroke of strokesRef.current) if (onScreen(stroke)) drawStroke(ctx, stroke);
+    const marksOn = marksActive();
+    for (const stroke of strokesRef.current) if (onScreen(stroke) && !(marksOn && isMarkObj(stroke))) drawStroke(ctx, stroke);
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
     if (currentStroke.current) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
+    // a teacher's marks: their own layer, on top (an eraser on one layer
+    // never rubs out the other)
+    if (marksOn) {
+      const marks = strokesRef.current.filter((st) => isMarkObj(st) && onScreen(st));
+      if (marks.length) {
+        let layer = marksCanvasRef.current;
+        if (!layer) layer = marksCanvasRef.current = document.createElement("canvas");
+        if (layer.width !== canvas.width || layer.height !== canvas.height) {
+          layer.width = canvas.width;
+          layer.height = canvas.height;
+        }
+        const mctx = layer.getContext("2d");
+        mctx.setTransform(1, 0, 0, 1, 0, 0);
+        mctx.clearRect(0, 0, layer.width, layer.height);
+        mctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
+        for (const st of marks) drawStroke(mctx, st);
+        mctx.globalAlpha = 1;
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(layer, 0, 0);
+        ctx.restore();
+      }
+    }
 
     drawTexts(ctx, textsRef.current, selectedTextIdRef.current);
     if (nbLayout) ctx.restore();
@@ -1678,12 +1961,14 @@ export default function Whiteboard({
 
   async function insertStroke(stroke) {
     if (!boardId || !stroke?.id) return;
+    if (stroke.points && stroke.points[0]) noteClipEdit([stroke.points[0].y]);
     const error = await saveRow(sync, "strokes", strokeRow(stroke));
     if (error) reportSaveError("stroke", error);
   }
 
   async function insertText(t) {
     if (!boardId || !t?.id) return;
+    noteClipEdit([t.y]);
     const error = await saveRow(sync, "texts", textRow(t));
     if (error) reportSaveError("text", error);
   }
@@ -2055,7 +2340,10 @@ export default function Whiteboard({
       backgroundRef.current = normalizeBackground(row.background);
       setBoardBackground(backgroundRef.current);
       lastThumbRef.current = previewHashOf(row.thumbnail);
-      if (row.kind === "notebook") openNotebook(normalizeNotebook(row.notebook));
+      if (row.kind === "notebook") {
+        openNotebook(normalizeNotebook(row.notebook));
+        loadClips();
+      }
       fullRedraw();
     }
 
@@ -2143,6 +2431,9 @@ export default function Whiteboard({
         // (not there, or not shared with this person)
         syncCursorRef.current = opened.now;
         console.error("Error loading board: not found, or not shared with you.");
+        // (a real board someone hasn't been given: say so, rather than an
+        // empty board whose writing would never save)
+        if (!student && !demo && isRealBackend(db)) setNoAccess(true);
       } else {
         await loadBoardSettingsTheOlderWay();
       }
@@ -2172,6 +2463,28 @@ export default function Whiteboard({
     }
     loadBoard();
   }, [boardId, userId]);
+
+  // A board can be sent to students by a teacher who has some.
+  useEffect(() => {
+    if (!isOwner || notebook || student || demo || !isRealBackend(db)) return undefined;
+    let live = true;
+    callTeaching("teacher_home").then((res) => {
+      if (live && res.data && ((res.data.classes || []).length || (res.data.students || []).length)) setCanTeach(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [isOwner, notebook, student, demo]);
+
+  // Back on this tab: anything a teacher sent or marked meanwhile.
+  useEffect(() => {
+    if (!boardId) return undefined;
+    function onVisible() {
+      if (document.visibilityState === "visible" && notebookRef.current && clipInfoRef.current) loadClips();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [boardId]);
 
 
   // One save at a time (so a quick run of changes can't land out of order);
@@ -2478,6 +2791,7 @@ export default function Whiteboard({
   }
 
   function persistAdd(data) {
+    noteClipEdit([...data.texts.map((t) => t.y), ...data.images.map((i) => i.y), ...data.strokes.map((st) => (st.points && st.points[0] ? st.points[0].y : null))].filter((y) => Number.isFinite(y)));
     saveBatch("strokes", data.strokes.filter((s) => s && s.id).map(strokeRow), "stroke");
     saveBatch("texts", data.texts.filter((t) => t && t.id).map(textRow), "text");
     data.images.forEach((img) => insertImage(img));
@@ -2943,9 +3257,9 @@ export default function Whiteboard({
 
   function selectAll() {
     const sel = {
-      strokes: strokesRef.current.map((s) => s.id),
-      texts: textsRef.current.map((t) => t.id),
-      images: imagesRef.current.map((i) => i.id),
+      strokes: editable(strokesRef.current).map((s) => s.id),
+      texts: editable(textsRef.current).map((t) => t.id),
+      images: editable(imagesRef.current).map((i) => i.id),
       graphs: graphsRef.current.map((g) => g.id),
     };
     toolRef.current = "select";
@@ -3047,10 +3361,30 @@ export default function Whiteboard({
     }, ok ? 2600 : 4000);
   }
 
+  // "Copy student link": the board's own link (/b/…), which also turns on
+  // "anyone with the link can edit" (the owner can turn it off in Share on
+  // the boards page). Before the database knows about board links, the
+  // board's address, as it always was.
   function handleCopyLink() {
-    navigator.clipboard.writeText(window.location.href);
-    setSaveStatus("Link copied");
-    setTimeout(() => setSaveStatus(""), 2000);
+    const text = isRealBackend(db) && !demo && !student
+      ? boardLink(boardId, true).then((r) => (r && r.token ? boardLinkUrl(r.token) : r && r.missing ? window.location.href : null))
+      : Promise.resolve(window.location.href);
+    copyLater(text).then(async (ok) => {
+      if (!ok) {
+        const link = await text;
+        if (link) {
+          try {
+            window.prompt("Copy this link to send to them:", link);
+          } catch (err) {
+            // no pop-ups here: the note below says what happened
+          }
+        }
+        setSaveStatus(link ? "Link ready" : "Couldn't make the link");
+      } else {
+        setSaveStatus("Link copied");
+      }
+      setTimeout(() => setSaveStatus(""), 2400);
+    });
   }
 
   function handleStartLiveClass() {
@@ -3102,8 +3436,8 @@ export default function Whiteboard({
     if (!liveClassCode) return;
     if (!demo && !window.confirm("End the live class? Students currently watching will be disconnected.\n\nTheir boards can't be saved afterwards: use Save boards (in the Students list) first if you want to keep them.")) return;
 
-    if (liveClassChannelRef.current) {
-      await liveClassChannelRef.current.send({ type: "broadcast", event: "class-ended", payload: {} });
+    if (liveClassTeacherChannelRef.current) {
+      await liveClassTeacherChannelRef.current.send({ type: "broadcast", event: "class-ended", payload: {} });
     }
 
     if (!demo) {
@@ -3210,7 +3544,7 @@ export default function Whiteboard({
     const was = classStatusRef.current.get(studentId) || {};
     classStatusRef.current.set(studentId, { ...was, hand: false, handAt: 0 });
     refreshClassRoster();
-    liveClassChannelRef.current?.send({ type: "broadcast", event: "hand-lower", payload: { studentId } });
+    liveClassTeacherChannelRef.current?.send({ type: "broadcast", event: "hand-lower", payload: { studentId } });
   }
 
   // Ready for the next question: every hand goes down and every "done"
@@ -3218,7 +3552,7 @@ export default function Whiteboard({
   function handleResetClassStatus() {
     classStatusRef.current = new Map();
     refreshClassRoster();
-    liveClassChannelRef.current?.send({ type: "broadcast", event: "status-reset", payload: {} });
+    liveClassTeacherChannelRef.current?.send({ type: "broadcast", event: "status-reset", payload: {} });
   }
 
   function handleToggleRuler() {
@@ -3708,7 +4042,7 @@ export default function Whiteboard({
 
   async function fetchBytes(url) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(await fileUrl(url));
       if (!res.ok) return null;
       return await res.arrayBuffer();
     } catch (err) {
@@ -4164,6 +4498,15 @@ export default function Whiteboard({
     );
     // Messages sent while the connection is down wait for it (or, if they
     // only matter right now, are skipped): see src/lib/liveSend.js.
+    // In a notebook a teacher is linked to, what we add says who wrote it
+    // (`au`), so a teacher's marks show as theirs (isMarkObj).
+    const plainSend = channel.send.bind(channel);
+    channel.send = (msg) =>
+      plainSend(
+        msg && AUTHOR_EVENTS.has(msg.event) && msg.payload && userId && notebookRef.current && clipInfoRef.current
+          ? { ...msg, payload: { ...msg.payload, au: userId } }
+          : msg
+      );
     const sender = createSender(channel);
     if (peopleOn) {
       // who's here: kept from the "joined" / "left" events (classRoster.js)
@@ -4256,6 +4599,8 @@ export default function Whiteboard({
       const live = remoteStrokes.current[payload.strokeKey];
       delete remoteStrokes.current[payload.strokeKey];
       const s = cleanIncomingStroke(payload.stroke) || (live && live.points.length > 1 ? live : null);
+      // (who wrote it: see isMarkObj)
+      if (s) s.au = payload.au || "remote";
       if (!s) {
         // A line finished that never showed up here: fetch it shortly.
         if (!live) syncSoon();
@@ -4274,15 +4619,15 @@ export default function Whiteboard({
     });
 
     channel.on("broadcast", { event: "stroke-restore" }, ({ payload }) => {
-      setStrokes((prev) => [...prev, payload.stroke]);
+      setStrokes((prev) => [...prev, { ...payload.stroke, au: payload.au || "remote" }]);
     });
 
     channel.on("broadcast", { event: "text-add" }, ({ payload }) => {
       setTexts((prev) => {
-        const exists = prev.some((t) => t.id === payload.text.id);
-        return exists
-          ? prev.map((t) => (t.id === payload.text.id ? payload.text : t))
-          : [...prev, payload.text];
+        const exists = prev.find((t) => t.id === payload.text.id);
+        // (who wrote it stays as it was; a new one is the sender's)
+        const text = { ...payload.text, au: exists ? exists.au : payload.au || "remote" };
+        return exists ? prev.map((t) => (t.id === text.id ? text : t)) : [...prev, text];
       });
     });
 
@@ -4312,7 +4657,15 @@ export default function Whiteboard({
     });
 
     channel.on("broadcast", { event: "objects-add" }, ({ payload }) => {
-      applyAdd(payload, { remote: true });
+      const au = payload.au || "remote";
+      const tag = (list) => (Array.isArray(list) ? list.map((o) => ({ ...o, au })) : list);
+      applyAdd({ ...payload, strokes: tag(payload.strokes), texts: tag(payload.texts), images: tag(payload.images) }, { remote: true });
+    });
+
+    // a teacher sent pages into this notebook: load them now
+    channel.on("broadcast", { event: "notebook-refresh" }, () => {
+      reloadNotebook();
+      loadClips();
     });
 
     channel.on("broadcast", { event: "objects-remove" }, ({ payload }) => {
@@ -4376,7 +4729,7 @@ export default function Whiteboard({
     // Several viewers often ask within a moment of each other (a class
     // joining, or a whole class being shown one student's board), and the
     // answer goes to everyone on the connection anyway: so they share one.
-    channel.on("broadcast", { event: "classroom-state-request" }, ({ payload }) => {
+    const onSnapshotAsk = ({ payload }) => {
       if (gate) gate.heard("classroom-state-request", payload);
       if (payload && payload.comments) snapshotCommentsRef.current = true;
       if (snapshotTimerRef.current) return;
@@ -4386,7 +4739,11 @@ export default function Whiteboard({
         snapshotCommentsRef.current = false;
         sendClassSnapshot(withComments);
       }, 150);
-    });
+    };
+    channel.on("broadcast", { event: "classroom-state-request" }, onSnapshotAsk);
+    // (students in a live class ask through the class's channel instead:
+    // they can only listen on this one. Never with the comments.)
+    if (!student) snapshotAskRef.current = (payload) => onSnapshotAsk({ payload: { ...payload, comments: false } });
 
     // "Still watching" and "I've stopped", from whoever has this student's
     // board on screen. If one of them turns out to have missed something
@@ -4540,6 +4897,7 @@ export default function Whiteboard({
       setPeople([]);
       if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
       snapshotTimerRef.current = null;
+      snapshotAskRef.current = null;
       if (teacherLiveTimerRef.current) clearInterval(teacherLiveTimerRef.current);
       teacherLiveTimerRef.current = null;
       supabase.removeChannel(channel);
@@ -5094,7 +5452,7 @@ export default function Whiteboard({
       for (let i = 0; i <= steps; i++) {
         const p = screenToWorld({ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps });
         for (let guard = 0; guard < 20; guard++) {
-          const hit = hitTestStrokes(strokesRef.current, p, tolerance);
+          const hit = hitTestStrokes(editable(strokesRef.current), p, tolerance);
           if (!hit) break;
           session.removed.push(hit);
           strokesRef.current = strokesRef.current.filter((x) => x.id !== hit.id);
@@ -5102,7 +5460,7 @@ export default function Whiteboard({
         }
         // tape on a notebook's page comes off too
         for (let guard = 0; guard < 20; guard++) {
-          const tape = tapeAt(imagesRef.current, p, tolerance);
+          const tape = tapeAt(editable(imagesRef.current), p, tolerance);
           if (!tape) break;
           if (!session.tapes) session.tapes = [];
           session.tapes.push(tape);
@@ -5219,7 +5577,7 @@ export default function Whiteboard({
       if (rulerEdgeRef.current || compassActiveRef.current) return false;
       const hit = detectScratchOut(
         stroke,
-        { strokes: strokesRef.current, texts: textsRef.current, textHeight: textHeightOf },
+        { strokes: editable(strokesRef.current), texts: editable(textsRef.current), textHeight: textHeightOf },
         scaleRef.current,
         getScribbleLevel()
       );
@@ -5518,7 +5876,7 @@ export default function Whiteboard({
 
         // Tape sits on top of the writing on a notebook's page: it's what a
         // tap there picks up (to move, resize or delete it).
-        const hitTape = notebookRef.current ? tapeAt(imagesRef.current, worldPos) : null;
+        const hitTape = notebookRef.current ? tapeAt(editable(imagesRef.current), worldPos) : null;
         if (hitTape && !inSelection) {
           setSelection({ strokes: [], texts: [], images: [hitTape.id] });
           startGroupMove(pos, e.pointerId);
@@ -5526,8 +5884,8 @@ export default function Whiteboard({
         }
 
         // Writing, lines and pictures come before a graph under them.
-        const hitStroke = hit ? null : hitTestStrokes(strokesRef.current, worldPos, 10 / scaleRef.current);
-        const hitImage = hit || hitStroke ? null : hitTestImages(imagesRef.current, worldPos);
+        const hitStroke = hit ? null : hitTestStrokes(editable(strokesRef.current), worldPos, 10 / scaleRef.current);
+        const hitImage = hit || hitStroke ? null : hitTestImages(editable(imagesRef.current), worldPos);
 
         // Pressing on a graph's curve reads it off.
         if (!hit && !hitStroke && !hitImage && startGraphReadout(pos)) {
@@ -6075,9 +6433,9 @@ export default function Whiteboard({
         if (distance(endPos, m.startPos) > 6) {
           const rect = rectFromPoints(m.start, screenToWorld(endPos));
           setSelection(objectsInRect(rect, {
-            strokes: strokesRef.current,
-            texts: textsRef.current,
-            images: imagesRef.current,
+            strokes: editable(strokesRef.current),
+            texts: editable(textsRef.current),
+            images: editable(imagesRef.current),
             graphs: graphsRef.current,
             graphBox,
           }, textHeightOf));
@@ -6351,6 +6709,27 @@ export default function Whiteboard({
 
   function handleClear() {
     if (strokes.length === 0 && texts.length === 0 && images.length === 0) return;
+    // a notebook a teacher is linked to: only what you may change goes
+    // (a teacher's marks stay; a teacher never clears the student's work)
+    if (marksActive()) {
+      const sel = {
+        strokes: editable(strokesRef.current).map((o) => o.id),
+        texts: editable(textsRef.current).map((o) => o.id),
+        images: editable(imagesRef.current).map((o) => o.id),
+      };
+      if (!sel.strokes.length && !sel.texts.length && !sel.images.length) return;
+      const question = clipInfoRef.current && clipInfoRef.current.role === "teacher"
+        ? "Clear everything you wrote on this notebook? Your student's work stays. This can't be undone."
+        : "Clear the whole notebook? Your teacher's marks stay. This can't be undone.";
+      if (window.confirm(question)) {
+        applyRemove(sel);
+        myStrokeStack.current = [];
+        myRedoStack.current = [];
+        setMyUndoAvailable(false);
+        setMyRedoAvailable(false);
+      }
+      return;
+    }
     if (window.confirm(student ? "Clear your whole board? This can't be undone." : "Clear the whole board for everyone? This can't be undone.")) {
       performClear();
       myStrokeStack.current = [];
@@ -6823,18 +7202,7 @@ export default function Whiteboard({
   }
 
   // Shows a page: its top just under the top of the screen, the zoom as it is.
-  function goToPage(index) {
-    const rect = nbLayoutRef.current[index];
-    if (!rect) return;
-    const { width: paneW } = getPaneSize();
-    const scale = scaleRef.current;
-    const fits = rect.w * scale <= paneW;
-    panRef.current = {
-      x: fits ? paneW / 2 - (rect.x + rect.w / 2) * scale : panRef.current.x,
-      y: 16 - rect.y * scale,
-    };
-    fullRedraw();
-  }
+
 
   async function handleAddPageAfter(index, extra = null) {
     const nb = notebookRef.current;
@@ -7176,6 +7544,7 @@ export default function Whiteboard({
         onPaste={handlePasteButton}
         onSelectAll={selectAll}
         hasSelection={selectionCount(selection) > 0}
+        onSendBoardToStudents={canTeach && !notebook ? handleSendBoard : null}
         graphSelected={selectionCount(selection) === 1 && (selection.graphs || []).length === 1}
         onOpenGraph={handleOpenGraph}
         onEditGraph={handleEditSelectedGraph}
@@ -7228,6 +7597,11 @@ export default function Whiteboard({
                 onQuiz: () => handleQuizStart(nbPage),
                 onCoverAll: (cover) => handleCoverPage(nbPage, cover),
                 onShare: isOwner && !student && !demo && isRealBackend(db) ? () => setNbShareOpen(true) : null,
+                // (a teacher's own notebook, not one of a student's)
+                onSendToStudents:
+                  isOwner && !student && !demo && isRealBackend(db) && clipInfo && clipInfo.role === "owner" && !(clipInfo.teacher_ids || []).length
+                    ? () => setClipPick({ stage: "pick" })
+                    : null,
               }
             : null
         }
@@ -7465,8 +7839,7 @@ export default function Whiteboard({
             top of them and the eraser never rubs them out. Positioned by
             repositionImages() as the board pans and zooms. */}
         {images.filter((img) => !isTape(img)).map((img) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <StoredImg
             key={img.id}
             ref={(el) => {
               if (el) imageNodesRef.current[img.id] = el;
@@ -7482,8 +7855,7 @@ export default function Whiteboard({
         {/* A student's board: pictures in the question the teacher sent. */}
         {student &&
           ((teacherLayer.question && teacherLayer.question.images) || []).map((img) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <StoredImg
               key={`q-${img.id}`}
               ref={(el) => {
                 if (el) questionImageNodesRef.current[img.id] = el;
@@ -7508,11 +7880,28 @@ export default function Whiteboard({
             onBack={() => setClassOverview(false)}
           />
         )}
+        {noAccess && (
+          <div className={dlg.overlay} data-no-access="true">
+            <div className={dlg.card} role="alertdialog" aria-modal="true" aria-labelledby="no-access-title" aria-describedby="no-access-text">
+              <h2 id="no-access-title" className={dlg.title}>You can&apos;t open this board</h2>
+              <p id="no-access-text" className={dlg.subtitle} style={{ marginTop: 8 }}>
+                It hasn&apos;t been shared with you, or it has been deleted. Ask whoever sent it to share it with your email
+                address, or to send you the board&apos;s own link (Copy student link).
+              </p>
+              <div className={dlg.actions} style={{ marginTop: 16 }}>
+                <button type="button" className={`${dlg.btn} ${dlg.btnPrimary}`} onClick={() => router.push("/")}>
+                  Your boards
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         {viewingStudent && liveClassCode && (
           <TeacherStudentBoardView
             // a fresh view for each student, so nothing carries over
             key={viewingStudent.studentId}
             code={liveClassCode}
+            onRelay={handleSpotRelay}
             // as they are right now (hand up or down), if they're still here
             student={classRoster.find((st) => st.studentId === viewingStudent.studentId) || { ...viewingStudent, hand: false, left: true }}
             question={sentQuestion}
@@ -7582,6 +7971,17 @@ export default function Whiteboard({
               >
                 <GraduationCap size={16} aria-hidden="true" /> Quiz me
               </button>
+            )}
+            {clipInfo && (
+              <ClipsLayer
+                info={clipInfo}
+                notebook={notebook}
+                open={clipPanel}
+                boardId={boardId}
+                onOpen={setClipPanel}
+                onHandIn={handleClipHandIn}
+                onChanged={loadClips}
+              />
             )}
             {shownQuiz && (
               <QuizBar
@@ -7898,7 +8298,38 @@ export default function Whiteboard({
           )}
         {nbShareOpen && notebook && typeof document !== "undefined" &&
           createPortal(
-            <NotebookShare boardId={boardId} name={boardName} onClose={() => setNbShareOpen(false)} />,
+            <NotebookShare boardId={boardId} name={boardName} onClose={() => { setNbShareOpen(false); loadClips(); }} />,
+            document.body
+          )}
+        {clipPick && clipPick.stage === "busy" && !notebook && (
+          <div role="status" className={chrome.boardNotice} style={{ position: "absolute", top: 56, left: "50%", transform: "translateX(-50%)", zIndex: 30 }}>
+            Preparing the board…
+          </div>
+        )}
+        {clipPick && (clipPick.stage === "pick" || clipPick.stage === "busy") && notebook && typeof document !== "undefined" &&
+          createPortal(
+            <ClipPagesDialog
+              count={notebook.pages.length}
+              current={nbPage}
+              busy={clipPick.stage === "busy"}
+              onClose={() => setClipPick(null)}
+              onPick={handleClipPagesPicked}
+            />,
+            document.body
+          )}
+        {clipPick && clipPick.pages && user && typeof document !== "undefined" &&
+          createPortal(
+            <ClipSend
+              userId={user.id}
+              pages={clipPick.pages}
+              title={clipPick.title}
+              from="notebook"
+              onClose={() => setClipPick(null)}
+              onSent={(r) => {
+                setClipPick(null);
+                flashNotice(`Sent to ${r.sent} notebook${r.sent === 1 ? "" : "s"}${r.skipped ? ` (${r.skipped} couldn't take it)` : ""}.`, 4000);
+              }}
+            />,
             document.body
           )}
         {refPicker && typeof document !== "undefined" &&

@@ -17,6 +17,7 @@ import {
 import { getPencilOnly } from "@/lib/pencilPrefs";
 import { createWatcher, isNewerEdition, isStudentBoard, samePage, steadyNow } from "@/lib/boardWatch";
 import { useLiveMode, liveChannel } from "@/lib/liveMode";
+import StoredImg from "./StoredImg";
 import { cleanIncomingStroke } from "@/lib/liveSend";
 import cls from "./Classroom.module.css";
 
@@ -109,6 +110,10 @@ function drawPins(ctx, pins, scale) {
 //   glance       a small picture of a student's board: it is sent each line
 //                when it is finished, not point by point as it is drawn
 //   ref          gets { send(event, payload), fitAll(), undoInk(), clearInk() }
+//   askThrough   () => asks for the board another way too: a student in a
+//                live class can only listen on the teacher's board, and a
+//                classmate on a board being shown to the class, so they
+//                ask through the class's channel (the teacher passes it on)
 //
 // A student's board only sends what the student is doing while somebody is
 // watching it (see src/lib/boardWatch.js), so a view of one says "I'm
@@ -116,9 +121,13 @@ function drawPins(ctx, pins, scale) {
 export default function ClassroomBoardViewer({
   boardId, embedded = false, waitingText, pins, onBoardTap, onSnapshot, onLeave, fitOnLoad = false, tour, ref, children,
   question = null, drawTool = null, onInkChange, interactive = true, autoFit = false, fitMargin = FIT_MARGIN_PX,
-  withComments = false, glance = false,
+  withComments = false, glance = false, askThrough = null,
 }) {
   const router = useRouter();
+  const askThroughRef = useRef(askThrough);
+  useEffect(() => {
+    askThroughRef.current = askThrough;
+  });
   const liveMode = useLiveMode();
   const canvasRef = useRef(null);
   const boardPaneRef = useRef(null);
@@ -512,6 +521,7 @@ export default function ClassroomBoardViewer({
         event: "classroom-state-request",
         payload: { ...(withCommentsRef.current ? { comments: true } : {}), ...(watcher ? watcher.tag() : {}) },
       });
+      if (askThroughRef.current) askThroughRef.current();
     }
 
     if (watcher) {
@@ -1198,8 +1208,7 @@ export default function ClassroomBoardViewer({
           style={{ position: "absolute", inset: 0, zIndex: -1, backgroundColor: "#ffffff", pointerEvents: "none" }}
         />
         {images.map((img) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <StoredImg
             key={img.id}
             ref={(el) => {
               if (el) imageNodesRef.current[img.id] = el;
@@ -1214,8 +1223,7 @@ export default function ClassroomBoardViewer({
         ))}
         {/* Pictures in the teacher's question, shown the same way. */}
         {((question && question.images) || []).map((img) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <StoredImg
             key={`q-${img.id}`}
             ref={(el) => {
               if (el) questionImageNodesRef.current[img.id] = el;

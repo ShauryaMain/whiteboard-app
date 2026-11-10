@@ -108,6 +108,7 @@ export default function Toolbar(props) {
     penSeen, pencilOnly, onSetPencilOnly,
     zoomPercent, onResetView,
     notebookPage,
+    onSendBoardToStudents,
   } = props;
 
   // menu: null | { id: "maths" | "insert" | "page" | "roster", left, top, hasGrid }
@@ -355,6 +356,11 @@ export default function Toolbar(props) {
                   <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(notebookPage.onExport)}>
                     Export as a PDF…
                   </PalmSafeButton>
+                  {notebookPage.onSendToStudents && (
+                    <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(notebookPage.onSendToStudents)} data-menu-send-students="true">
+                      Send pages to students…
+                    </PalmSafeButton>
+                  )}
                 </div>
                 <div className={s.menuHeading}>Study this page</div>
                 <div className={s.nbMenuActions}>
@@ -426,6 +432,16 @@ export default function Toolbar(props) {
                     ? "Changes the page on your board. Your drawings stay put."
                     : "Changes the page for everyone on this board. Your drawings stay put."}
                 </div>
+                {!notebookPage && onSendBoardToStudents && (
+                  <>
+                    <div className={s.menuHeading}>Students</div>
+                    <div className={s.nbMenuActions}>
+                      <PalmSafeButton className={s.nbMenuBtn} onPress={runAndClose(onSendBoardToStudents)} data-menu-send-board="true">
+                        {hasSelection ? "Send what's selected to students…" : "Send this board to students…"}
+                      </PalmSafeButton>
+                    </div>
+                  </>
+                )}
               </>
             )}
             {menu.id === "roster" && (

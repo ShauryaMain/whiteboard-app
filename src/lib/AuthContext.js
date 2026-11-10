@@ -39,8 +39,12 @@ export function AuthProvider({ children }) {
   // The demo board (/demo) is public too: it needs no account at all.
   // A notebook opened from its link (/n/…) is public too: anyone can read
   // it. Writing on it (/n/…/write) needs an account, so that's not.
+  // Joining a class (/c/…) and opening a notebook a teacher made for you
+  // (/s/…) show what they are first, and sign in from there. So does a
+  // board's own link (/b/…).
   const isPublicRoute =
-    pathname?.startsWith("/join") || isDemoPath(pathname) || (pathname?.startsWith("/n/") && !pathname.endsWith("/write"));
+    pathname?.startsWith("/join") || isDemoPath(pathname) || (pathname?.startsWith("/n/") && !pathname.endsWith("/write")) ||
+    pathname?.startsWith("/c/") || pathname?.startsWith("/s/") || pathname?.startsWith("/b/");
 
   // The demo board uses a stand-in backend that is chosen when the page
   // loads. If someone moves between the demo and the real app without a

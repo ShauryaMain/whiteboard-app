@@ -4,6 +4,7 @@
 // board, and finding words in the PDF.
 
 import { loadPdfjs } from "./loadPdfjs";
+import { fileUrl } from "./fileUrls";
 import { BLANK_ASPECT, drawBlankPage, drawInkLayer, drawTopLayer, uiFontFamily } from "./refDoc";
 
 // pdf.js takes over the bytes it is given, so it always gets a copy.
@@ -25,7 +26,8 @@ export function closePdf(doc) {
 
 export async function openPdfUrl(url) {
   const pdfjsLib = await loadPdfjs();
-  return pdfjsLib.getDocument({ url }).promise;
+  // (a stored worksheet opens through a short-lived link)
+  return pdfjsLib.getDocument({ url: await fileUrl(url) }).promise;
 }
 
 // A new PDF made of the given pages of one or more PDFs, in order:

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { getOrCreateStudentId } from "@/lib/classroomCode";
-import { readyStudent, liveChannel } from "@/lib/liveMode";
+import { readyStudent, liveChannel, teacherTopic, teacherOnlyNow } from "@/lib/liveMode";
 import d from "@/components/Dialog.module.css";
 import p from "@/components/Paper.module.css";
 import { landingLink } from "@/lib/links";
@@ -43,6 +43,7 @@ export default function JoinCodePage() {
 
     let cancelled = false;
     let channel = null;
+    let teacherChannel = null;
     let timeoutId = null;
     let retryTimer = null;
 
@@ -59,6 +60,9 @@ export default function JoinCodePage() {
 
       channel = liveChannel(`classroom-${normalizedCode}`, { presence: { key: studentId } });
       channelRef.current = channel;
+      // what the teacher says to the whole class comes on their own channel
+      teacherChannel = liveChannel(teacherTopic(normalizedCode), {});
+      const fromTeacher = teacherOnlyNow() ? [teacherChannel] : [teacherChannel, channel];
 
       let timedOut = false;
       timeoutId = setTimeout(() => {
@@ -78,20 +82,22 @@ export default function JoinCodePage() {
       // "session-started" broadcast only ever fires once, at the moment
       // Start was pressed, so anyone arriving after that moment needs to
       // actively ask instead of waiting for a message that already passed.
-      channel.on("broadcast", { event: "session-started" }, ({ payload }) => {
+      fromTeacher.forEach((ch) => ch.on("broadcast", { event: "session-started" }, ({ payload }) => {
         if (payload?.boardId && !navigatedRef.current) {
           navigatedRef.current = true;
           router.push(`/join/${normalizedCode}/view?board=${payload.boardId}`);
         }
-      });
+      }));
 
       // The teacher ended the class while this student was still waiting to
       // be let in: say so, rather than leaving them waiting for ever.
-      channel.on("broadcast", { event: "class-ended" }, () => {
+      fromTeacher.forEach((ch) => ch.on("broadcast", { event: "class-ended" }, () => {
         clearTimeout(timeoutId);
         navigatedRef.current = true;
         setStatus("ended");
-      });
+      }));
+
+      teacherChannel.subscribe();
 
       channel.subscribe(async (subStatus) => {
         if (subStatus === "SUBSCRIBED") {
@@ -117,6 +123,7 @@ export default function JoinCodePage() {
       clearTimeout(timeoutId);
       clearTimeout(retryTimer);
       if (channel) supabase.removeChannel(channel);
+      if (teacherChannel) supabase.removeChannel(teacherChannel);
     };
   }, [code]);
 
