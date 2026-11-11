@@ -522,3 +522,190 @@
   color: var(--ink-2);
   text-decoration: underline;
 }
+
+/* ---------- the Pages panel's views: Pages, Contents, Starred ---------- */
+
+.viewTabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 0;
+}
+
+.viewTab {
+  flex: 1;
+  min-height: 34px;
+  padding: 0 6px;
+  border: 1.5px solid var(--ink-line);
+  border-radius: 9px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.viewTabOn {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.bodyList {
+  gap: 4px;
+  padding-top: 8px;
+}
+
+.contentRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 9px;
+  padding: 2px 2px 2px 0;
+}
+
+.contentRowOn {
+  background: var(--accent-soft, #e8eefc);
+}
+
+.contentJump {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.contentJump:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.contentNum {
+  flex: none;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 7px;
+  background: #efece4;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  color: var(--ink-2);
+}
+
+.contentTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contentTitleQuiet {
+  color: var(--ink-2);
+}
+
+.titleInput {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px;
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+}
+
+.btnSmall {
+  width: 30px;
+  height: 30px;
+}
+
+.starOn {
+  color: #c98a00;
+}
+
+.thumbStar {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: #fff;
+  color: #c98a00;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.thumbTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: -2px;
+}
+
+.pickList {
+  margin-top: 10px;
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pickRow {
+  border-radius: 9px;
+}
+
+.pickRow:hover:not(:disabled) {
+  background: #f4f2ec;
+}
+
+.pickStar {
+  flex: none;
+  margin-left: auto;
+  color: #c98a00;
+}
+
+/* A link to another page: a small tag beside what it's on. */
+.linkTag {
+  position: absolute;
+  z-index: 6;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-ink, #1f45b8);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  touch-action: manipulation;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

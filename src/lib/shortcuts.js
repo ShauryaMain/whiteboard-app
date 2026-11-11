@@ -27,6 +27,7 @@ export const SHORTCUT_ACTIONS = [
   { id: "zoomOut", label: "Zoom out", key: "-", group: "View" },
   { id: "zoomReset", label: "Back to 100%", key: "0", group: "View" },
   { id: "help", label: "Show the shortcuts", key: "?", group: "View" },
+  { id: "goto", label: "Go to a notebook or board", key: "mod+k", group: "View" },
 ];
 
 export const ACTION_IDS = SHORTCUT_ACTIONS.map((a) => a.id);

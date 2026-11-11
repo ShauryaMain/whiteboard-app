@@ -9,7 +9,7 @@ import CompassOverlay from "./CompassOverlay";
 import ZoomMenu from "./ZoomMenu";
 import SplitDivider from "./SplitDivider";
 import PalmSafeButton from "./PalmSafeButton";
-import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine, LocateFixed, PictureInPicture2, LayoutDashboard, X, Plus, GraduationCap } from "lucide-react";
+import { FileText, PanelLeftClose, PanelTopClose, Copy, Scissors, CopyPlus, Trash2, Moon, PenLine, LocateFixed, PictureInPicture2, LayoutDashboard, X, Plus, GraduationCap, Link2, Unlink, ArrowUpRight } from "lucide-react";
 import ReferencePane from "./ReferencePane";
 import RefPagePicker from "./RefPagePicker";
 import ClipWindows from "./ClipWindows";
@@ -69,7 +69,7 @@ import { loadCalcPosition } from "@/lib/calcMath";
 import { detectScratchOut } from "@/lib/scratchOut";
 import { getSetting, setSetting, useSetting, displayNameFor, PEN_COLORS } from "@/lib/settings";
 import { iconCursor, ringLook, isInkTool } from "@/lib/boardCursor";
-import { keyFromEvent, keysWith, actionForKey, createTapGesture, GESTURE_WORDS } from "@/lib/shortcuts";
+import { keyFromEvent, keysWith, actionForKey, createTapGesture, GESTURE_WORDS, keyLabel } from "@/lib/shortcuts";
 import { nameFor, personId, wherePayload, sameWhere, peopleFrom, facesKey, viewFor, viewBetween, createPenTags } from "@/lib/boardPeople";
 import {
   catchUp,
@@ -117,10 +117,13 @@ import { packStroke, unpackStroke, isPacked } from "@/lib/inkPack";
 import {
   normalizeNotebook, layoutPages, pageInView, planRelayout, applyBands, bandsToJson, bandsFromJson,
   paintPages, clipToPages, viewForPage, newPage, pageSize, PAGE_GAP, DESK, DESK_DARK, pageColorIsDark, MAX_PAGES,
-  bandFor, pageRectAt, trimStrokeToPage, pageIndexAt,
+  bandFor, pageRectAt, trimStrokeToPage, pageIndexAt, newPageId,
 } from "@/lib/notebook";
 import { contentsByPage, exportNotebookPdf, loadPagePictures, pageThumbnail, notebookPagesForClip } from "@/lib/notebookRender";
-import { NotebookPagesPanel, NotebookExportDialog } from "./NotebookBits";
+import { NotebookPagesPanel, NotebookExportDialog, PagePickDialog } from "./NotebookBits";
+import { pageTitles, cleanTitle } from "@/lib/pageTitles";
+import { rememberRecent, recentList } from "@/lib/recentBoards";
+import QuickSwitcher from "./QuickSwitcher";
 import { QuizBar } from "./StudyBits";
 import NotebookShare from "./NotebookShare";
 import { ClipsLayer, ClipPagesDialog } from "./NotebookClips";
@@ -305,6 +308,35 @@ function smoothPath(ctx, pts, startIdx, endIdx) {
   ctx.stroke();
 }
 
+// The titles of homework in a notebook, by clip id (for pageTitles).
+function clipTitlesFrom(info) {
+  const out = {};
+  for (const k of (info && info.clips) || []) if (k && k.id && k.title) out[k.id] = k.title;
+  return out;
+}
+
+// What's selected, as a link's objects (strokes, text boxes, pictures;
+// not tape).
+function linkObjsOf(sel, images) {
+  if (!sel) return [];
+  const tape = new Set((images || []).filter(isTape).map((im) => im.id));
+  return [
+    ...(sel.strokes || []).map((id) => ({ k: "s", id })),
+    ...(sel.texts || []).map((id) => ({ k: "t", id })),
+    ...(sel.images || []).filter((id) => !tape.has(id)).map((id) => ({ k: "i", id })),
+  ].slice(0, 60);
+}
+
+// The links that are on something selected.
+function linksOnSel(nb, sel) {
+  if (!nb || !nb.links || !sel) return [];
+  const ids = new Set([...(sel.strokes || []), ...(sel.texts || []), ...(sel.images || [])]);
+  return nb.links.filter((l) => l.objs.some((o) => ids.has(o.id)));
+}
+
+// See-through lines whose rounded start has been drawn (drawStartCap).
+const startCapsDrawn = new WeakSet();
+
 // `student`, `backend`, `active` and `compact` are only passed for a
 // student's own board in a live class (see src/app/join/[code]/view/page.js):
 //   student  { code, studentId, name } — switches the board to "class board"
@@ -335,6 +367,12 @@ export default function Whiteboard({
   const router = useRouter();
   const [isOwner, setIsOwner] = useState(false);
   const [noAccess, setNoAccess] = useState(false);
+  // "Link to page…": what was selected when it was asked for
+  const [linkPick, setLinkPick] = useState(null);
+  // the "Go to" box (Ctrl/⌘+K)
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  // the ↗ tags of links between pages, by link id
+  const linkTagRefs = useRef({});
   const [liveClassCode, setLiveClassCode] = useState(null);
   const liveClassChannelRef = useRef(null);
   // The teacher's own channel to the class: only the teacher can send on it
@@ -376,6 +414,12 @@ export default function Whiteboard({
   const ctxRef = useRef(null);
   const isDrawing = useRef(false);
   const currentStroke = useRef(null);
+  // See-through ink being drawn (the highlighter) goes on a layer of its own
+  // first, drawn solid and shown see-through, so it looks the same while
+  // it's drawn as once it's finished (see drawLiveInk).
+  const liveInkRef = useRef(null);
+  const liveStrokeRef = useRef(null);
+  const liveEndTimerRef = useRef(null);
   const currentStrokeId = useRef(null);
   const activePointerId = useRef(null);
   const activePointerType = useRef(null);
@@ -1174,6 +1218,8 @@ export default function Whiteboard({
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "destination-out";
       ctx.strokeStyle = "#000000";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
       drawVariableWidthPath(ctx, stroke.points, 0, stroke.points.length - 1, stroke.width);
       ctx.globalCompositeOperation = "source-over";
     } else {
@@ -1820,8 +1866,14 @@ export default function Whiteboard({
     const marksOn = marksActive();
     for (const stroke of strokesRef.current) if (onScreen(stroke) && !(marksOn && isMarkObj(stroke))) drawStroke(ctx, stroke);
     for (const key in remoteStrokes.current) drawStroke(ctx, remoteStrokes.current[key]);
-    if (currentStroke.current) drawStroke(ctx, currentStroke.current);
+    const live = liveStrokeRef.current;
+    if (currentStroke.current && currentStroke.current !== live) drawStroke(ctx, currentStroke.current);
     ctx.globalAlpha = 1;
+    if (live) {
+      if (live === currentStroke.current) redrawLiveInk();
+      // finished, and drawn above with the rest: its own layer can go
+      else if (strokesRef.current.some((st) => st.id === live.id)) endLiveInk();
+    }
     // a teacher's marks: their own layer, on top (an eraser on one layer
     // never rubs out the other)
     if (marksOn) {
@@ -1860,6 +1912,7 @@ export default function Whiteboard({
     repositionCommentPins();
     repositionPeopleBits();
     if (nbLayout) repositionNotebookBits(scale, pan, paneW, paneH);
+    if (nbLayout) repositionLinkTags();
     sharePresence();
     if (student) drawTeacherOverlay();
     graphStore.set(graphsRef.current, graphTraceRef.current);
@@ -1871,25 +1924,157 @@ export default function Whiteboard({
     const lookback = 3;
     const startIdx = Math.max(0, pts.length - newPointsCount - 1 - lookback);
     const endIdx = pts.length - 1;
+    // Round ends while the line is being drawn, as it will have once it's
+    // finished. (Flat ends here used to make the tips look cut off, most of
+    // all zoomed in, until the pen lifted and they grew back.)
+    ctx.lineJoin = "round";
     if (styleStroke.tool === "eraser") {
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "destination-out";
       ctx.strokeStyle = "#000000";
+      ctx.lineCap = "round";
       drawVariableWidthPath(ctx, pts, startIdx, endIdx, styleStroke.width);
       ctx.globalCompositeOperation = "source-over";
     } else {
-      ctx.globalAlpha = styleStroke.opacity ?? 1;
-      ctx.strokeStyle = inkOn(styleStroke.color, pageIsDark());
+      const alpha = styleStroke.opacity ?? 1;
+      const color = inkOn(styleStroke.color, pageIsDark());
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = color;
       ctx.lineWidth = styleStroke.width;
-      ctx.lineCap = "butt";
+      // See-through ink (the highlighter) is drawn in overlapping pieces,
+      // and round ends would show as darker spots where the pieces meet:
+      // its pieces keep flat ends, and its starting tip is rounded once.
+      ctx.lineCap = alpha < 1 ? "butt" : "round";
       smoothPath(ctx, pts, startIdx, endIdx);
+      if (alpha < 1) drawStartCap(ctx, styleStroke, color);
     }
     ctx.globalAlpha = 1;
+  }
+
+  // ---------- see-through ink while it's drawn ----------
+  //
+  // A line is drawn a few points at a time as the pen moves, each piece
+  // overlapping the last. See-through ink drawn like that gets darker where
+  // the pieces overlap, then lighter again once the pen lifts and the line
+  // is drawn whole. So it's drawn solid on a layer of its own, and the
+  // layer is shown see-through: overlaps can't show, and the ends can be
+  // round, exactly as the finished line.
+
+  function liveInkCtx() {
+    const layer = liveInkRef.current;
+    const main = canvasRef.current;
+    if (!layer || !main) return null;
+    if (layer.width !== main.width || layer.height !== main.height) {
+      layer.width = main.width;
+      layer.height = main.height;
+    }
+    layer.style.width = main.style.width;
+    layer.style.height = main.style.height;
+    const ratio = window.devicePixelRatio || 1;
+    const scale = scaleRef.current;
+    const pan = panRef.current;
+    const lctx = layer.getContext("2d");
+    lctx.setTransform(ratio * scale, 0, 0, ratio * scale, ratio * pan.x, ratio * pan.y);
+    return lctx;
+  }
+
+  function startLiveInk(stroke) {
+    const layer = liveInkRef.current;
+    if (!layer || stroke.tool === "eraser" || (stroke.opacity ?? 1) >= 1) return;
+    if (liveEndTimerRef.current) clearTimeout(liveEndTimerRef.current);
+    liveEndTimerRef.current = null;
+    liveStrokeRef.current = stroke;
+    layer.style.opacity = String(stroke.opacity);
+    layer.style.display = "block";
+    const lctx = liveInkCtx();
+    if (lctx) {
+      lctx.save();
+      lctx.setTransform(1, 0, 0, 1, 0, 0);
+      lctx.clearRect(0, 0, layer.width, layer.height);
+      lctx.restore();
+    }
+  }
+
+  function paintLiveInk(lctx, stroke, startIdx) {
+    const pts = stroke.points;
+    lctx.globalAlpha = 1;
+    lctx.strokeStyle = inkOn(stroke.color, pageIsDark());
+    lctx.lineWidth = stroke.width;
+    lctx.lineCap = "round";
+    lctx.lineJoin = "round";
+    if (notebookRef.current) {
+      lctx.save();
+      clipToPages(lctx, nbLayoutRef.current, -Infinity, Infinity);
+      smoothPath(lctx, pts, startIdx, pts.length - 1);
+      lctx.restore();
+    } else {
+      smoothPath(lctx, pts, startIdx, pts.length - 1);
+    }
+  }
+
+  function drawLiveInk(stroke, newPointsCount) {
+    const lctx = liveInkCtx();
+    if (!lctx) return;
+    paintLiveInk(lctx, stroke, Math.max(0, stroke.points.length - newPointsCount - 4));
+  }
+
+  function redrawLiveInk() {
+    const stroke = liveStrokeRef.current;
+    const lctx = liveInkCtx();
+    if (!stroke || !lctx) return;
+    const layer = liveInkRef.current;
+    lctx.save();
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
+    lctx.clearRect(0, 0, layer.width, layer.height);
+    lctx.restore();
+    if (stroke.points.length > 1) paintLiveInk(lctx, stroke, 0);
+  }
+
+  function endLiveInk() {
+    if (liveEndTimerRef.current) clearTimeout(liveEndTimerRef.current);
+    liveEndTimerRef.current = null;
+    liveStrokeRef.current = null;
+    const layer = liveInkRef.current;
+    if (!layer) return;
+    layer.style.display = "none";
+    const lctx = layer.getContext("2d");
+    lctx.setTransform(1, 0, 0, 1, 0, 0);
+    lctx.clearRect(0, 0, layer.width, layer.height);
+  }
+
+  // The pen has lifted: the layer goes once the finished line is drawn with
+  // the rest (fullRedraw), or shortly anyway (a line that wasn't kept).
+  function releaseLiveInk() {
+    if (!liveStrokeRef.current || liveEndTimerRef.current) return;
+    liveEndTimerRef.current = setTimeout(endLiveInk, 400);
+  }
+
+  // The rounded start of a see-through line, drawn once: the half circle
+  // behind its first point (the same shape a round end gives it).
+  function drawStartCap(ctx, styleStroke, color) {
+    if (startCapsDrawn.has(styleStroke)) return;
+    const pts = styleStroke.points;
+    const p0 = pts[0];
+    const r = styleStroke.width / 2;
+    let k = 1;
+    while (k < pts.length && Math.hypot(pts[k].x - p0.x, pts[k].y - p0.y) < r * 0.25) k++;
+    if (k >= pts.length) return; // too short to know which way it goes yet
+    startCapsDrawn.add(styleStroke);
+    const a = Math.atan2(pts[k].y - p0.y, pts[k].x - p0.x);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(p0.x, p0.y, r, a + Math.PI / 2, a + (3 * Math.PI) / 2);
+    ctx.closePath();
+    ctx.fill();
   }
 
   function drawNewSegment(ctx, styleStroke, newPointsCount) {
     const pts = styleStroke.points;
     if (pts.length < 2 || newPointsCount < 1) return;
+    if (styleStroke === liveStrokeRef.current) {
+      drawLiveInk(styleStroke, newPointsCount);
+      return;
+    }
     if (notebookRef.current) {
       ctx.save();
       clipToPages(ctx, nbLayoutRef.current, -Infinity, Infinity);
@@ -2340,6 +2525,8 @@ export default function Whiteboard({
       backgroundRef.current = normalizeBackground(row.background);
       setBoardBackground(backgroundRef.current);
       lastThumbRef.current = previewHashOf(row.thumbnail);
+      // for "Recent" and the Go to box, on this device
+      if (!demo && !student && user) rememberRecent(user.id, { id: row.id || boardId, name: row.name || "", kind: row.kind === "notebook" ? "notebook" : "board" });
       if (row.kind === "notebook") {
         openNotebook(normalizeNotebook(row.notebook));
         loadClips();
@@ -5243,6 +5430,7 @@ export default function Whiteboard({
       const strokeId = currentStrokeId.current;
       currentStroke.current = null;
       currentStrokeId.current = null;
+      releaseLiveInk();
       activePointerId.current = null;
       activePointerType.current = null;
       activeCompassParams.current = null;
@@ -6049,6 +6237,7 @@ export default function Whiteboard({
         opacity: opacityForTool(t),
         points: [t === "eraser" ? { ...firstWorldPoint, w: baseWidth } : firstWorldPoint],
       };
+      startLiveInk(currentStroke.current);
       canvas.setPointerCapture(e.pointerId);
 
       touchDrivenStrokeActive.current =
@@ -6500,6 +6689,7 @@ export default function Whiteboard({
       const strokeId = currentStrokeId.current;
       currentStroke.current = null;
       currentStrokeId.current = null;
+      releaseLiveInk();
 
       // a tap on tape with the pen: the tape is lifted or put back, and the
       // dot the tap made is dropped (for anyone watching too)
@@ -6861,6 +7051,10 @@ export default function Whiteboard({
         if (student) return false;
         setSettingsOpen("shortcuts");
         return true;
+      case "goto":
+        if (student || demo) return false;
+        setSwitcherOpen(true);
+        return true;
       default:
         return false;
     }
@@ -7137,15 +7331,20 @@ export default function Whiteboard({
       flashNotice(`A notebook can have up to ${MAX_PAGES} pages.`, 4000);
       return false;
     }
-    if (unsavedCount(sync) > 0) {
+    // A title, a star or a link moves nothing on the pages, so it needn't
+    // wait for writing to save first, and goes through quietly.
+    const onlyDetails = planRelayout(before, normalizeNotebook(after)).length === 0
+      && before.pages.length === after.pages.length
+      && before.pages.every((p, i) => after.pages[i] && after.pages[i].id === p.id);
+    if (!onlyDetails && unsavedCount(sync) > 0) {
       flashNotice("Some writing hasn't saved yet. Try again in a moment.", 3500);
       return false;
     }
     nbBusyRef.current = true;
     setNbBusy(true);
     // saves already on their way land first
-    for (let i = 0; i < 50 && sync.pending.size > 0; i++) await new Promise((r) => setTimeout(r, 100));
-    if (sync.pending.size > 0 || unsavedCount(sync) > 0) {
+    for (let i = 0; !onlyDetails && i < 50 && sync.pending.size > 0; i++) await new Promise((r) => setTimeout(r, 100));
+    if (!onlyDetails && (sync.pending.size > 0 || unsavedCount(sync) > 0)) {
       nbBusyRef.current = false;
       setNbBusy(false);
       flashNotice("Some writing is still saving. Try again in a moment.", 3500);
@@ -7157,7 +7356,7 @@ export default function Whiteboard({
     const wire = bandsToJson(bands);
     let failure = null; // null | "stale" | "unsure" | "failed"
     if (isRealBackend(db)) {
-      flashNotice("Changing the pages…", 20000);
+      if (!onlyDetails) flashNotice("Changing the pages…", 20000);
       const call = Promise.resolve(db.rpc("notebook_relayout", { p_board: boardId, p_notebook: next, p_bands: wire, p_rev: rev })).then(
         (res) => res,
         (err) => ({ error: err || new Error("failed") })
@@ -7182,11 +7381,12 @@ export default function Whiteboard({
         channelRef.current?.send({ type: "broadcast", event: "sim-embeds-set", payload: { sims: simsRef.current } });
         saveSimEmbeds();
       }
-      flashNotice("", 1);
+      if (!onlyDetails) flashNotice("", 1);
     }
     nbBusyRef.current = false;
     setNbBusy(false);
-    if (failure === "failed") flashNotice("The pages couldn't be changed just now. Nothing was moved: please try again.", 4500);
+    if (failure === "failed" && onlyDetails) flashNotice("That couldn't be saved just now. Please try again.", 4000);
+    else if (failure === "failed") flashNotice("The pages couldn't be changed just now. Nothing was moved: please try again.", 4500);
     else if (failure) {
       // (it may have gone through, or the pages were changed elsewhere)
       flashNotice("The pages couldn't be changed just now. Showing them as they're saved…", 4500);
@@ -7203,6 +7403,109 @@ export default function Whiteboard({
 
   // Shows a page: its top just under the top of the screen, the zoom as it is.
 
+
+  // ---------- titles, stars and links (Find your way) ----------
+
+  // Every page's title (typed, or from the page's own words): pageTitles.js
+  function currentTitles() {
+    const nb = notebookRef.current;
+    return nb ? pageTitles(nb, textsRef.current, clipTitlesFrom(clipInfoRef.current)) : [];
+  }
+
+  async function handleRenamePage(index, value) {
+    const nb = notebookRef.current;
+    if (!nb || !nb.pages[index]) return;
+    const title = cleanTitle(value);
+    if ((nb.pages[index].title || "") === title) return;
+    const pages = nb.pages.map((p, i) => {
+      if (i !== index) return p;
+      const next = { ...p };
+      if (title) next.title = title;
+      else delete next.title;
+      return next;
+    });
+    if (await changeNotebook({ ...nb, pages })) track("notebook_page_titled", { cleared: !title });
+  }
+
+  async function handleStarPage(index, on) {
+    const nb = notebookRef.current;
+    if (!nb || !nb.pages[index]) return;
+    const pages = nb.pages.map((p, i) => {
+      if (i !== index) return p;
+      const next = { ...p };
+      if (on) next.star = true;
+      else delete next.star;
+      return next;
+    });
+    if (await changeNotebook({ ...nb, pages })) track("notebook_page_starred", { on });
+  }
+
+  function handleLinkSelection() {
+    const objs = linkObjsOf(selectionRef.current, imagesRef.current);
+    if (!objs.length) return;
+    setLinkPick({ objs, from: nbPageRef.current });
+  }
+
+  async function handlePickLinkPage(pageId) {
+    const pick = linkPick;
+    setLinkPick(null);
+    const nb = notebookRef.current;
+    if (!pick || !nb) return;
+    const ids = new Set(pick.objs.map((o) => o.id));
+    // one link on the same things: a new page replaces the old
+    const others = (nb.links || []).filter((l) => !l.objs.some((o) => ids.has(o.id)));
+    if (others.length >= 300) {
+      flashNotice("A notebook can have up to 300 links.", 3500);
+      return;
+    }
+    const links = [...others, { id: newPageId(), objs: pick.objs, to: pageId }];
+    if (await changeNotebook({ ...nb, links })) {
+      track("notebook_link_added");
+      flashNotice("Linked: tap ↗ to go there.", 2500);
+    }
+  }
+
+  async function handleRemoveLinks() {
+    const nb = notebookRef.current;
+    const gone = new Set(linksOnSel(nb, selectionRef.current).map((l) => l.id));
+    if (!nb || !gone.size) return;
+    await changeNotebook({ ...nb, links: (nb.links || []).filter((l) => !gone.has(l.id)) });
+  }
+
+  function followLink(link) {
+    const nb = notebookRef.current;
+    const index = nb ? nb.pages.findIndex((p) => p.id === link.to) : -1;
+    if (index < 0) return;
+    track("notebook_link_followed");
+    goToPage(index);
+  }
+
+  // Puts each link's ↗ tag at the top right of what it's on.
+  function repositionLinkTags() {
+    const nb = notebookRef.current;
+    const tags = linkTagRefs.current;
+    if (!nb || !nb.links) return;
+    for (const link of nb.links) {
+      const el = tags[link.id];
+      if (!el) continue;
+      const sel = { strokes: [], texts: [], images: [], graphs: [] };
+      for (const o of link.objs) (o.k === "s" ? sel.strokes : o.k === "t" ? sel.texts : sel.images).push(o.id);
+      const b = boundsOfData(getObjectsData(sel));
+      if (!b) {
+        el.style.display = "none";
+        continue;
+      }
+      const p = worldToScreen({ x: b.maxX, y: b.minY });
+      el.style.display = "";
+      el.style.left = `${Math.round(p.x + 4)}px`;
+      el.style.top = `${Math.round(p.y - 28)}px`;
+    }
+  }
+
+  // the ↗ tags follow what they're on (after anything changes)
+  useEffect(() => {
+    if (notebook && notebook.links && notebook.links.length) repositionLinkTags();
+  });
 
   async function handleAddPageAfter(index, extra = null) {
     const nb = notebookRef.current;
@@ -7307,6 +7610,8 @@ export default function Whiteboard({
       color: parseBackground(backgroundRef.current).color,
       onProgress,
       job,
+      // the PDF's contents list: pages with a title of their own words
+      titles: currentTitles().map((t) => (t.from === "number" ? null : t.title)),
     });
   }
 
@@ -7504,6 +7809,9 @@ export default function Whiteboard({
         ? "Live class running"
         : "Saves automatically");
 
+  // every page's title (Contents, links, the page picker)
+  const nbTitles = notebook ? pageTitles(notebook, texts, clipTitlesFrom(clipInfo)) : [];
+
   return (
     <div className={student ? "wb-root wb-root-embedded" : "wb-root"}>
       <Toolbar
@@ -7556,6 +7864,16 @@ export default function Whiteboard({
         onOpenSimModal={student ? undefined : handleOpenSimModal}
         onOpenShapeModal={handleOpenShapeModal}
         onCopyLink={handleCopyLink}
+        recentMenu={
+          !demo && !student && user
+            ? {
+                items: recentList(user.id).filter((r) => r.id !== boardId).slice(0, 6),
+                onGo: (id) => router.push(`/board/${id}`),
+                onSwitcher: () => setSwitcherOpen(true),
+                keyLabel: keyLabel(keysWith(getSetting("shortcuts")).goto || "mod+k"),
+              }
+            : null
+        }
         onStartLiveClass={handleStartLiveClass}
         onEndSession={handleEndSession}
         liveClassCode={liveClassCode}
@@ -7880,6 +8198,43 @@ export default function Whiteboard({
             onBack={() => setClassOverview(false)}
           />
         )}
+        {/* Links between a notebook's pages: a ↗ tag beside what each is
+            on (placed by repositionLinkTags). */}
+        {notebook &&
+          (notebook.links || []).map((link) => {
+            const index = notebook.pages.findIndex((pg) => pg.id === link.to);
+            if (index < 0) return null;
+            const title = (nbTitles[index] || {}).title || `Page ${index + 1}`;
+            return (
+              <button
+                key={link.id}
+                type="button"
+                ref={(el) => {
+                  if (el) linkTagRefs.current[link.id] = el;
+                  else delete linkTagRefs.current[link.id];
+                }}
+                className={nbStyles.linkTag}
+                style={{ display: "none" }}
+                onClick={() => followLink(link)}
+                aria-label={`Go to page ${index + 1}: ${title}`}
+                title={`Go to page ${index + 1}: ${title}`}
+                data-link-tag={link.id}
+              >
+                <ArrowUpRight size={13} strokeWidth={2.4} aria-hidden="true" />
+                {index + 1}
+              </button>
+            );
+          })}
+        {linkPick && notebook && (
+          <PagePickDialog
+            notebook={notebook}
+            titles={nbTitles}
+            current={linkPick.from}
+            onPick={handlePickLinkPage}
+            onClose={() => setLinkPick(null)}
+          />
+        )}
+        {switcherOpen && <QuickSwitcher currentId={boardId} onClose={() => setSwitcherOpen(false)} />}
         {noAccess && (
           <div className={dlg.overlay} data-no-access="true">
             <div className={dlg.card} role="alertdialog" aria-modal="true" aria-labelledby="no-access-title" aria-describedby="no-access-text">
@@ -7924,6 +8279,13 @@ export default function Whiteboard({
             WebkitTapHighlightColor: "transparent",
             cursor: boardCursor,
           }}
+        />
+        {/* See-through ink while it's being drawn (startLiveInk) */}
+        <canvas
+          ref={liveInkRef}
+          aria-hidden="true"
+          data-live-ink="true"
+          style={{ position: "absolute", left: 0, top: 0, display: "none", pointerEvents: "none" }}
         />
         {/* Tape (a notebook's): over the writing, so it hides it. Taps go
             to the board underneath (see noteTapeTap). Positioned with the
@@ -8024,6 +8386,9 @@ export default function Whiteboard({
                 onExport={() => setNbExportOpen(true)}
                 onImport={() => handleImportPdfClick(nbPage)}
                 onClose={() => setPagesPanelOpen(false)}
+                titles={nbTitles}
+                onRename={isOwner && !student ? handleRenamePage : null}
+                onStar={isOwner && !student ? handleStarPage : null}
               />
             )}
             {nbImportStatus && (
@@ -8103,6 +8468,21 @@ export default function Whiteboard({
                 <PenLine size={17} strokeWidth={1.9} />
                 Edit
               </PalmSafeButton>
+              <span className={chrome.selDivider} />
+            </>
+          )}
+          {notebook && isOwner && !student && linkObjsOf(selection, images).length > 0 && (
+            <>
+              <PalmSafeButton className={chrome.selBtn} onPress={handleLinkSelection} data-sel-link="true">
+                <Link2 size={17} strokeWidth={1.9} />
+                Link to page
+              </PalmSafeButton>
+              {linksOnSel(notebook, selection).length > 0 && (
+                <PalmSafeButton className={chrome.selBtn} onPress={handleRemoveLinks} data-sel-unlink="true">
+                  <Unlink size={17} strokeWidth={1.9} />
+                  Remove link
+                </PalmSafeButton>
+              )}
               <span className={chrome.selDivider} />
             </>
           )}

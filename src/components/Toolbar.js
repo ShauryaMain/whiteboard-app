@@ -7,7 +7,7 @@ import {
   MousePointer2, Hand, Pencil, Highlighter, Eraser, Type, Ruler, DraftingCompass, Grid3x3,
   Calculator, SquarePlus, FileText, FileX, Atom, Undo2, Redo2, Trash2, House, Link2, Users,
   Check, ChevronDown, Maximize, RotateCw, NotebookText, ImagePlus, ClipboardPaste, BoxSelect, Shapes,
-  LayoutGrid, Pause, Play, Send, Download, Settings, RectangleHorizontal, Share2,
+  LayoutGrid, Pause, Play, Send, Download, Settings, RectangleHorizontal, Share2, BookOpen, LayoutDashboard, Search,
 } from "lucide-react";
 import PalmSafeButton from "./PalmSafeButton";
 import { BOARD_BACKGROUNDS, PAGE_COLORS, backgroundCss, parseBackground, withPaper, withPageColor, isDarkBackground } from "@/lib/boardBackground";
@@ -109,6 +109,7 @@ export default function Toolbar(props) {
     zoomPercent, onResetView,
     notebookPage,
     onSendBoardToStudents,
+    recentMenu,
   } = props;
 
   // menu: null | { id: "maths" | "insert" | "page" | "roster", left, top, hasGrid }
@@ -238,6 +239,26 @@ export default function Toolbar(props) {
                   onPress={runAndClose(() => onFindPerson && onFindPerson(p.key))}
                 />
               ))}
+            {menu.id === "recent" && recentMenu && (
+              <>
+                <div className={s.menuHeading}>Recent</div>
+                {recentMenu.items.length === 0 && <div className={s.rosterEmpty}>Notebooks and boards you open show here.</div>}
+                {recentMenu.items.map((r) => (
+                  <MenuItem
+                    key={r.id}
+                    icon={r.kind === "notebook" ? <BookOpen {...SMALL_ICON} /> : <LayoutDashboard {...SMALL_ICON} />}
+                    title={r.name || (r.kind === "notebook" ? "Untitled notebook" : "Untitled board")}
+                    onPress={runAndClose(() => recentMenu.onGo(r.id))}
+                  />
+                ))}
+                <MenuItem
+                  icon={<Search {...SMALL_ICON} />}
+                  title="Go to…"
+                  desc={`Find any notebook or board (${recentMenu.keyLabel}).`}
+                  onPress={runAndClose(recentMenu.onSwitcher)}
+                />
+              </>
+            )}
             {menu.id === "maths" && (
               <>
                 <MenuItem
@@ -569,7 +590,22 @@ export default function Toolbar(props) {
           </PalmSafeButton>
         )}
         <div className={s.titleBlock}>
-          <div className={s.title}>{boardName || "Untitled board"}</div>
+          {recentMenu ? (
+            <PalmSafeButton
+              className={`${s.title} ${s.titleBtn}`}
+              data-menu-trigger="true"
+              aria-expanded={menu?.id === "recent"}
+              aria-label={`${boardName || "Untitled board"}: recent notebooks and boards`}
+              title="Recent notebooks and boards"
+              onPress={(e) => toggleMenu("recent", e, 300)}
+              data-recent-trigger="true"
+            >
+              <span className={s.titleText}>{boardName || "Untitled board"}</span>
+              <ChevronDown size={14} strokeWidth={2.2} aria-hidden="true" />
+            </PalmSafeButton>
+          ) : (
+            <div className={s.title}>{boardName || "Untitled board"}</div>
+          )}
           <div className={s.status}>{statusText}</div>
         </div>
         <div className={s.spacer} />

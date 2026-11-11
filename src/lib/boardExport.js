@@ -260,7 +260,20 @@ function joinBytes(parts) {
 // picture as large as fits inside a small margin. A page with `media`
 // ({ w, h } in points) is that size instead, filled edge to edge (a
 // notebook's pages: notebookRender.js).
-export function makePdf(pages) {
+// A PDF text string (any language): UTF-16 with its byte-order mark, as hex.
+function pdfText(text) {
+  let hex = "FEFF";
+  for (const ch of String(text)) {
+    const code = ch.codePointAt(0);
+    const units = code > 0xffff ? [0xd800 + ((code - 0x10000) >> 10), 0xdc00 + ((code - 0x10000) & 0x3ff)] : [code];
+    for (const u of units) hex += u.toString(16).toUpperCase().padStart(4, "0");
+  }
+  return `<${hex}>`;
+}
+
+// `outline` (optional): [{ title, page }] — the PDF's contents list (its
+// "bookmarks" in a PDF reader), each going to that page (0 = the first).
+export function makePdf(pages, outline = null) {
   const A4 = { short: 595.28, long: 841.89 };
   const MARGIN = 24;
   const parts = [];
@@ -282,8 +295,12 @@ export function makePdf(pages) {
 
   // objects: 1 catalog, 2 page list, then three per page (page, drawing, picture)
   const pageObject = (i) => 3 + i * 3;
+  const marks = (outline || []).filter((m) => m && m.title && Number.isInteger(m.page) && m.page >= 0 && m.page < pages.length);
+  const outlineAt = 3 + pages.length * 3; // the contents list, then one object per entry
   startObject(1);
-  push(ascii("<< /Type /Catalog /Pages 2 0 R >>"));
+  push(ascii(marks.length
+    ? `<< /Type /Catalog /Pages 2 0 R /Outlines ${outlineAt} 0 R /PageMode /UseOutlines >>`
+    : "<< /Type /Catalog /Pages 2 0 R >>"));
   endObject();
   startObject(2);
   push(ascii(`<< /Type /Pages /Count ${pages.length} /Kids [${pages.map((_, i) => `${pageObject(i)} 0 R`).join(" ")}] >>`));
@@ -324,7 +341,20 @@ export function makePdf(pages) {
     endObject();
   });
 
-  const count = 3 + pages.length * 3;
+  if (marks.length) {
+    startObject(outlineAt);
+    push(ascii(`<< /Type /Outlines /First ${outlineAt + 1} 0 R /Last ${outlineAt + marks.length} 0 R /Count ${marks.length} >>`));
+    endObject();
+    marks.forEach((m, i) => {
+      const n = outlineAt + 1 + i;
+      const links = (i > 0 ? ` /Prev ${n - 1} 0 R` : "") + (i < marks.length - 1 ? ` /Next ${n + 1} 0 R` : "");
+      startObject(n);
+      push(ascii(`<< /Title ${pdfText(String(m.title).slice(0, 120))} /Parent ${outlineAt} 0 R${links} /Dest [${pageObject(m.page)} 0 R /Fit] >>`));
+      endObject();
+    });
+  }
+
+  const count = 3 + pages.length * 3 + (marks.length ? marks.length + 1 : 0);
   const xrefAt = length;
   let xref = `xref\n0 ${count}\n0000000000 65535 f \n`;
   for (let n = 1; n < count; n++) xref += `${String(offsets[n]).padStart(10, "0")} 00000 n \n`;

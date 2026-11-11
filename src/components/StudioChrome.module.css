@@ -66,6 +66,33 @@
   text-overflow: ellipsis;
 }
 
+/* The name, as a button that opens the Recent menu */
+.titleBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: 0 0 0 -6px;
+  padding: 1px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.titleBtn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.titleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status {
   font-family: var(--font-hand);
   font-size: 17px;
@@ -1093,6 +1120,16 @@
   box-shadow: var(--shadow-hard);
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* On a phone the selection's buttons are icons only, so they all fit
+   (their words stay for screen readers). */
+@media (max-width: 520px) {
+  .selectionBar .selBtn {
+    font-size: 0;
+    gap: 0;
+    padding: 0 10px;
+  }
 }
 
 .selBtn {

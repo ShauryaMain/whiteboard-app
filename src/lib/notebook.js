@@ -95,9 +95,35 @@ export function normalizePage(p) {
   const bg = cleanBg(p.bg);
   if (bg) page.bg = bg;
   if (typeof p.title === "string" && p.title.trim()) page.title = p.title.trim().slice(0, 80);
+  // starred (bookmarked), to find it quickly in the Pages panel
+  if (p.star === true) page.star = true;
   // a page a teacher clipped in (src/lib/teaching.js)
   if (typeof p.clip === "string" && /^[0-9a-f-]{36}$/i.test(p.clip)) page.clip = p.clip;
   return page;
+}
+
+// Links from something on a page to another page: [{ id, objs, to }].
+// objs: what the link is on ([{ k: "s" | "t" | "i", id }]: strokes, text
+// boxes, pictures; a handwritten word is several strokes); to: the page id.
+export const MAX_LINKS = 300;
+const OBJ_ID_RE = /^[A-Za-z0-9_.:-]{1,80}$/;
+function cleanLinks(list, pageIds) {
+  const out = [];
+  const ids = new Set();
+  for (const l of Array.isArray(list) ? list : []) {
+    if (!l || typeof l !== "object" || typeof l.to !== "string" || !pageIds.has(l.to)) continue;
+    const id = typeof l.id === "string" && ID_RE.test(l.id) && !ids.has(l.id) ? l.id : null;
+    if (!id) continue;
+    const objs = (Array.isArray(l.objs) ? l.objs : [])
+      .filter((o) => o && (o.k === "s" || o.k === "t" || o.k === "i") && typeof o.id === "string" && OBJ_ID_RE.test(o.id))
+      .slice(0, 60)
+      .map((o) => ({ k: o.k, id: o.id }));
+    if (!objs.length) continue;
+    ids.add(id);
+    out.push({ id, objs, to: l.to });
+    if (out.length >= MAX_LINKS) break;
+  }
+  return out;
 }
 
 export function newPage(paper = "lined", extra = {}) {
@@ -125,7 +151,10 @@ export function normalizeNotebook(raw) {
   // which change of pages this is (the database refuses a change made
   // from an out-of-date copy)
   const rev = Number.isInteger(raw.rev) && raw.rev >= 0 ? raw.rev : 0;
-  return { v: 1, rev, size, cover, pages };
+  const out = { v: 1, rev, size, cover, pages };
+  const links = cleanLinks(raw.links, seen);
+  if (links.length) out.links = links;
+  return out;
 }
 
 export function newNotebook({ size = defaultPageSize(), paper = "lined", color, emoji = "" } = {}) {

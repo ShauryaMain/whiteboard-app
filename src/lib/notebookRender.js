@@ -150,11 +150,14 @@ export function parsePageRange(text, count) {
 
 // The notebook (or some of its pages) as one PDF, each page the size of the
 // paper. Resolves to a Blob. onProgress(done, total) after each page.
-export async function exportNotebookPdf({ nb, indices, contents, color, onProgress, job = null, tape = "hide" }) {
+// `titles` (optional): each page's title (pageTitles.js), for the PDF's
+// contents list.
+export async function exportNotebookPdf({ nb, indices, contents, color, onProgress, job = null, tape = "hide", titles = null }) {
   const layout = layoutPages(nb);
   const byPage = contentsByPage(nb, contents);
   const pick = (indices && indices.length ? indices : layout.map((_, i) => i)).filter((i) => i >= 0 && i < layout.length);
   const pages = [];
+  const outline = [];
   const paper = PAGE_SIZES[nb.size] || PAGE_SIZES.a4;
   for (let n = 0; n < pick.length; n++) {
     if (job && job.cancelled) return null;
@@ -182,10 +185,11 @@ export async function exportNotebookPdf({ nb, indices, contents, color, onProgre
     // an imported page keeps its own shape, as wide as the paper
     const media = rect.page.w && rect.page.h ? { w: base.w, h: (base.w * rect.h) / rect.w } : base;
     pages.push({ jpeg, width, height, media });
+    if (titles && titles[pick[n]]) outline.push({ title: titles[pick[n]], page: pages.length - 1 });
     if (onProgress) onProgress(n + 1, pick.length);
   }
   if (!pages.length) return null;
-  return new Blob([makePdf(pages)], { type: "application/pdf" });
+  return new Blob([makePdf(pages, outline)], { type: "application/pdf" });
 }
 
 // A small picture of one page for the pages panel (a data URL), at
